@@ -12,7 +12,7 @@ interface Props {
 
 export function CreateGroupModal({ open, onClose, onCreate }: Props) {
   const [name, setName] = useState("");
-  const [currency, setCurrency] = useState("USD");
+  const [currency, setCurrency] = useState("PHP");
   const [members, setMembers] = useState<Member[]>([
     { id: generateId(), name: "", color: MEMBER_COLORS[0] },
     { id: generateId(), name: "", color: MEMBER_COLORS[1] },
@@ -49,11 +49,13 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
 
   function handleCreate() {
     if (!validate()) return;
-    const validMembers = members.filter((m) => m.name.trim()).map((m, i) => ({
-      ...m,
-      name: m.name.trim(),
-      color: MEMBER_COLORS[i % MEMBER_COLORS.length],
-    }));
+    const validMembers = members
+      .filter((m) => m.name.trim())
+      .map((m, i) => ({
+        ...m,
+        name: m.name.trim(),
+        color: MEMBER_COLORS[i % MEMBER_COLORS.length],
+      }));
     onCreate({
       id: generateId(),
       name: name.trim(),
@@ -79,8 +81,13 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
         <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 bg-card rounded-t-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
           <div className="sticky top-0 bg-card pt-4 pb-3 px-5 flex items-center justify-between border-b border-border">
             <div className="w-10 h-1 bg-border rounded-full mx-auto absolute left-1/2 -translate-x-1/2 top-2" />
-            <Dialog.Title className="text-lg font-semibold text-foreground">New Group</Dialog.Title>
-            <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors">
+            <Dialog.Title className="text-lg font-semibold text-foreground">
+              New Group
+            </Dialog.Title>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-muted transition-colors"
+            >
               <X size={18} className="text-muted-foreground" />
             </button>
           </div>
@@ -88,7 +95,9 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
           <div className="p-5 space-y-5 pb-10">
             {/* Group name */}
             <div>
-              <label className="block text-sm text-muted-foreground mb-1.5">Group name</label>
+              <label className="block text-sm text-muted-foreground mb-1.5">
+                Group name
+              </label>
               <input
                 type="text"
                 placeholder="e.g. Bali Trip 2026"
@@ -96,14 +105,18 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
                 onChange={(e) => setName(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
-              {errors.name && <p className="text-destructive text-xs mt-1">{errors.name}</p>}
+              {errors.name && (
+                <p className="text-destructive text-xs mt-1">{errors.name}</p>
+              )}
             </div>
 
             {/* Currency */}
             <div>
-              <label className="block text-sm text-muted-foreground mb-1.5">Currency</label>
+              <label className="block text-sm text-muted-foreground mb-1.5">
+                Currency
+              </label>
               <div className="grid grid-cols-4 gap-2">
-                {["USD", "EUR", "GBP", "JPY"].map((c) => (
+                {["PHP", "USD", "EUR", "GBP"].map((c) => (
                   <button
                     key={c}
                     onClick={() => setCurrency(c)}
@@ -121,15 +134,20 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
 
             {/* Members */}
             <div>
-              <label className="block text-sm text-muted-foreground mb-2">Members</label>
+              <label className="block text-sm text-muted-foreground mb-2">
+                Members
+              </label>
               <div className="space-y-2">
                 {members.map((m, i) => (
                   <div key={m.id} className="flex items-center gap-3">
                     <div
                       className="w-9 h-9 rounded-full flex items-center justify-center text-sm text-white font-medium shrink-0"
-                      style={{ backgroundColor: MEMBER_COLORS[i % MEMBER_COLORS.length] }}
+                      style={{
+                        backgroundColor:
+                          MEMBER_COLORS[i % MEMBER_COLORS.length],
+                      }}
                     >
-                      {m.name?.[0]?.toUpperCase() || (i + 1)}
+                      {m.name?.[0]?.toUpperCase() || i + 1}
                     </div>
                     <input
                       type="text"
@@ -149,7 +167,11 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
                   </div>
                 ))}
               </div>
-              {errors.members && <p className="text-destructive text-xs mt-1">{errors.members}</p>}
+              {errors.members && (
+                <p className="text-destructive text-xs mt-1">
+                  {errors.members}
+                </p>
+              )}
               <button
                 onClick={addMember}
                 className="mt-3 flex items-center gap-2 text-sm text-primary font-medium"

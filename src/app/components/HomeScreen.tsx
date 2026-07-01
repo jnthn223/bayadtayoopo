@@ -21,11 +21,6 @@ export function HomeScreen({
 }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
 
-  console.log(
-    "AUTH",
-    `User = ${user.id}, Name = ${user.name}, Color = ${user.color}`,
-  );
-
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
