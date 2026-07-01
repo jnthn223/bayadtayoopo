@@ -146,6 +146,7 @@ export function HomeScreen({
 
       <CreateGroupModal
         open={createOpen}
+        currentUser={user}
         onClose={() => setCreateOpen(false)}
         onCreate={onCreateGroup}
       />

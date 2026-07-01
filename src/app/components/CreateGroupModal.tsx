@@ -1,75 +1,57 @@
 import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Plus, Trash2 } from "lucide-react";
-import type { Group, Member } from "./types";
-import { generateId, MEMBER_COLORS } from "./utils";
+import { X } from "lucide-react";
+import type { Group, CurrentUser } from "./types";
+import { generateId } from "./utils";
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onCreate: (group: Group) => void;
+  currentUser: CurrentUser;
 }
 
-export function CreateGroupModal({ open, onClose, onCreate }: Props) {
+export function CreateGroupModal({
+  open,
+  onClose,
+  onCreate,
+  currentUser,
+}: Props) {
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState("PHP");
-  const [members, setMembers] = useState<Member[]>([
-    { id: generateId(), name: "", color: MEMBER_COLORS[0] },
-    { id: generateId(), name: "", color: MEMBER_COLORS[1] },
-  ]);
   const [errors, setErrors] = useState<Record<string, string>>({});
-
-  function addMember() {
-    setMembers((prev) => [
-      ...prev,
-      {
-        id: generateId(),
-        name: "",
-        color: MEMBER_COLORS[prev.length % MEMBER_COLORS.length],
-      },
-    ]);
-  }
-
-  function removeMember(id: string) {
-    setMembers((prev) => prev.filter((m) => m.id !== id));
-  }
-
-  function updateMemberName(id: string, name: string) {
-    setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, name } : m)));
-  }
 
   function validate(): boolean {
     const errs: Record<string, string> = {};
-    if (!name.trim()) errs.name = "Group name is required";
-    const filledMembers = members.filter((m) => m.name.trim());
-    if (filledMembers.length < 2) errs.members = "Add at least 2 members";
+
+    if (!name.trim()) {
+      errs.name = "Group name is required";
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
 
   function handleCreate() {
     if (!validate()) return;
-    const validMembers = members
-      .filter((m) => m.name.trim())
-      .map((m, i) => ({
-        ...m,
-        name: m.name.trim(),
-        color: MEMBER_COLORS[i % MEMBER_COLORS.length],
-      }));
+
     onCreate({
       id: generateId(),
       name: name.trim(),
       currency,
-      members: validMembers,
+      members: [
+        {
+          id: currentUser.id,
+          name: currentUser.name,
+          color: currentUser.color,
+        },
+      ],
       expenses: [],
       createdAt: new Date().toISOString().slice(0, 10),
     });
+
     setName("");
-    setCurrency("USD");
-    setMembers([
-      { id: generateId(), name: "", color: MEMBER_COLORS[0] },
-      { id: generateId(), name: "", color: MEMBER_COLORS[1] },
-    ]);
+    setCurrency("PHP");
     setErrors({});
     onClose();
   }
@@ -78,12 +60,15 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
+
         <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 bg-card rounded-t-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
           <div className="sticky top-0 bg-card pt-4 pb-3 px-5 flex items-center justify-between border-b border-border">
             <div className="w-10 h-1 bg-border rounded-full mx-auto absolute left-1/2 -translate-x-1/2 top-2" />
+
             <Dialog.Title className="text-lg font-semibold text-foreground">
               New Group
             </Dialog.Title>
+
             <button
               onClick={onClose}
               className="p-2 rounded-full hover:bg-muted transition-colors"
@@ -98,6 +83,7 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
               <label className="block text-sm text-muted-foreground mb-1.5">
                 Group name
               </label>
+
               <input
                 type="text"
                 placeholder="e.g. Bali Trip 2026"
@@ -105,6 +91,7 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
                 onChange={(e) => setName(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
+
               {errors.name && (
                 <p className="text-destructive text-xs mt-1">{errors.name}</p>
               )}
@@ -115,10 +102,12 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
               <label className="block text-sm text-muted-foreground mb-1.5">
                 Currency
               </label>
+
               <div className="grid grid-cols-4 gap-2">
                 {["PHP", "USD", "EUR", "GBP"].map((c) => (
                   <button
                     key={c}
+                    type="button"
                     onClick={() => setCurrency(c)}
                     className={`py-2.5 rounded-xl border text-sm font-medium transition-all ${
                       currency === c
@@ -132,53 +121,34 @@ export function CreateGroupModal({ open, onClose, onCreate }: Props) {
               </div>
             </div>
 
-            {/* Members */}
+            {/* Creator */}
             <div>
-              <label className="block text-sm text-muted-foreground mb-2">
-                Members
+              <label className="block text-sm text-muted-foreground mb-1.5">
+                Group creator
               </label>
-              <div className="space-y-2">
-                {members.map((m, i) => (
-                  <div key={m.id} className="flex items-center gap-3">
-                    <div
-                      className="w-9 h-9 rounded-full flex items-center justify-center text-sm text-white font-medium shrink-0"
-                      style={{
-                        backgroundColor:
-                          MEMBER_COLORS[i % MEMBER_COLORS.length],
-                      }}
-                    >
-                      {m.name?.[0]?.toUpperCase() || i + 1}
-                    </div>
-                    <input
-                      type="text"
-                      placeholder={`Member ${i + 1}`}
-                      value={m.name}
-                      onChange={(e) => updateMemberName(m.id, e.target.value)}
-                      className="flex-1 px-4 py-3 rounded-xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                    />
-                    {members.length > 2 && (
-                      <button
-                        onClick={() => removeMember(m.id)}
-                        className="p-2 rounded-full hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                  </div>
-                ))}
+
+              <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border bg-muted/30">
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium text-white"
+                  style={{ backgroundColor: currentUser.color }}
+                >
+                  {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+
+                <div>
+                  <p className="font-medium text-foreground">
+                    {currentUser.name}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {currentUser.email}
+                  </p>
+                </div>
               </div>
-              {errors.members && (
-                <p className="text-destructive text-xs mt-1">
-                  {errors.members}
-                </p>
-              )}
-              <button
-                onClick={addMember}
-                className="mt-3 flex items-center gap-2 text-sm text-primary font-medium"
-              >
-                <Plus size={16} />
-                Add member
-              </button>
+
+              <p className="mt-2 text-xs text-muted-foreground">
+                You'll automatically be added as the first member. Invite others
+                after creating the group.
+              </p>
             </div>
 
             <button
