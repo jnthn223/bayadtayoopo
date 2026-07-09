@@ -390,7 +390,7 @@ export default function App() {
                 groups={groups}
                 user={currentUser}
                 onSelectGroup={(g) => {
-                  setSelectedGroup(g);
+                  setSelectedGroup(groups.find((group) => group.id === g.id) ?? g);
                   setScreen("group");
                 }}
                 onCreateGroup={handleCreateGroup}

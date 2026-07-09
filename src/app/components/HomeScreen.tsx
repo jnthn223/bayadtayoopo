@@ -1,7 +1,18 @@
 import { useState } from "react";
-import { Plus, Users, ChevronRight, Wallet } from "lucide-react";
+import {
+  ChevronRight,
+  MessageCircle,
+  Plus,
+  Receipt,
+  Trash2,
+  Users,
+} from "lucide-react";
 import type { Group, CurrentUser } from "./types";
-import { formatCurrency, getTotalExpenses, computeBalances } from "./utils";
+import {
+  formatCurrency,
+  getMemberById,
+  getTotalExpenses,
+} from "./utils";
 import { CreateGroupModal } from "./CreateGroupModal";
 
 interface Props {
@@ -20,6 +31,76 @@ export function HomeScreen({
   onOpenProfile,
 }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
+  const activity = groups
+    .flatMap((group) => {
+      const expenseItems = group.expenses
+        .filter((expense) => (expense.createdBy ?? expense.paidBy) !== user.id)
+        .map((expense) => {
+          const creator = getMemberById(
+            group,
+            expense.createdBy ?? expense.paidBy,
+          );
+          return {
+            id: `${group.id}-expense-${expense.id}`,
+            group,
+            at: `${expense.date}T12:00:00.000Z`,
+            icon: Receipt,
+            title: expense.description,
+            detail: `${creator?.name ?? "Someone"} added ${formatCurrency(expense.amount, group.currency)}`,
+          };
+        });
+
+      const deletedItems = (group.deletedExpenses ?? [])
+        .filter((expense) => expense.deletedBy !== user.id)
+        .map((expense) => {
+          const member = getMemberById(group, expense.deletedBy);
+          return {
+            id: `${group.id}-deleted-${expense.expenseId}-${expense.deletedAt}`,
+            group,
+            at: expense.deletedAt,
+            icon: Trash2,
+            title: expense.description,
+            detail: `${member?.name ?? "Someone"} deleted an expense`,
+          };
+        });
+
+      const messageItems = (group.messages ?? [])
+        .filter((message) => message.memberId !== user.id)
+        .map((message) => {
+          const member = getMemberById(group, message.memberId);
+          return {
+            id: `${group.id}-message-${message.id}`,
+            group,
+            at: message.createdAt,
+            icon: MessageCircle,
+            title: message.text,
+            detail: `${member?.name ?? "Someone"} sent a message`,
+          };
+        });
+
+      return [...expenseItems, ...deletedItems, ...messageItems];
+    })
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, 12);
+
+  function formatActivityTime(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+    if (isToday) {
+      return date.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+  }
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -63,69 +144,113 @@ export function HomeScreen({
             </button>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-6">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-medium text-muted-foreground">
                 Your Groups ({groups.length})
               </p>
             </div>
-            {groups.map((group) => {
-              const total = getTotalExpenses(group);
-              const balances = computeBalances(group);
-              const myBalance = balances.reduce((sum, b) => sum + b.net, 0);
+            <div className="space-y-3">
+              {groups.map((group) => {
+                const total = getTotalExpenses(group);
 
-              return (
-                <button
-                  key={group.id}
-                  onClick={() => onSelectGroup(group)}
-                  className="w-full bg-card rounded-2xl border border-border p-4 flex items-center gap-4 text-left hover:border-primary/40 hover:shadow-sm transition-all active:scale-[0.99]"
-                >
-                  <div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold text-white shrink-0"
-                    style={{
-                      backgroundColor:
-                        group.members[0]?.color ?? "var(--primary)",
-                    }}
+                return (
+                  <button
+                    key={group.id}
+                    onClick={() => onSelectGroup(group)}
+                    className="w-full bg-card rounded-2xl border border-border p-4 flex items-center gap-4 text-left hover:border-primary/40 hover:shadow-sm transition-all active:scale-[0.99]"
                   >
-                    {group.name[0].toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-foreground truncate">
-                      {group.name}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="flex -space-x-1.5">
-                        {group.members.slice(0, 4).map((m) => (
-                          <div
-                            key={m.id}
-                            className="w-5 h-5 rounded-full border border-card flex items-center justify-center text-[9px] text-white font-bold"
-                            style={{ backgroundColor: m.color }}
-                          >
-                            {m.name[0].toUpperCase()}
-                          </div>
-                        ))}
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {group.members.length} members · {group.expenses.length}{" "}
-                        expenses
-                      </span>
+                    <div
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold text-white shrink-0"
+                      style={{
+                        backgroundColor:
+                          group.members[0]?.color ?? "var(--primary)",
+                      }}
+                    >
+                      {group.name[0].toUpperCase()}
                     </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold text-foreground">
-                      {formatCurrency(total, group.currency)}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      total
-                    </p>
-                  </div>
-                  <ChevronRight
-                    size={16}
-                    className="text-muted-foreground shrink-0"
-                  />
-                </button>
-              );
-            })}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {group.name}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex -space-x-1.5">
+                          {group.members.slice(0, 4).map((m) => (
+                            <div
+                              key={m.id}
+                              className="w-5 h-5 rounded-full border border-card flex items-center justify-center text-[9px] text-white font-bold"
+                              style={{ backgroundColor: m.color }}
+                            >
+                              {m.name[0].toUpperCase()}
+                            </div>
+                          ))}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {group.members.length} members ·{" "}
+                          {group.expenses.length} expenses
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-semibold text-foreground">
+                        {formatCurrency(total, group.currency)}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        total
+                      </p>
+                    </div>
+                    <ChevronRight
+                      size={16}
+                      className="text-muted-foreground shrink-0"
+                    />
+                  </button>
+                );
+              })}
+            </div>
+
+            {activity.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-muted-foreground">
+                  Recent Activity
+                </p>
+                <div className="space-y-2">
+                  {activity.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => onSelectGroup(item.group)}
+                        className="w-full bg-card rounded-2xl border border-border p-4 flex items-center gap-3 text-left hover:border-primary/40 hover:shadow-sm transition-all active:scale-[0.99]"
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
+                          <Icon size={18} className="text-accent-foreground" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-foreground truncate">
+                              {item.group.name}
+                            </p>
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {formatActivityTime(item.at)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                            {item.detail}
+                          </p>
+                          <p className="text-xs text-foreground mt-1 truncate">
+                            {item.title}
+                          </p>
+                        </div>
+                        <ChevronRight
+                          size={16}
+                          className="text-muted-foreground shrink-0"
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
