@@ -1,11 +1,8 @@
 
-  # Group Expense Management App
+# TODO: 
+- Only Creator of Expense can edit expenses.
+- Admin of Group can delete and expense with explaination/reason.
+- Delete Confirmation Modal for Expenses.
+- Chat Feature.
 
-  This is a code bundle for Group Expense Management App. The original project is available at https://www.figma.com/design/hYVE8toDPRz1p9A3BxRItU/Group-Expense-Management-App.
-
-  ## Running the code
-
-  Run `npm i` to install the dependencies.
-
-  Run `npm run dev` to start the development server.
   

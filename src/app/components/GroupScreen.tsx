@@ -1,6 +1,8 @@
 import { useState } from "react";
 import {
   ArrowLeft,
+  Check,
+  Clock3,
   Plus,
   QrCode,
   Users,
@@ -10,10 +12,11 @@ import {
   Edit2,
   MoreVertical,
   UserPlus,
+  X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import type { Group, Expense } from "./types";
+import type { CurrentUser, Group, Expense, Split } from "./types";
 import {
   computeBalances,
   computeSettlements,
@@ -30,12 +33,19 @@ type Tab = "expenses" | "balances" | "settle";
 
 interface Props {
   group: Group;
+  currentUser: CurrentUser;
   onBack: () => void;
   onUpdate: (group: Group) => void;
   onDelete: (groupId: string) => void;
 }
 
-export function GroupScreen({ group, onBack, onUpdate, onDelete }: Props) {
+export function GroupScreen({
+  group,
+  currentUser,
+  onBack,
+  onUpdate,
+  onDelete,
+}: Props) {
   const [tab, setTab] = useState<Tab>("expenses");
   const [addOpen, setAddOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -46,6 +56,20 @@ export function GroupScreen({ group, onBack, onUpdate, onDelete }: Props) {
   const balances = computeBalances(group);
   const settlements = computeSettlements(balances);
   const total = getTotalExpenses(group);
+  const currentMember = group.members.find(
+    (m) => m.id === currentUser.id || m.uid === currentUser.id,
+  );
+
+  const paymentItems = group.expenses.flatMap((expense) =>
+    expense.splits
+      .filter(
+        (split) =>
+          split.memberId !== expense.paidBy &&
+          split.amount > 0.005 &&
+          split.paymentStatus !== "confirmed",
+      )
+      .map((split) => ({ expense, split })),
+  );
 
   function handleAddExpense(expense: Expense) {
     const updated = { ...group };
@@ -62,6 +86,28 @@ export function GroupScreen({ group, onBack, onUpdate, onDelete }: Props) {
 
   function handleDeleteExpense(id: string) {
     onUpdate({ ...group, expenses: group.expenses.filter((e) => e.id !== id) });
+  }
+
+  function handlePaymentStatus(
+    expenseId: string,
+    memberId: string,
+    paymentStatus: Split["paymentStatus"],
+  ) {
+    onUpdate({
+      ...group,
+      expenses: group.expenses.map((expense) =>
+        expense.id === expenseId
+          ? {
+              ...expense,
+              splits: expense.splits.map((split) =>
+                split.memberId === memberId
+                  ? { ...split, paymentStatus }
+                  : split,
+              ),
+            }
+          : expense,
+      ),
+    });
   }
 
   function handleDeleteGroup() {
@@ -338,7 +384,7 @@ export function GroupScreen({ group, onBack, onUpdate, onDelete }: Props) {
 
         {tab === "settle" && (
           <div className="p-4 space-y-3">
-            {settlements.length === 0 ? (
+            {settlements.length === 0 && paymentItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
                   <span className="text-2xl">🎉</span>
@@ -352,43 +398,175 @@ export function GroupScreen({ group, onBack, onUpdate, onDelete }: Props) {
               </div>
             ) : (
               <>
-                <p className="text-sm text-muted-foreground mb-2">
-                  Suggested payments to settle the group
-                </p>
-                {settlements.map((s, i) => {
-                  const fromMember = getMemberById(group, s.from);
-                  const toMember = getMemberById(group, s.to);
-                  return (
-                    <div
-                      key={i}
-                      className="bg-card rounded-2xl border border-border p-4 flex items-center gap-3"
-                    >
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-sm text-white font-medium shrink-0"
-                        style={{ backgroundColor: fromMember?.color }}
-                      >
-                        {s.fromName[0].toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground">
-                          <span style={{ color: fromMember?.color }}>
-                            {s.fromName}
-                          </span>
-                          <span className="text-muted-foreground"> pays </span>
-                          <span style={{ color: toMember?.color }}>
-                            {s.toName}
-                          </span>
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Transfer
-                        </p>
-                      </div>
-                      <p className="text-sm font-semibold text-foreground shrink-0">
-                        {formatCurrency(s.amount, group.currency)}
-                      </p>
+                {paymentItems.length > 0 && (
+                  <>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Payment requests
+                    </p>
+                    {paymentItems.map(({ expense, split }) => {
+                      const fromMember = getMemberById(group, split.memberId);
+                      const toMember = getMemberById(group, expense.paidBy);
+                      const isPayer = currentMember?.id === split.memberId;
+                      const isCreator = currentMember?.id === expense.paidBy;
+                      const isPending = split.paymentStatus === "pending";
+                      const isRejected = split.paymentStatus === "rejected";
+
+                      return (
+                        <div
+                          key={`${expense.id}-${split.memberId}`}
+                          className="bg-card rounded-2xl border border-border p-4 space-y-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-sm text-white font-medium shrink-0"
+                              style={{ backgroundColor: fromMember?.color }}
+                            >
+                              {(fromMember?.name ?? "?")[0].toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground">
+                                <span style={{ color: fromMember?.color }}>
+                                  {fromMember?.name ?? "Unknown"}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {" "}
+                                  pays{" "}
+                                </span>
+                                <span style={{ color: toMember?.color }}>
+                                  {toMember?.name ?? "Unknown"}
+                                </span>
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {expense.description}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-sm font-semibold text-foreground">
+                                {formatCurrency(split.amount, group.currency)}
+                              </p>
+                              <div
+                                className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                                  isPending
+                                    ? "bg-amber-100 text-amber-700"
+                                    : isRejected
+                                      ? "bg-destructive/10 text-destructive"
+                                      : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                {isPending ? (
+                                  <Clock3 size={11} />
+                                ) : isRejected ? (
+                                  <X size={11} />
+                                ) : (
+                                  <Clock3 size={11} />
+                                )}
+                                {isPending
+                                  ? "Pending"
+                                  : isRejected
+                                    ? "Rejected"
+                                    : "Unpaid"}
+                              </div>
+                            </div>
+                          </div>
+
+                          {isPayer && !isPending && (
+                            <button
+                              onClick={() =>
+                                handlePaymentStatus(
+                                  expense.id,
+                                  split.memberId,
+                                  "pending",
+                                )
+                              }
+                              className="w-full py-2.5 rounded-xl text-primary-foreground text-sm font-semibold transition-all active:scale-95"
+                              style={{ backgroundColor: "var(--primary)" }}
+                            >
+                              Mark as Paid
+                            </button>
+                          )}
+
+                          {isCreator && isPending && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() =>
+                                  handlePaymentStatus(
+                                    expense.id,
+                                    split.memberId,
+                                    "confirmed",
+                                  )
+                                }
+                                className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-semibold transition-all active:scale-95"
+                              >
+                                <Check size={15} />
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() =>
+                                  handlePaymentStatus(
+                                    expense.id,
+                                    split.memberId,
+                                    "rejected",
+                                  )
+                                }
+                                className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-destructive text-white text-sm font-semibold transition-all active:scale-95"
+                              >
+                                <X size={15} />
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+
+                {settlements.length > 0 && (
+                  <div className={paymentItems.length > 0 ? "pt-3" : ""}>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Suggested payments to settle the group
+                    </p>
+                    <div className="space-y-3">
+                      {settlements.map((s, i) => {
+                        const fromMember = getMemberById(group, s.from);
+                        const toMember = getMemberById(group, s.to);
+                        return (
+                          <div
+                            key={i}
+                            className="bg-card rounded-2xl border border-border p-4 flex items-center gap-3"
+                          >
+                            <div
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-sm text-white font-medium shrink-0"
+                              style={{ backgroundColor: fromMember?.color }}
+                            >
+                              {s.fromName[0].toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground">
+                                <span style={{ color: fromMember?.color }}>
+                                  {s.fromName}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {" "}
+                                  pays{" "}
+                                </span>
+                                <span style={{ color: toMember?.color }}>
+                                  {s.toName}
+                                </span>
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Transfer
+                              </p>
+                            </div>
+                            <p className="text-sm font-semibold text-foreground shrink-0">
+                              {formatCurrency(s.amount, group.currency)}
+                            </p>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </div>
+                )}
               </>
             )}
           </div>

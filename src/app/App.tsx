@@ -342,6 +342,7 @@ export default function App() {
             {screen === "group" && selectedGroup && (
               <GroupScreen
                 group={selectedGroup}
+                currentUser={currentUser}
                 onBack={() => setScreen("home")}
                 onUpdate={handleUpdateGroup}
                 onDelete={handleDeleteGroup}

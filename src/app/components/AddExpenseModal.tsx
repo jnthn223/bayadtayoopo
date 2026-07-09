@@ -101,11 +101,21 @@ export function AddExpenseModal({
 
   function handleSubmit() {
     if (!validate()) return;
+    const previousSplitsByMember = new Map(
+      editExpense?.paidBy === paidBy
+        ? editExpense.splits.map((s) => [s.memberId, s])
+        : [],
+    );
+    const preservePaymentStatus = (memberId: string, splitAmount: number) => {
+      const previous = previousSplitsByMember.get(memberId);
+      return previous && Math.abs(previous.amount - splitAmount) < 0.005
+        ? previous.paymentStatus
+        : undefined;
+    };
     const splits =
       splitType === "equal"
-        ? group.members.map((m, i) => ({
-            memberId: m.id,
-            amount:
+        ? group.members.map((m, i) => {
+            const splitAmount =
               i < group.members.length - 1
                 ? Math.floor((totalAmount / group.members.length) * 100) / 100
                 : Math.round(
@@ -114,12 +124,21 @@ export function AddExpenseModal({
                         100) *
                         (group.members.length - 1)) *
                       100,
-                  ) / 100,
-          }))
-        : group.members.map((m) => ({
-            memberId: m.id,
-            amount: parseFloat(customSplits[m.id] || "0"),
-          }));
+                  ) / 100;
+            return {
+              memberId: m.id,
+              amount: splitAmount,
+              paymentStatus: preservePaymentStatus(m.id, splitAmount),
+            };
+          })
+        : group.members.map((m) => {
+            const splitAmount = parseFloat(customSplits[m.id] || "0");
+            return {
+              memberId: m.id,
+              amount: splitAmount,
+              paymentStatus: preservePaymentStatus(m.id, splitAmount),
+            };
+          });
 
     onAdd({
       id: editExpense?.id ?? generateId(),

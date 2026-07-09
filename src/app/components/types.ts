@@ -8,6 +8,7 @@ export interface Member {
 export interface Split {
   memberId: string;
   amount: number;
+  paymentStatus?: "pending" | "confirmed" | "rejected";
 }
 
 export type SplitType = "equal" | "custom";

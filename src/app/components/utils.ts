@@ -23,8 +23,17 @@ export function computeBalances(group: Group): Balance[] {
   group.members.forEach((m) => (balances[m.id] = 0));
 
   group.expenses.forEach((exp) => {
-    balances[exp.paidBy] += exp.amount;
+    const confirmedPayments = exp.splits.reduce(
+      (sum, s) =>
+        s.memberId !== exp.paidBy && s.paymentStatus === "confirmed"
+          ? sum + s.amount
+          : sum,
+      0,
+    );
+
+    balances[exp.paidBy] += exp.amount - confirmedPayments;
     exp.splits.forEach((s) => {
+      if (s.memberId !== exp.paidBy && s.paymentStatus === "confirmed") return;
       balances[s.memberId] -= s.amount;
     });
   });
