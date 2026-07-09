@@ -18,6 +18,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
   const [nameInput, setNameInput] = useState(user.name);
   const [colorInput, setColorInput] = useState(user.color);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
 
   function handleSaveName() {
     if (!nameInput.trim()) return;
@@ -38,8 +39,8 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
         {
           icon: Shield,
           label: "Privacy",
-          value: "Your data is stored locally",
-          action: null,
+          value: "How BayadTayoOpo uses your data",
+          action: () => setPrivacyOpen(true),
         },
       ],
     },
@@ -168,8 +169,42 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
           </div>
         </div>
 
-        <p className="text-center text-xs text-muted-foreground py-4">SplitWave v1.0 · Data stored locally</p>
+        <p className="text-center text-xs text-muted-foreground py-4">BayadTayoOpo v1.0 · Account data synced securely</p>
       </div>
+
+      <Dialog.Root open={privacyOpen} onOpenChange={setPrivacyOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-4 bottom-8 z-50 bg-card rounded-3xl p-6 shadow-2xl">
+            <Dialog.Title className="text-base font-semibold text-foreground mb-1">
+              Privacy Policy
+            </Dialog.Title>
+            <Dialog.Description className="text-sm text-muted-foreground space-y-3">
+              <span className="block">
+                BayadTayoOpo stores your email, display name, profile color,
+                group memberships, expenses, settlements, messages, and activity
+                history so your groups can sync across devices and members.
+              </span>
+              <span className="block">
+                Your data is used only to provide app features. We do not sell
+                your personal data.
+              </span>
+              <span className="block">
+                You can update your display name and profile color from this
+                profile screen. Group data remains available to other members of
+                the same group.
+              </span>
+            </Dialog.Description>
+            <button
+              onClick={() => setPrivacyOpen(false)}
+              className="w-full mt-5 py-3.5 rounded-2xl text-primary-foreground text-sm font-semibold transition-all active:scale-95"
+              style={{ backgroundColor: "var(--primary)" }}
+            >
+              Done
+            </button>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       {/* Confirm logout dialog */}
       <Dialog.Root open={confirmLogout} onOpenChange={setConfirmLogout}>

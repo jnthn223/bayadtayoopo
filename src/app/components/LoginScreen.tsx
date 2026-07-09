@@ -44,7 +44,7 @@ export function LoginScreen(_: Props) {
         >
           <Wallet size={36} className="text-white" />
         </div>
-        <h1 className="text-foreground mb-2">SplitWave</h1>
+        <h1 className="text-foreground mb-2">BayadTayoOpo</h1>
         <p className="text-muted-foreground text-sm leading-relaxed max-w-xs">
           Split expenses with friends and groups — no math, no drama.
         </p>
@@ -118,7 +118,8 @@ export function LoginScreen(_: Props) {
           </div>
         )}
         <p className="text-center text-xs text-muted-foreground mt-5">
-          By continuing you agree to our Terms of Service.
+          By continuing, you agree to BayadTayoOpo storing your account and group
+          data to run the app.
         </p>
       </div>
     </div>

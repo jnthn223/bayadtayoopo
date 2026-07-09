@@ -108,7 +108,7 @@ export function HomeScreen({
       <div className="bg-card border-b border-border px-5 pt-14 pb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-foreground">SplitWave</h1>
+            <h1 className="text-foreground">BayadTayoOpo</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               Hey {user.name.split(" ")[0]} 👋
             </p>

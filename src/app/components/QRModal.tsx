@@ -26,7 +26,7 @@ export function QRModal({ group, open, onClose }: Props) {
   function handleShare() {
     if (navigator.share) {
       navigator.share({
-        title: `Join ${group.name} on SplitWave`,
+        title: `Join ${group.name} on BayadTayoOpo`,
         text: `You've been invited to join the "${group.name}" expense group.`,
         url: joinUrl,
       });
