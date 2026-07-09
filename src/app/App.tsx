@@ -19,10 +19,12 @@ import {
   loadUserGroups,
   joinGroup,
   deleteGroup,
+  fetchGroup,
   pollGroup,
   subscribeGroup,
 } from "../lib/groupService";
 import { MEMBER_COLORS } from "./components/utils";
+import { mergeGroupChanges } from "./components/groupMerge";
 import { HomeScreen } from "./components/HomeScreen";
 import { GroupScreen } from "./components/GroupScreen";
 import { LoginScreen, CompleteProfileScreen } from "./components/LoginScreen";
@@ -160,6 +162,21 @@ export default function App() {
     } finally {
       setGroupsLoading(false);
     }
+  }
+
+  async function saveGroupSafely(
+    changed: Group,
+    base: Group | null = groups.find((group) => group.id === changed.id) ?? null,
+  ): Promise<Group> {
+    if (!session) return changed;
+
+    const latest = await fetchGroup(changed.id).catch(() => null);
+    const groupToSave = latest
+      ? mergeGroupChanges(base, changed, latest)
+      : changed;
+
+    await saveGroup(groupToSave, session.uid);
+    return groupToSave;
   }
 
   // ── Keep open group in sync ─────────────────────────────────────────────
@@ -312,7 +329,12 @@ export default function App() {
           : selected,
       );
       Promise.all(
-        affectedGroups.map((group) => saveGroup(group, session.uid)),
+        affectedGroups.map((group) =>
+          saveGroupSafely(
+            group,
+            groups.find((existing) => existing.id === group.id) ?? null,
+          ),
+        ),
       ).catch(() => {});
     }
   }
@@ -328,9 +350,13 @@ export default function App() {
 
   async function handleUpdateGroup(group: Group) {
     if (!session) return;
-    await saveGroup(group, session.uid);
-    setSelectedGroup(group);
-    setGroups((prev) => prev.map((g) => (g.id === group.id ? group : g)));
+    const base =
+      selectedGroup?.id === group.id
+        ? selectedGroup
+        : (groups.find((existing) => existing.id === group.id) ?? null);
+    const saved = await saveGroupSafely(group, base);
+    setSelectedGroup(saved);
+    setGroups((prev) => prev.map((g) => (g.id === saved.id ? saved : g)));
   }
 
   async function handleDeleteGroup(groupId: string) {
