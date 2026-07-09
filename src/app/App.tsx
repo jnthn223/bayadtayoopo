@@ -41,6 +41,10 @@ type Screen = "home" | "group" | "profile";
 
 const FALLBACK_POLL_MS = 3000;
 
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
+
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>("loading");
   const [session, setSession] = useState<Session | null>(null);
@@ -157,8 +161,8 @@ export default function App() {
     try {
       const loaded = await loadUserGroups(uid);
       setGroups(loaded);
-    } catch {
-      // silently fall back to empty
+    } catch (err) {
+      showBanner(errorMessage(err, "Unable to load groups"), "error");
     } finally {
       setGroupsLoading(false);
     }
@@ -257,6 +261,8 @@ export default function App() {
         setSelectedGroup(joined);
         setScreen("group");
         showBanner(`Joined "${joined.name}"!`);
+      } else {
+        showBanner("Unable to find that group invite", "error");
       }
     } catch (err) {
       showBanner(
@@ -301,7 +307,9 @@ export default function App() {
         color: updated.color,
       });
       setSession(next);
-      setDisplayName(next.idToken, updated.name).catch(() => {});
+      setDisplayName(next.idToken, updated.name).catch((err) => {
+        showBanner(errorMessage(err, "Unable to update profile name"), "error");
+      });
 
       const affectedGroups: Group[] = [];
       const updatedGroups = groups.map((group) => {
@@ -335,36 +343,55 @@ export default function App() {
             groups.find((existing) => existing.id === group.id) ?? null,
           ),
         ),
-      ).catch(() => {});
+      ).catch((err) => {
+        showBanner(
+          errorMessage(err, "Unable to sync profile changes to groups"),
+          "error",
+        );
+      });
     }
   }
 
   // ── Group actions ───────────────────────────────────────────────────────
   async function handleCreateGroup(group: Group) {
     if (!session) return;
-    await saveGroup(group, session.uid);
-    setGroups((prev) => [group, ...prev]);
-    setSelectedGroup(group);
-    setScreen("group");
+    try {
+      await saveGroup(group, session.uid);
+      setGroups((prev) => [group, ...prev]);
+      setSelectedGroup(group);
+      setScreen("group");
+      showBanner(`Created "${group.name}"`);
+    } catch (err) {
+      showBanner(errorMessage(err, "Unable to create group"), "error");
+    }
   }
 
   async function handleUpdateGroup(group: Group) {
     if (!session) return;
-    const base =
-      selectedGroup?.id === group.id
-        ? selectedGroup
-        : (groups.find((existing) => existing.id === group.id) ?? null);
-    const saved = await saveGroupSafely(group, base);
-    setSelectedGroup(saved);
-    setGroups((prev) => prev.map((g) => (g.id === saved.id ? saved : g)));
+    try {
+      const base =
+        selectedGroup?.id === group.id
+          ? selectedGroup
+          : (groups.find((existing) => existing.id === group.id) ?? null);
+      const saved = await saveGroupSafely(group, base);
+      setSelectedGroup(saved);
+      setGroups((prev) => prev.map((g) => (g.id === saved.id ? saved : g)));
+    } catch (err) {
+      showBanner(errorMessage(err, "Unable to save changes"), "error");
+    }
   }
 
   async function handleDeleteGroup(groupId: string) {
     if (!session) return;
-    await deleteGroup(groupId, session.uid);
-    setGroups((prev) => prev.filter((g) => g.id !== groupId));
-    setSelectedGroup(null);
-    setScreen("home");
+    try {
+      await deleteGroup(groupId, session.uid);
+      setGroups((prev) => prev.filter((g) => g.id !== groupId));
+      setSelectedGroup(null);
+      setScreen("home");
+      showBanner("Group deleted");
+    } catch (err) {
+      showBanner(errorMessage(err, "Unable to delete group"), "error");
+    }
   }
 
   const totalExpenses = groups.reduce((sum, g) => sum + g.expenses.length, 0);
