@@ -4,6 +4,7 @@ import {
   isMagicLink,
   completeMagicLink,
   setDisplayName,
+  signInWithGoogle,
   AuthUser,
 } from "../lib/firebaseRest";
 import {
@@ -29,6 +30,8 @@ import { HomeScreen } from "./components/HomeScreen";
 import { GroupScreen } from "./components/GroupScreen";
 import { LoginScreen, CompleteProfileScreen } from "./components/LoginScreen";
 import { ProfileScreen } from "./components/ProfileScreen";
+import { auth } from "../lib/firebase";
+import { signOut } from "firebase/auth";
 
 /* MARKER-MAKE-KIT-INVOKED */
 
@@ -273,6 +276,30 @@ export default function App() {
   }
 
   // ── Auth actions ────────────────────────────────────────────────────────
+  async function finishSignIn(user: AuthUser) {
+    const newSession = saveSession(user);
+    setSession(newSession);
+
+    const joinId = localStorage.getItem("pendingJoinGroupId");
+    if (!user.displayName) {
+      setAuthState("needs_profile");
+      return;
+    }
+
+    setCurrentUser(sessionToCurrentUser(newSession));
+    setAuthState("authenticated");
+
+    if (joinId) {
+      await handleJoinGroup(joinId, user);
+      localStorage.removeItem("pendingJoinGroupId");
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    const user = await signInWithGoogle();
+    await finishSignIn(user);
+  }
+
   async function handleCompleteProfile(name: string) {
     if (!session) return;
     await setDisplayName(session.idToken, name);
@@ -290,6 +317,7 @@ export default function App() {
 
   function handleLogout() {
     clearSession();
+    signOut(auth).catch(() => {});
     setSession(null);
     setCurrentUser(null);
     setGroups([]);
@@ -432,7 +460,10 @@ export default function App() {
         )}
 
         {authState === "unauthenticated" && (
-          <LoginScreen onProfileNeeded={() => {}} />
+          <LoginScreen
+            onProfileNeeded={() => {}}
+            onGoogleSignIn={handleGoogleSignIn}
+          />
         )}
 
         {authState === "needs_profile" && session && (

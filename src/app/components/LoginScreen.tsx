@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { Wallet, ArrowRight, Mail, Loader2, CheckCircle2 } from "lucide-react";
 import { sendMagicLink } from "../../lib/firebaseRest";
+import type { AuthUser } from "../../lib/firebaseRest";
 
 interface Props {
   onProfileNeeded: () => void; // unused but kept for API compat
+  onGoogleSignIn: () => Promise<AuthUser>;
 }
 
-export function LoginScreen(_: Props) {
+export function LoginScreen({ onGoogleSignIn }: Props) {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
 
@@ -35,6 +38,18 @@ export function LoginScreen(_: Props) {
     }
   }
 
+  async function handleGoogleSignIn() {
+    setError("");
+    setGoogleLoading(true);
+    try {
+      await onGoogleSignIn();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+    } finally {
+      setGoogleLoading(false);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full bg-background">
       <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
@@ -53,6 +68,29 @@ export function LoginScreen(_: Props) {
       <div className="bg-card rounded-t-3xl shadow-lg border-t border-border px-6 pt-8 pb-12">
         {!sent ? (
           <div className="space-y-4">
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={googleLoading || loading}
+              className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-card border border-border text-foreground font-semibold transition-all active:scale-95 disabled:opacity-60"
+            >
+              {googleLoading ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <>
+                  <span className="grid place-items-center size-5 rounded-full bg-white text-sm font-bold text-[#4285f4] border border-border">
+                    G
+                  </span>
+                  Continue with Google
+                </>
+              )}
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">or</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
             <div>
               <p className="text-foreground font-semibold mb-1">
                 Sign in with email

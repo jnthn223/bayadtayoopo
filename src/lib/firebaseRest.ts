@@ -1,6 +1,10 @@
 // Firebase REST API — no SDK, works in any sandboxed environment.
 
-import { signInWithEmailLink } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  signInWithEmailLink,
+  signInWithPopup,
+} from "firebase/auth";
 import { auth } from "./firebase";
 
 const API_KEY = import.meta.env.VITE_FIREBASE_API_KEY;
@@ -76,6 +80,33 @@ export async function completeMagicLink(email: string, search = window.location.
   return {
     uid: sdkUser.uid,
     email: sdkUser.email ?? email,
+    displayName,
+    idToken,
+    refreshToken: sdkUser.refreshToken,
+  };
+}
+
+export async function signInWithGoogle(): Promise<AuthUser> {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+
+  const credential = await signInWithPopup(auth, provider);
+  const sdkUser = credential.user;
+  const idToken = await sdkUser.getIdToken();
+  let displayName = sdkUser.displayName || null;
+
+  try {
+    displayName = (await getDisplayName(idToken)) || displayName;
+  } catch {
+    // The sign-in token is still valid; a missing lookup should not block login.
+  }
+
+  const email = sdkUser.email;
+  if (!email) throw new Error("Google account did not return an email address");
+
+  return {
+    uid: sdkUser.uid,
+    email,
     displayName,
     idToken,
     refreshToken: sdkUser.refreshToken,

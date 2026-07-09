@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="BayadTayoOpo app icon">
-  <rect width="512" height="512" rx="112" fill="#0f766e"/>
-  <circle cx="176" cy="192" r="72" fill="#facc15"/>
-  <circle cx="336" cy="192" r="72" fill="#38bdf8"/>
-  <path fill="#ffffff" d="M104 326c0-42 34-76 76-76h152c42 0 76 34 76 76v22c0 14-11 25-25 25H129c-14 0-25-11-25-25v-22Z"/>
-  <path fill="#0f766e" d="M183 328h146c9 0 17 8 17 17s-8 17-17 17H183c-9 0-17-8-17-17s8-17 17-17Z"/>
-  <path fill="#0f766e" d="M219 293h74c8 0 15 7 15 15s-7 15-15 15h-74c-8 0-15-7-15-15s7-15 15-15Z"/>
-</svg>
