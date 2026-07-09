@@ -3,7 +3,6 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { QRCodeSVG } from "qrcode.react";
 import { X, Copy, Check, Share2 } from "lucide-react";
 import type { Group } from "./types";
-import { encodeGroupForUrl } from "./utils";
 
 interface Props {
   group: Group;
@@ -14,7 +13,7 @@ interface Props {
 export function QRModal({ group, open, onClose }: Props) {
   const [copied, setCopied] = useState(false);
 
-  const joinUrl = `${window.location.origin}${window.location.pathname}?join=${encodeGroupForUrl(group)}`;
+  const joinUrl = `${window.location.origin}${window.location.pathname}?joinGroupId=${encodeURIComponent(group.id)}`;
 
   function handleCopy() {
     navigator.clipboard.writeText(joinUrl).then(() => {

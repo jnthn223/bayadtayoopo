@@ -94,18 +94,6 @@ export function getMemberById(group: Group, id: string): Member | undefined {
   return group.members.find((m) => m.id === id);
 }
 
-export function encodeGroupForUrl(group: Group): string {
-  return btoa(encodeURIComponent(JSON.stringify(group)));
-}
-
-export function decodeGroupFromUrl(encoded: string): Group | null {
-  try {
-    return JSON.parse(decodeURIComponent(atob(encoded)));
-  } catch {
-    return null;
-  }
-}
-
 export function getTotalExpenses(group: Group): number {
   return group.expenses.reduce((sum, e) => sum + e.amount, 0);
 }

@@ -137,14 +137,13 @@ export default function App() {
   useEffect(() => {
     if (authState !== "authenticated" || !session) return;
 
-    // Check if the URL carries a plain ?join= group payload (QR / direct link)
     const params = new URLSearchParams(window.location.search);
-    const joinParam = params.get("join");
-    if (joinParam) {
-      try {
-        const decoded: Group = JSON.parse(decodeURIComponent(atob(joinParam)));
-        handleJoinGroup(decoded.id, session, decoded);
-      } catch {}
+    const joinId =
+      params.get("joinGroupId") ?? localStorage.getItem("pendingJoinGroupId");
+    if (joinId) {
+      handleJoinGroup(joinId, session).finally(() => {
+        localStorage.removeItem("pendingJoinGroupId");
+      });
       window.history.replaceState({}, "", window.location.pathname);
     }
 
@@ -219,7 +218,6 @@ export default function App() {
   async function handleJoinGroup(
     groupId: string,
     user: AuthUser,
-    fallbackGroup?: Group,
   ) {
     const newSession = saveSession(user);
     const cu = sessionToCurrentUser(newSession);
@@ -243,18 +241,11 @@ export default function App() {
         setScreen("group");
         showBanner(`Joined "${joined.name}"!`);
       }
-    } catch {
-      // If Firestore fails but we have the decoded group, fall back to local join
-      if (fallbackGroup) {
-        setGroups((prev) =>
-          prev.find((g) => g.id === fallbackGroup.id)
-            ? prev
-            : [fallbackGroup, ...prev],
-        );
-        setSelectedGroup(fallbackGroup);
-        setScreen("group");
-        showBanner(`Joined "${fallbackGroup.name}"!`);
-      }
+    } catch (err) {
+      showBanner(
+        err instanceof Error ? err.message : "Unable to join group",
+        "error",
+      );
     }
   }
 

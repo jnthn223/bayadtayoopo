@@ -101,7 +101,8 @@ service cloud.firestore {
         && request.resource.data.adminUid == request.auth.uid
         && request.resource.data.deleted == false;
 
-      allow get, list: if isGroupMember();
+      allow get: if isGroupMember() || (signedIn() && isNotDeleted(resource.data));
+      allow list: if isGroupMember();
 
       allow update: if validGroupDoc(request.resource.data)
         && (memberUpdateKeepsSecurityFields() || adminUpdate() || joinByInviteLink());
