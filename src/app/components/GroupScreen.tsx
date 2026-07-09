@@ -243,19 +243,19 @@ export function GroupScreen({
             </button>
 
             {/* ⋯ menu */}
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <button className="p-2 rounded-full hover:bg-muted transition-colors">
-                  <MoreVertical size={19} className="text-foreground" />
-                </button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  align="end"
-                  sideOffset={6}
-                  className="z-50 min-w-[160px] bg-card border border-border rounded-2xl shadow-xl overflow-hidden py-1"
-                >
-                  {isAdmin && (
+            {isAdmin && (
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <button className="p-2 rounded-full hover:bg-muted transition-colors">
+                    <MoreVertical size={19} className="text-foreground" />
+                  </button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    align="end"
+                    sideOffset={6}
+                    className="z-50 min-w-[160px] bg-card border border-border rounded-2xl shadow-xl overflow-hidden py-1"
+                  >
                     <DropdownMenu.Item
                       onSelect={openEditGroup}
                       className="flex items-center gap-3 px-4 py-3 text-sm text-foreground cursor-pointer hover:bg-muted outline-none transition-colors"
@@ -263,17 +263,17 @@ export function GroupScreen({
                       <Edit2 size={15} />
                       Edit Details
                     </DropdownMenu.Item>
-                  )}
-                  <DropdownMenu.Item
-                    onSelect={() => setConfirmDelete(true)}
-                    className="flex items-center gap-3 px-4 py-3 text-sm text-destructive cursor-pointer hover:bg-destructive/10 outline-none transition-colors"
-                  >
-                    <Trash2 size={15} />
-                    Delete Group
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
+                    <DropdownMenu.Item
+                      onSelect={() => setConfirmDelete(true)}
+                      className="flex items-center gap-3 px-4 py-3 text-sm text-destructive cursor-pointer hover:bg-destructive/10 outline-none transition-colors"
+                    >
+                      <Trash2 size={15} />
+                      Delete Group
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            )}
           </div>
         </div>
 

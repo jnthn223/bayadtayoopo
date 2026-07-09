@@ -39,9 +39,15 @@ async function removeGroupIdFromUser(uid: string, groupId: string, idToken: stri
 // ─── Group document ────────────────────────────────────────────────────────
 
 function packGroup(group: Group): Record<string, unknown> {
+  const admin = group.members.find(
+    (m) => m.id === group.adminId || m.uid === group.adminId,
+  );
+
   return {
     data: JSON.stringify(group),
     memberIds: group.members.map((m) => m.uid ?? m.id),
+    adminUid: admin?.uid ?? admin?.id ?? group.members[0]?.uid ?? group.members[0]?.id,
+    deleted: false,
     updatedAt: new Date().toISOString(),
   };
 }

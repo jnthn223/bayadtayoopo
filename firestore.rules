@@ -2,8 +2,116 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function validUserDoc() {
+      return request.resource.data.keys().hasOnly(['groupIds'])
+        && request.resource.data.groupIds is list;
+    }
+
+    function validGroupDoc(data) {
+      return data.keys().hasOnly(['data', 'memberIds', 'adminUid', 'deleted', 'updatedAt'])
+        && data.data is string
+        && data.memberIds is list
+        && data.memberIds.size() > 0
+        && data.adminUid is string
+        && data.deleted is bool
+        && data.updatedAt is string;
+    }
+
+    function hasDeletedFlag(data) {
+      return data.keys().hasAny(['deleted']);
+    }
+
+    function hasAdminUid(data) {
+      return data.keys().hasAny(['adminUid']);
+    }
+
+    function isNotDeleted(data) {
+      return !hasDeletedFlag(data) || data.deleted == false;
+    }
+
+    function isGroupMember() {
+      return signedIn()
+        && resource.data.memberIds.hasAny([request.auth.uid])
+        && isNotDeleted(resource.data);
+    }
+
+    function isIncomingGroupMember() {
+      return signedIn()
+        && request.resource.data.memberIds.hasAny([request.auth.uid])
+        && request.resource.data.deleted == false;
+    }
+
+    function isGroupAdmin() {
+      return isGroupMember() && resource.data.adminUid == request.auth.uid;
+    }
+
+    function adminUnchanged() {
+      return request.resource.data.adminUid == resource.data.adminUid;
+    }
+
+    function adminUnchangedOrBackfilled() {
+      return adminUnchanged()
+        || (!hasAdminUid(resource.data)
+          && request.resource.data.memberIds.hasAny([request.resource.data.adminUid]));
+    }
+
+    function memberUpdateKeepsSecurityFields() {
+      return isGroupMember()
+        && isIncomingGroupMember()
+        && adminUnchangedOrBackfilled()
+        && (!hasDeletedFlag(resource.data)
+          || request.resource.data.deleted == resource.data.deleted);
+    }
+
+    function adminUpdate() {
+      return isGroupAdmin()
+        && request.resource.data.memberIds.hasAny([request.auth.uid]);
+    }
+
+    function joinByInviteLink() {
+      return signedIn()
+        && isNotDeleted(resource.data)
+        && !resource.data.memberIds.hasAny([request.auth.uid])
+        && request.resource.data.memberIds.hasAll(resource.data.memberIds)
+        && request.resource.data.memberIds.hasAny([request.auth.uid])
+        && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+        && adminUnchangedOrBackfilled()
+        && (!hasDeletedFlag(resource.data)
+          || request.resource.data.deleted == resource.data.deleted);
+    }
+
+    match /users/{userId} {
+      allow read: if isSelf(userId);
+      allow create, update: if isSelf(userId) && validUserDoc();
+      allow delete: if false;
+    }
+
+    match /groups/{groupId} {
+      allow create: if signedIn()
+        && validGroupDoc(request.resource.data)
+        && request.resource.data.memberIds.hasAny([request.auth.uid])
+        && request.resource.data.adminUid == request.auth.uid
+        && request.resource.data.deleted == false;
+
+      allow get, list: if isGroupMember();
+
+      allow update: if validGroupDoc(request.resource.data)
+        && (memberUpdateKeepsSecurityFields() || adminUpdate() || joinByInviteLink());
+
+      allow delete: if false;
+    }
+
+    // Legacy path from the early local-per-user Firestore model.
     match /users/{userId}/groups/{groupId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if false;
     }
   }
 }
