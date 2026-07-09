@@ -1,20 +1,27 @@
-import { useState, useEffect } from "react";
-import {
-  onAuthStateChanged,
-  isSignInWithEmailLink,
-  signInWithEmailLink,
-  updateProfile,
-  signOut,
-  type User,
-} from "firebase/auth";
-import { auth } from "../lib/firebase";
-import {
-  subscribeToUserGroups,
-  saveGroup,
-  migrateLocalGroupsToFirestore,
-} from "../lib/groups";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { Group, CurrentUser } from "./components/types";
-import { decodeGroupFromUrl, MEMBER_COLORS } from "./components/utils";
+import {
+  isMagicLink,
+  completeMagicLink,
+  setDisplayName,
+  AuthUser,
+} from "../lib/firebaseRest";
+import {
+  saveSession,
+  loadSession,
+  clearSession,
+  sessionToCurrentUser,
+  getValidIdToken,
+  type Session,
+} from "../lib/auth";
+import {
+  saveGroup,
+  loadUserGroups,
+  joinGroup,
+  deleteGroup,
+  pollGroup,
+} from "../lib/groupService";
+import { MEMBER_COLORS, encodeGroupForUrl } from "./components/utils";
 import { HomeScreen } from "./components/HomeScreen";
 import { GroupScreen } from "./components/GroupScreen";
 import { LoginScreen, CompleteProfileScreen } from "./components/LoginScreen";
@@ -22,212 +29,277 @@ import { ProfileScreen } from "./components/ProfileScreen";
 
 /* MARKER-MAKE-KIT-INVOKED */
 
+type AuthState =
+  | "loading"
+  | "unauthenticated"
+  | "needs_profile"
+  | "authenticated";
 type Screen = "home" | "group" | "profile";
-type AuthState = "loading" | "unauthenticated" | "needs_profile" | "authenticated";
 
-function firebaseUserToCurrentUser(fbUser: User): CurrentUser {
-  const colorIndex = fbUser.uid.charCodeAt(0) % MEMBER_COLORS.length;
-  return {
-    id: fbUser.uid,
-    name: fbUser.displayName ?? fbUser.email?.split("@")[0] ?? "User",
-    email: fbUser.email ?? "",
-    color: MEMBER_COLORS[colorIndex],
-  };
-}
+const POLL_MS = 8000; // refresh open group every 8 s
 
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>("loading");
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [groupsLoading, setGroupsLoading] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [screen, setScreen] = useState<Screen>("home");
-  const [joinBanner, setJoinBanner] = useState<string | null>(null);
-  const [linkError, setLinkError] = useState("");
-  const [dataError, setDataError] = useState("");
+  const [banner, setBanner] = useState<{
+    text: string;
+    type: "success" | "error";
+  } | null>(null);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Handle magic link callback on page load
-  useEffect(() => {
-    if (isSignInWithEmailLink(auth, window.location.href)) {
-      let email = window.localStorage.getItem("emailForSignIn");
-      if (!email) {
-        // Fallback: prompt user for email if opened on a different device
-        email = window.prompt("Please enter your email to complete sign-in:") ?? "";
-      }
-      if (email) {
-        signInWithEmailLink(auth, email, window.location.href)
-          .then(() => {
-            window.localStorage.removeItem("emailForSignIn");
-            window.history.replaceState({}, "", window.location.pathname);
-          })
-          .catch((err) => {
-            setLinkError(err.message ?? "Magic link is invalid or expired.");
-            setAuthState("unauthenticated");
-          });
-      }
-    }
-  }, []);
-
-  // Firebase auth state listener
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (fbUser) => {
-      if (fbUser) {
-        setFirebaseUser(fbUser);
-        if (!fbUser.displayName) {
-          setAuthState("needs_profile");
-        } else {
-          setCurrentUser(firebaseUserToCurrentUser(fbUser));
-          setAuthState("authenticated");
-        }
-      } else {
-        setFirebaseUser(null);
-        setCurrentUser(null);
-        setAuthState("unauthenticated");
-      }
-    });
-    return unsub;
-  }, []);
-
-  // Subscribe to Firestore groups when authenticated
-  useEffect(() => {
-    if (authState !== "authenticated" || !firebaseUser) {
-      setGroups([]);
-      setGroupsLoading(false);
-      return;
-    }
-
-    let unsub: (() => void) | undefined;
-    let cancelled = false;
-
-    async function init() {
-      setGroupsLoading(true);
-      setDataError("");
-      try {
-        await migrateLocalGroupsToFirestore(firebaseUser!.uid);
-      } catch {
-        // Ignore migration errors
-      }
-      if (cancelled) return;
-      unsub = subscribeToUserGroups(
-        firebaseUser!.uid,
-        (nextGroups) => {
-          setGroups(nextGroups);
-          setGroupsLoading(false);
-        },
-        (err) => {
-          setDataError(err.message ?? "Failed to load groups.");
-          setGroupsLoading(false);
-        },
-      );
-    }
-
-    init();
-
-    return () => {
-      cancelled = true;
-      unsub?.();
-    };
-  }, [authState, firebaseUser]);
-
-  // Keep selected group in sync with Firestore updates
-  useEffect(() => {
-    if (!selectedGroup) return;
-    const fresh = groups.find((g) => g.id === selectedGroup.id);
-    if (fresh) setSelectedGroup(fresh);
-  }, [groups, selectedGroup?.id]);
-
-  // Handle join via URL (after auth is resolved)
-  useEffect(() => {
-    if (authState !== "authenticated" || !firebaseUser || groupsLoading) return;
-    const params = new URLSearchParams(window.location.search);
-    const joinData = params.get("join");
-    if (!joinData) return;
-
-    const incoming = decodeGroupFromUrl(joinData);
-    if (!incoming) return;
-
-    window.history.replaceState({}, "", window.location.pathname);
-
-    const alreadyExists = groups.some((g) => g.id === incoming.id);
-    if (alreadyExists) {
-      const existing = groups.find((g) => g.id === incoming.id)!;
-      setSelectedGroup(existing);
-      setScreen("group");
-      return;
-    }
-
-    saveGroup(firebaseUser.uid, incoming)
-      .then(() => {
-        setSelectedGroup(incoming);
-        setScreen("group");
-        setJoinBanner(`Joined "${incoming.name}"!`);
-        setTimeout(() => setJoinBanner(null), 3000);
-      })
-      .catch((err) => {
-        setDataError(err.message ?? "Failed to join group.");
-      });
-  }, [authState, firebaseUser, groupsLoading, groups]);
-
-  async function handleCompleteProfile(name: string) {
-    if (!firebaseUser) return;
-    await updateProfile(firebaseUser, { displayName: name });
-    // Re-read updated user
-    const updated = firebaseUserToCurrentUser({ ...firebaseUser, displayName: name });
-    setCurrentUser(updated);
-    setAuthState("authenticated");
+  // ── Banner helper ───────────────────────────────────────────────────────
+  function showBanner(text: string, type: "success" | "error" = "success") {
+    setBanner({ text, type });
+    setTimeout(() => setBanner(null), 3500);
   }
 
-  async function handleLogout() {
-    await signOut(auth);
+  // ── Auth bootstrap ──────────────────────────────────────────────────────
+  useEffect(() => {
+    async function boot() {
+      // 0. Stash pending group join from continueUrl before auth clears the URL
+      const rawParams = new URLSearchParams(window.location.search);
+      const pendingJoin = rawParams.get("joinGroupId");
+      if (pendingJoin) localStorage.setItem("pendingJoinGroupId", pendingJoin);
+
+      // 1. Magic link callback?
+      if (isMagicLink()) {
+        let email = localStorage.getItem("emailForSignIn") ?? "";
+        if (!email) {
+          email = window.prompt("Enter your email to complete sign-in:") ?? "";
+        }
+        if (!email) {
+          setAuthState("unauthenticated");
+          return;
+        }
+
+        try {
+          const user = await completeMagicLink(email);
+          const newSession = saveSession(user);
+          setSession(newSession);
+
+          // Check for pending group join encoded in continueUrl
+          const joinId = localStorage.getItem("pendingJoinGroupId");
+
+          if (!user.displayName) {
+            setAuthState("needs_profile");
+          } else {
+            setCurrentUser(sessionToCurrentUser(newSession));
+            setAuthState("authenticated");
+
+            if (joinId) {
+              await handleJoinGroup(joinId, user);
+              localStorage.removeItem("pendingJoinGroupId");
+            }
+          }
+
+          // Clean magic-link params from URL
+          window.history.replaceState({}, "", window.location.pathname);
+          return;
+        } catch (err) {
+          showBanner(
+            err instanceof Error ? err.message : "Sign-in failed",
+            "error",
+          );
+          setAuthState("unauthenticated");
+          window.history.replaceState({}, "", window.location.pathname);
+          return;
+        }
+      }
+
+      // 2. Existing session?
+      const existing = loadSession();
+      if (existing) {
+        const idToken = await getValidIdToken();
+        if (idToken) {
+          setSession(existing);
+          setCurrentUser(sessionToCurrentUser(existing));
+          setAuthState("authenticated");
+          return;
+        }
+      }
+
+      setAuthState("unauthenticated");
+    }
+
+    boot();
+  }, []);
+
+  // ── Load groups when authenticated ─────────────────────────────────────
+  useEffect(() => {
+    if (authState !== "authenticated" || !session) return;
+
+    // Check if the URL carries a plain ?join= group payload (QR / direct link)
+    const params = new URLSearchParams(window.location.search);
+    const joinParam = params.get("join");
+    if (joinParam) {
+      try {
+        const decoded: Group = JSON.parse(decodeURIComponent(atob(joinParam)));
+        handleJoinGroup(decoded.id, session, decoded);
+      } catch {}
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    fetchGroups(session.uid);
+  }, [authState, session?.uid]);
+
+  async function fetchGroups(uid: string) {
+    setGroupsLoading(true);
+    try {
+      const loaded = await loadUserGroups(uid);
+      setGroups(loaded);
+    } catch {
+      // silently fall back to empty
+    } finally {
+      setGroupsLoading(false);
+    }
+  }
+
+  // ── Poll open group for live updates ───────────────────────────────────
+  useEffect(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (screen !== "group" || !selectedGroup) return;
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const fresh = await pollGroup(selectedGroup.id);
+        if (!fresh) return;
+        setSelectedGroup(fresh);
+        setGroups((prev) => prev.map((g) => (g.id === fresh.id ? fresh : g)));
+      } catch {}
+    }, POLL_MS);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [screen, selectedGroup?.id]);
+
+  // ── Join group helper ───────────────────────────────────────────────────
+  async function handleJoinGroup(
+    groupId: string,
+    user: AuthUser,
+    fallbackGroup?: Group,
+  ) {
+    const newSession = saveSession(user);
+    const cu = sessionToCurrentUser(newSession);
+    const colorIndex = user.uid.charCodeAt(0) % MEMBER_COLORS.length;
+
+    try {
+      const joined = await joinGroup(
+        groupId,
+        user.uid,
+        cu.name,
+        MEMBER_COLORS[colorIndex],
+      );
+      if (joined) {
+        setGroups((prev) => {
+          const existing = prev.find((g) => g.id === joined.id);
+          return existing
+            ? prev.map((g) => (g.id === joined.id ? joined : g))
+            : [joined, ...prev];
+        });
+        setSelectedGroup(joined);
+        setScreen("group");
+        showBanner(`Joined "${joined.name}"!`);
+      }
+    } catch {
+      // If Firestore fails but we have the decoded group, fall back to local join
+      if (fallbackGroup) {
+        setGroups((prev) =>
+          prev.find((g) => g.id === fallbackGroup.id)
+            ? prev
+            : [fallbackGroup, ...prev],
+        );
+        setSelectedGroup(fallbackGroup);
+        setScreen("group");
+        showBanner(`Joined "${fallbackGroup.name}"!`);
+      }
+    }
+  }
+
+  // ── Auth actions ────────────────────────────────────────────────────────
+  async function handleCompleteProfile(name: string) {
+    if (!session) return;
+    await setDisplayName(session.idToken, name);
+    const updatedSession = saveSession({ ...session, displayName: name });
+    setSession(updatedSession);
+    setCurrentUser(sessionToCurrentUser(updatedSession));
+    setAuthState("authenticated");
+
+    const joinId = localStorage.getItem("pendingJoinGroupId");
+    if (joinId) {
+      await handleJoinGroup(joinId, updatedSession);
+      localStorage.removeItem("pendingJoinGroupId");
+    }
+  }
+
+  function handleLogout() {
+    clearSession();
+    setSession(null);
+    setCurrentUser(null);
     setGroups([]);
-    setScreen("home");
     setSelectedGroup(null);
+    setScreen("home");
+    setAuthState("unauthenticated");
   }
 
   function handleUpdateUser(updated: CurrentUser) {
     setCurrentUser(updated);
-    if (firebaseUser) {
-      updateProfile(firebaseUser, { displayName: updated.name }).catch(() => {});
+    if (session) {
+      const next = saveSession({ ...session, displayName: updated.name });
+      setSession(next);
+      setDisplayName(next.idToken, updated.name).catch(() => {});
     }
   }
 
+  // ── Group actions ───────────────────────────────────────────────────────
   async function handleCreateGroup(group: Group) {
-    if (!firebaseUser) return;
-    try {
-      await saveGroup(firebaseUser.uid, group);
-      setSelectedGroup(group);
-      setScreen("group");
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to create group.";
-      setDataError(message);
-    }
+    if (!session) return;
+    await saveGroup(group, session.uid);
+    setGroups((prev) => [group, ...prev]);
+    setSelectedGroup(group);
+    setScreen("group");
   }
 
   async function handleUpdateGroup(group: Group) {
-    if (!firebaseUser) return;
-    try {
-      await saveGroup(firebaseUser.uid, group);
-      setSelectedGroup(group);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to save changes.";
-      setDataError(message);
-    }
+    if (!session) return;
+    await saveGroup(group, session.uid);
+    setSelectedGroup(group);
+    setGroups((prev) => prev.map((g) => (g.id === group.id ? group : g)));
+  }
+
+  async function handleDeleteGroup(groupId: string) {
+    if (!session) return;
+    await deleteGroup(groupId, session.uid);
+    setGroups((prev) => prev.filter((g) => g.id !== groupId));
+    setSelectedGroup(null);
+    setScreen("home");
   }
 
   const totalExpenses = groups.reduce((sum, g) => sum + g.expenses.length, 0);
 
+  // ── Render ──────────────────────────────────────────────────────────────
   return (
     <div className="size-full flex justify-center bg-muted overflow-hidden">
       <div className="w-full max-w-sm h-full relative overflow-hidden bg-background flex flex-col shadow-2xl">
-
-        {/* Join banner */}
-        {joinBanner && (
+        {/* Banner */}
+        {banner && (
           <div
-            className="absolute top-0 left-0 right-0 z-50 flex items-center justify-center py-3 text-sm font-medium text-white"
-            style={{ backgroundColor: "var(--primary)" }}
+            className={`absolute top-0 left-0 right-0 z-50 flex items-center justify-center py-3 px-4 text-sm font-medium text-white transition-all ${
+              banner.type === "error" ? "bg-destructive" : ""
+            }`}
+            style={
+              banner.type === "success"
+                ? { backgroundColor: "var(--primary)" }
+                : undefined
+            }
           >
-            🎉 {joinBanner}
+            {banner.type === "success" ? "🎉 " : "⚠️ "}
+            {banner.text}
           </div>
         )}
 
@@ -244,47 +316,20 @@ export default function App() {
           </div>
         )}
 
-        {/* Error from bad magic link */}
-        {authState === "unauthenticated" && linkError && (
-          <div className="absolute top-4 left-4 right-4 z-50 bg-destructive text-white text-sm px-4 py-3 rounded-2xl">
-            {linkError}
-            <button className="ml-2 underline" onClick={() => setLinkError("")}>Dismiss</button>
-          </div>
-        )}
-
-        {/* Unauthenticated */}
         {authState === "unauthenticated" && (
           <LoginScreen onProfileNeeded={() => {}} />
         )}
 
-        {/* Needs display name */}
-        {authState === "needs_profile" && firebaseUser && (
+        {authState === "needs_profile" && session && (
           <CompleteProfileScreen
-            email={firebaseUser.email ?? ""}
+            email={session.email}
             onComplete={handleCompleteProfile}
           />
         )}
 
-        {/* Data sync error */}
-        {authState === "authenticated" && dataError && (
-          <div className="absolute top-4 left-4 right-4 z-50 bg-destructive text-white text-sm px-4 py-3 rounded-2xl">
-            {dataError}
-            <button className="ml-2 underline" onClick={() => setDataError("")}>Dismiss</button>
-          </div>
-        )}
-
-        {/* Authenticated — loading groups */}
-        {authState === "authenticated" && currentUser && groupsLoading && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4">
-            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-muted-foreground">Loading your groups…</p>
-          </div>
-        )}
-
-        {/* Authenticated */}
-        {authState === "authenticated" && currentUser && !groupsLoading && (
+        {authState === "authenticated" && currentUser && (
           <>
-            {screen === "profile" ? (
+            {screen === "profile" && (
               <ProfileScreen
                 user={currentUser}
                 groupCount={groups.length}
@@ -293,17 +338,23 @@ export default function App() {
                 onLogout={handleLogout}
                 onUpdateUser={handleUpdateUser}
               />
-            ) : screen === "group" && selectedGroup ? (
+            )}
+            {screen === "group" && selectedGroup && (
               <GroupScreen
                 group={selectedGroup}
                 onBack={() => setScreen("home")}
                 onUpdate={handleUpdateGroup}
+                onDelete={handleDeleteGroup}
               />
-            ) : (
+            )}
+            {screen === "home" && (
               <HomeScreen
                 groups={groups}
                 user={currentUser}
-                onSelectGroup={(g) => { setSelectedGroup(g); setScreen("group"); }}
+                onSelectGroup={(g) => {
+                  setSelectedGroup(g);
+                  setScreen("group");
+                }}
                 onCreateGroup={handleCreateGroup}
                 onOpenProfile={() => setScreen("profile")}
               />

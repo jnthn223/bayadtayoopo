@@ -39,6 +39,8 @@ export function AddExpenseModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    if (!open) return;
+
     if (editExpense) {
       setDescription(editExpense.description);
       setAmount(String(editExpense.amount));
@@ -46,6 +48,7 @@ export function AddExpenseModal({
       setSplitType(editExpense.splitType);
       setCategory(editExpense.category);
       setDate(editExpense.date);
+
       const splits: Record<string, string> = {};
       editExpense.splits.forEach((s) => {
         splits[s.memberId] = String(s.amount);
@@ -60,8 +63,9 @@ export function AddExpenseModal({
       setDate(new Date().toISOString().slice(0, 10));
       setCustomSplits({});
     }
+
     setErrors({});
-  }, [open, editExpense, group.members]);
+  }, [open, editExpense]);
 
   const totalAmount = parseFloat(amount) || 0;
   const equalShare =
@@ -181,7 +185,6 @@ export function AddExpenseModal({
                 Amount ({group.currency})
               </label>
               <div className="relative">
-                // TODO: Add currency symbol based on group.currency
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground">
                   {currencySymbol}
                 </span>

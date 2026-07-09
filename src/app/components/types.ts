@@ -1,5 +1,6 @@
 export interface Member {
   id: string;
+  uid?: string; // Firebase UID — present for real users, absent for manually-added members
   name: string;
   color: string;
 }
