@@ -8,6 +8,8 @@ BayadTayoOpo is a group expense app for tracking shared costs, settling balances
 
 https://bayadtayoopo.web.app
 
+BayadTayoOpo runs in the browser, so no app-store installation is required. Open the site and start using it.
+
 ## Features
 
 - Google Sign-In and email magic-link sign-in
@@ -30,9 +32,9 @@ https://bayadtayoopo.web.app
 - Tailwind CSS
 - Vitest
 
-## PWA Install
+## Optional PWA Install
 
-BayadTayoOpo can be installed like an app from supported browsers.
+BayadTayoOpo can also be installed like an app from supported browsers for quicker home-screen access.
 
 On iPhone:
 
