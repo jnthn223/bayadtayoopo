@@ -54,6 +54,6 @@ export function sessionToCurrentUser(session: Session): CurrentUser {
     id: session.uid,
     name: session.displayName ?? session.email.split("@")[0],
     email: session.email,
-    color: MEMBER_COLORS[colorIndex],
+    color: session.color ?? MEMBER_COLORS[colorIndex],
   };
 }

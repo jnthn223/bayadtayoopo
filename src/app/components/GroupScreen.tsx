@@ -53,6 +53,10 @@ export function GroupScreen({
   const [addOpen, setAddOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [editGroupOpen, setEditGroupOpen] = useState(false);
+  const [groupNameInput, setGroupNameInput] = useState(group.name);
+  const [groupCurrencyInput, setGroupCurrencyInput] = useState(group.currency);
+  const [groupEditError, setGroupEditError] = useState("");
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteExpense, setDeleteExpense] = useState<Expense | null>(null);
@@ -173,6 +177,25 @@ export function GroupScreen({
     setMessageText("");
   }
 
+  function openEditGroup() {
+    setGroupNameInput(group.name);
+    setGroupCurrencyInput(group.currency);
+    setGroupEditError("");
+    setEditGroupOpen(true);
+  }
+
+  function handleSaveGroupDetails() {
+    const name = groupNameInput.trim();
+    if (!name) {
+      setGroupEditError("Group name is required");
+      return;
+    }
+
+    onUpdate({ ...group, name, currency: groupCurrencyInput });
+    setEditGroupOpen(false);
+    setGroupEditError("");
+  }
+
   function handleDeleteGroup() {
     onDelete(group.id);
     onBack();
@@ -232,6 +255,15 @@ export function GroupScreen({
                   sideOffset={6}
                   className="z-50 min-w-[160px] bg-card border border-border rounded-2xl shadow-xl overflow-hidden py-1"
                 >
+                  {isAdmin && (
+                    <DropdownMenu.Item
+                      onSelect={openEditGroup}
+                      className="flex items-center gap-3 px-4 py-3 text-sm text-foreground cursor-pointer hover:bg-muted outline-none transition-colors"
+                    >
+                      <Edit2 size={15} />
+                      Edit Details
+                    </DropdownMenu.Item>
+                  )}
                   <DropdownMenu.Item
                     onSelect={() => setConfirmDelete(true)}
                     className="flex items-center gap-3 px-4 py-3 text-sm text-destructive cursor-pointer hover:bg-destructive/10 outline-none transition-colors"
@@ -807,6 +839,78 @@ export function GroupScreen({
                 className="flex-1 py-3.5 rounded-2xl bg-destructive text-white text-sm font-semibold transition-all active:scale-95"
               >
                 Delete
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root open={editGroupOpen} onOpenChange={setEditGroupOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 bg-card rounded-t-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="sticky top-0 bg-card pt-4 pb-3 px-5 flex items-center justify-between border-b border-border">
+              <div className="w-10 h-1 bg-border rounded-full mx-auto absolute left-1/2 -translate-x-1/2 top-2" />
+              <Dialog.Title className="text-lg font-semibold text-foreground">
+                Edit Group
+              </Dialog.Title>
+              <button
+                onClick={() => setEditGroupOpen(false)}
+                className="p-2 rounded-full hover:bg-muted transition-colors"
+              >
+                <X size={18} className="text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5 pb-10">
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1.5">
+                  Group name
+                </label>
+                <input
+                  type="text"
+                  value={groupNameInput}
+                  onChange={(e) => {
+                    setGroupNameInput(e.target.value);
+                    setGroupEditError("");
+                  }}
+                  className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                />
+                {groupEditError && (
+                  <p className="text-destructive text-xs mt-1">
+                    {groupEditError}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1.5">
+                  Currency
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {["PHP", "USD", "EUR", "GBP"].map((currency) => (
+                    <button
+                      key={currency}
+                      type="button"
+                      onClick={() => setGroupCurrencyInput(currency)}
+                      className={`py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                        groupCurrencyInput === currency
+                          ? "border-primary bg-accent text-accent-foreground"
+                          : "border-border bg-input-background text-muted-foreground"
+                      }`}
+                    >
+                      {currency}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={handleSaveGroupDetails}
+                className="w-full py-4 rounded-2xl text-primary-foreground font-semibold text-base transition-all active:scale-95"
+                style={{ backgroundColor: "var(--primary)" }}
+              >
+                Save Changes
               </button>
             </div>
           </Dialog.Content>

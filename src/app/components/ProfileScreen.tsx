@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { ArrowLeft, LogOut, Edit2, Check, X, User, Mail, Shield, ChevronRight, Trash2 } from "lucide-react";
+import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { CurrentUser } from "./types";
+import { MEMBER_COLORS } from "./utils";
 
 interface Props {
   user: CurrentUser;
@@ -15,11 +16,12 @@ interface Props {
 export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout, onUpdateUser }: Props) {
   const [editName, setEditName] = useState(false);
   const [nameInput, setNameInput] = useState(user.name);
+  const [colorInput, setColorInput] = useState(user.color);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
   function handleSaveName() {
     if (!nameInput.trim()) return;
-    onUpdateUser({ ...user, name: nameInput.trim() });
+    onUpdateUser({ ...user, name: nameInput.trim(), color: colorInput });
     setEditName(false);
   }
 
@@ -59,7 +61,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
         <div className="flex flex-col items-center pb-2">
           <div
             className="w-20 h-20 rounded-full flex items-center justify-center text-3xl text-white font-bold mb-3 shadow-md"
-            style={{ backgroundColor: user.color }}
+            style={{ backgroundColor: editName ? colorInput : user.color }}
           >
             {user.name[0].toUpperCase()}
           </div>
@@ -77,7 +79,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
               <button onClick={handleSaveName} className="p-2 rounded-full bg-primary text-white">
                 <Check size={14} />
               </button>
-              <button onClick={() => { setEditName(false); setNameInput(user.name); }} className="p-2 rounded-full bg-muted">
+              <button onClick={() => { setEditName(false); setNameInput(user.name); setColorInput(user.color); }} className="p-2 rounded-full bg-muted">
                 <X size={14} className="text-muted-foreground" />
               </button>
             </div>
@@ -91,6 +93,21 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
             </button>
           )}
           <p className="text-sm text-muted-foreground mt-0.5">{user.email}</p>
+          {editName && (
+            <div className="flex gap-2 mt-3">
+              {MEMBER_COLORS.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => setColorInput(color)}
+                  className={`w-7 h-7 rounded-full border-2 transition-all ${
+                    colorInput === color ? "border-foreground scale-110" : "border-card"
+                  }`}
+                  style={{ backgroundColor: color }}
+                  title="Profile color"
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

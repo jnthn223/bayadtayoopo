@@ -287,9 +287,42 @@ export default function App() {
   function handleUpdateUser(updated: CurrentUser) {
     setCurrentUser(updated);
     if (session) {
-      const next = saveSession({ ...session, displayName: updated.name });
+      const next = saveSession({
+        ...session,
+        displayName: updated.name,
+        color: updated.color,
+      });
       setSession(next);
       setDisplayName(next.idToken, updated.name).catch(() => {});
+
+      const affectedGroups: Group[] = [];
+      const updatedGroups = groups.map((group) => {
+        let changed = false;
+        const members = group.members.map((member) => {
+          if (member.id !== updated.id && member.uid !== updated.id) {
+            return member;
+          }
+
+          changed = true;
+          return { ...member, name: updated.name, color: updated.color };
+        });
+
+        if (!changed) return group;
+
+        const nextGroup = { ...group, members };
+        affectedGroups.push(nextGroup);
+        return nextGroup;
+      });
+
+      setGroups(updatedGroups);
+      setSelectedGroup((selected) =>
+        selected
+          ? (updatedGroups.find((group) => group.id === selected.id) ?? selected)
+          : selected,
+      );
+      Promise.all(
+        affectedGroups.map((group) => saveGroup(group, session.uid)),
+      ).catch(() => {});
     }
   }
 
