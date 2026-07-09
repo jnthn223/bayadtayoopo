@@ -24,7 +24,7 @@ import {
   subscribeGroup,
 } from "../lib/groupService";
 import { MEMBER_COLORS } from "./components/utils";
-import { mergeGroupChanges } from "./components/groupMerge";
+import { compactGroupHistory, mergeGroupChanges } from "./components/groupMerge";
 import { HomeScreen } from "./components/HomeScreen";
 import { GroupScreen } from "./components/GroupScreen";
 import { LoginScreen, CompleteProfileScreen } from "./components/LoginScreen";
@@ -177,7 +177,7 @@ export default function App() {
     const latest = await fetchGroup(changed.id).catch(() => null);
     const groupToSave = latest
       ? mergeGroupChanges(base, changed, latest)
-      : changed;
+      : compactGroupHistory(changed);
 
     await saveGroup(groupToSave, session.uid);
     return groupToSave;
@@ -356,9 +356,10 @@ export default function App() {
   async function handleCreateGroup(group: Group) {
     if (!session) return;
     try {
-      await saveGroup(group, session.uid);
-      setGroups((prev) => [group, ...prev]);
-      setSelectedGroup(group);
+      const compactGroup = compactGroupHistory(group);
+      await saveGroup(compactGroup, session.uid);
+      setGroups((prev) => [compactGroup, ...prev]);
+      setSelectedGroup(compactGroup);
       setScreen("group");
       showBanner(`Created "${group.name}"`);
     } catch (err) {

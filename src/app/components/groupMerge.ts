@@ -1,7 +1,43 @@
 import type { Group } from "./types";
 
+const MAX_GROUP_MESSAGES = 200;
+const MAX_DELETED_EXPENSES = 100;
+
 function sameValue(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function timeValue(value: string): number {
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function latestByTimestamp<T>(
+  items: T[] | undefined,
+  limit: number,
+  getTimestamp: (item: T) => string,
+): T[] | undefined {
+  if (!items) return undefined;
+
+  return [...items]
+    .sort((a, b) => timeValue(getTimestamp(a)) - timeValue(getTimestamp(b)))
+    .slice(-limit);
+}
+
+export function compactGroupHistory(group: Group): Group {
+  return {
+    ...group,
+    deletedExpenses: latestByTimestamp(
+      group.deletedExpenses,
+      MAX_DELETED_EXPENSES,
+      (item) => item.deletedAt,
+    ),
+    messages: latestByTimestamp(
+      group.messages,
+      MAX_GROUP_MESSAGES,
+      (item) => item.createdAt,
+    ),
+  };
 }
 
 function mergeById<T extends { id: string }>(
@@ -57,9 +93,9 @@ export function mergeGroupChanges(
   changed: Group,
   latest: Group,
 ): Group {
-  if (!base) return changed;
+  if (!base) return compactGroupHistory(changed);
 
-  return {
+  return compactGroupHistory({
     ...latest,
     name: base.name !== changed.name ? changed.name : latest.name,
     currency:
@@ -79,5 +115,5 @@ export function mergeGroupChanges(
       latest.messages,
       (item) => item.id,
     ),
-  };
+  });
 }
