@@ -20,6 +20,7 @@ BayadTayoOpo runs in the browser, so no app-store installation is required. Open
 - Settle-up flow where owed users can mark paid and expense creators can confirm or reject
 - Group chat
 - Recent activity across groups
+- NEW! CSV tools for expense templates, imports, and exports
 - Realtime group updates
 - Installable PWA for home-screen access
 
@@ -50,6 +51,12 @@ On Android:
 3. Tap Install app or Add to Home screen.
 
 The app shell is cached for faster loading. Group data still needs network access so balances, chat, and expenses stay current.
+
+## NEW! CSV Tools
+
+Each group has CSV tools in the three-dot menu. Members can download an expense template or export existing expenses. Group admins can also import expenses from CSV after validation.
+
+CSV imports check member names, categories, currencies, split totals, and duplicate expenses before anything is added to the group.
 
 ## Local Development
 

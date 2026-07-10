@@ -295,9 +295,10 @@ export default function App() {
     }
   }
 
-  async function handleGoogleSignIn() {
+  async function handleGoogleSignIn(): Promise<AuthUser> {
     const user = await signInWithGoogle();
     await finishSignIn(user);
+    return user;
   }
 
   async function handleCompleteProfile(name: string) {
