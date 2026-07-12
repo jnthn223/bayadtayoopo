@@ -17,8 +17,8 @@ BayadTayoOpo runs in the browser, so no app-store installation is required. Open
 - Add expenses with equal or custom splits
 - Edit expenses as the expense creator
 - Delete expenses as the expense creator or group admin
-- Settle-up flow with optional bank, e-wallet, and QR payment instructions
-- Optional payment proof and reference details, reviewed by the payment recipient
+- NEW! Settle-up flow with optional bank, e-wallet, and QR payment instructions
+- NEW! Optional payment proof and reference details, reviewed by the payment recipient
 - Group chat
 - Recent activity across groups
 - NEW! CSV tools for expense templates, imports, and exports

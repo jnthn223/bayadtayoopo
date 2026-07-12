@@ -806,7 +806,7 @@ export function GroupScreen({
                 {paymentItems.length > 0 && (
                   <>
                     <p className="text-sm text-muted-foreground mb-2">
-                      Payment requests
+                      Expense repayments
                     </p>
                     {paymentItems.map(({ expense, split }) => {
                       const fromMember = getMemberById(group, split.memberId);
@@ -815,6 +815,21 @@ export function GroupScreen({
                       const isRecipient = currentMember?.id === expense.paidBy;
                       const isPending = split.paymentStatus === "pending";
                       const isRejected = split.paymentStatus === "rejected";
+                      const statusLabel = isPending
+                        ? isPayer
+                          ? "Payment submitted"
+                          : isRecipient
+                            ? "Review payment"
+                            : "Awaiting confirmation"
+                        : isRejected
+                          ? isPayer
+                            ? "Needs attention"
+                            : "Payment rejected"
+                          : isPayer
+                            ? "Payment needed"
+                            : isRecipient
+                              ? "Awaiting payment"
+                              : "Unpaid";
 
                       return (
                         <div
@@ -830,22 +845,33 @@ export function GroupScreen({
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-foreground">
-                                <span style={{ color: fromMember?.color }}>
-                                  {displayMemberName(
-                                    split.memberId,
-                                    fromMember?.name,
-                                  )}
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {" "}
-                                  pays{" "}
-                                </span>
-                                <span style={{ color: toMember?.color }}>
-                                  {displayMemberName(
-                                    expense.paidBy,
-                                    toMember?.name,
-                                  )}
-                                </span>
+                                {isPayer ? (
+                                  <>
+                                    <span style={{ color: fromMember?.color }}>You</span>
+                                    <span className="text-muted-foreground"> owe </span>
+                                    <span style={{ color: toMember?.color }}>
+                                      {toMember?.name ?? "Unknown"}
+                                    </span>
+                                  </>
+                                ) : isRecipient ? (
+                                  <>
+                                    <span style={{ color: fromMember?.color }}>
+                                      {fromMember?.name ?? "Unknown"}
+                                    </span>
+                                    <span className="text-muted-foreground"> owes </span>
+                                    <span style={{ color: toMember?.color }}>you</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span style={{ color: fromMember?.color }}>
+                                      {fromMember?.name ?? "Unknown"}
+                                    </span>
+                                    <span className="text-muted-foreground"> owes </span>
+                                    <span style={{ color: toMember?.color }}>
+                                      {toMember?.name ?? "Unknown"}
+                                    </span>
+                                  </>
+                                )}
                               </p>
                               <p className="text-xs text-muted-foreground mt-0.5 truncate">
                                 {expense.description}
@@ -871,11 +897,7 @@ export function GroupScreen({
                                 ) : (
                                   <Clock3 size={11} />
                                 )}
-                                {isPending
-                                  ? "Pending"
-                                  : isRejected
-                                    ? "Rejected"
-                                    : "Unpaid"}
+                                {statusLabel}
                               </div>
                             </div>
                           </div>
