@@ -3,12 +3,33 @@ export interface Member {
   uid?: string; // Firebase UID — present for real users, absent for manually-added members
   name: string;
   color: string;
+  paymentInstructions?: PaymentInstructions;
+}
+
+export interface PaymentInstructions {
+  method: string;
+  accountName?: string;
+  accountIdentifier?: string;
+  instructions?: string;
+  qrCodeImageId?: string;
+}
+
+export interface PaymentSubmission {
+  method: string;
+  referenceNumber?: string;
+  note?: string;
+  proofImageId?: string;
+  submittedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  rejectionReason?: string;
 }
 
 export interface Split {
   memberId: string;
   amount: number;
   paymentStatus?: "pending" | "confirmed" | "rejected";
+  paymentSubmission?: PaymentSubmission;
 }
 
 export type SplitType = "equal" | "custom";

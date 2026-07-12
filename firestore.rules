@@ -110,6 +110,30 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /groups/{groupId}/paymentImages/{imageId} {
+      function parentGroup() {
+        return get(/databases/$(database)/documents/groups/$(groupId));
+      }
+
+      function isPaymentImageGroupMember() {
+        return signedIn()
+          && parentGroup().data.memberIds.hasAny([request.auth.uid])
+          && isNotDeleted(parentGroup().data);
+      }
+
+      allow read: if isPaymentImageGroupMember();
+      allow create: if isPaymentImageGroupMember()
+        && request.resource.data.keys().hasOnly(['dataUrl', 'ownerUid', 'kind', 'createdAt'])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.kind in ['qr-code', 'payment-proof']
+        && request.resource.data.dataUrl is string
+        && request.resource.data.dataUrl.size() < 700000
+        && request.resource.data.createdAt is string;
+      allow update: if false;
+      allow delete: if isPaymentImageGroupMember()
+        && resource.data.ownerUid == request.auth.uid;
+    }
+
     // Legacy path from the early local-per-user Firestore model.
     match /users/{userId}/groups/{groupId} {
       allow read, write: if false;

@@ -220,6 +220,16 @@ export async function fsUpdate(path: string, data: Record<string, unknown>, idTo
   if (!res.ok) throw new Error(`Firestore UPDATE failed: ${res.status}`);
 }
 
+export async function fsDelete(path: string, idToken: string): Promise<void> {
+  const res = await fetch(`${FS_BASE}/${path}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Firestore DELETE failed: ${res.status}`);
+  }
+}
+
 export async function fsGetMultiple(paths: string[], idToken: string): Promise<(Record<string, unknown> | null)[]> {
   if (paths.length === 0) return [];
   const docs = paths.map((p) => `projects/${PROJECT_ID}/databases/(default)/documents/${p}`);

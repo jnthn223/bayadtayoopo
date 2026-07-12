@@ -23,6 +23,11 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { CurrentUser, Group, Expense, Split } from "./types";
 import {
+  deletePaymentImage,
+  loadPaymentImage,
+  savePaymentImage,
+} from "../../lib/paymentImageService";
+import {
   computeBalances,
   computeSettlements,
   formatCurrency,
@@ -78,6 +83,27 @@ export function GroupScreen({
     null,
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [paymentDetailsOpen, setPaymentDetailsOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [accountIdentifier, setAccountIdentifier] = useState("");
+  const [paymentNote, setPaymentNote] = useState("");
+  const [qrFile, setQrFile] = useState<File | null>(null);
+  const [paymentActionError, setPaymentActionError] = useState("");
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [submitPayment, setSubmitPayment] = useState<{
+    expense: Expense;
+    split: Split;
+  } | null>(null);
+  const [submissionMethod, setSubmissionMethod] = useState("");
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [submissionNote, setSubmissionNote] = useState("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<{
+    title: string;
+    dataUrl?: string;
+    error?: string;
+  } | null>(null);
 
   const balances = computeBalances(group);
   const settlements = computeSettlements(balances);
@@ -151,11 +177,18 @@ export function GroupScreen({
     setDeleteReasonError("");
   }
 
-  function handlePaymentStatus(
+  function reviewPayment(
     expenseId: string,
     memberId: string,
-    paymentStatus: Split["paymentStatus"],
+    paymentStatus: "confirmed" | "rejected",
   ) {
+    if (!currentMember) return;
+    const rejectionReason =
+      paymentStatus === "rejected"
+        ? window.prompt("Why are you rejecting this payment?")?.trim()
+        : undefined;
+    if (paymentStatus === "rejected" && !rejectionReason) return;
+
     onUpdate({
       ...group,
       expenses: group.expenses.map((expense) =>
@@ -164,13 +197,166 @@ export function GroupScreen({
               ...expense,
               splits: expense.splits.map((split) =>
                 split.memberId === memberId
-                  ? { ...split, paymentStatus }
+                  ? {
+                      ...split,
+                      paymentStatus,
+                      paymentSubmission: split.paymentSubmission
+                        ? {
+                            ...split.paymentSubmission,
+                            reviewedAt: new Date().toISOString(),
+                            reviewedBy: currentMember.id,
+                            rejectionReason,
+                          }
+                        : split.paymentSubmission,
+                    }
                   : split,
               ),
             }
           : expense,
       ),
     });
+  }
+
+  function openPaymentDetails() {
+    const details = currentMember?.paymentInstructions;
+    setPaymentMethod(details?.method ?? "");
+    setAccountName(details?.accountName ?? "");
+    setAccountIdentifier(details?.accountIdentifier ?? "");
+    setPaymentNote(details?.instructions ?? "");
+    setQrFile(null);
+    setPaymentActionError("");
+    setPaymentDetailsOpen(true);
+  }
+
+  async function savePaymentDetails() {
+    if (!currentMember) return;
+    if (!paymentMethod.trim()) {
+      setPaymentActionError("Enter a payment method");
+      return;
+    }
+    setPaymentSaving(true);
+    setPaymentActionError("");
+    try {
+      const existing = currentMember.paymentInstructions;
+      const qrCodeImageId = qrFile ? generateId() : existing?.qrCodeImageId;
+      if (qrFile && qrCodeImageId) {
+        await savePaymentImage(group.id, qrCodeImageId, currentUser.id, "qr-code", qrFile);
+      }
+      onUpdate({
+        ...group,
+        members: group.members.map((member) =>
+          member.id === currentMember.id
+            ? {
+                ...member,
+                paymentInstructions: {
+                  method: paymentMethod.trim(),
+                  accountName: accountName.trim() || undefined,
+                  accountIdentifier: accountIdentifier.trim() || undefined,
+                  instructions: paymentNote.trim() || undefined,
+                  qrCodeImageId,
+                },
+              }
+            : member,
+        ),
+      });
+      setPaymentDetailsOpen(false);
+    } catch (err) {
+      setPaymentActionError(err instanceof Error ? err.message : "Unable to save payment details");
+    } finally {
+      setPaymentSaving(false);
+    }
+  }
+
+  function removePaymentDetails() {
+    if (!currentMember) return;
+    const qrCodeImageId = currentMember.paymentInstructions?.qrCodeImageId;
+    onUpdate({
+      ...group,
+      members: group.members.map((member) => {
+        if (member.id !== currentMember.id) return member;
+        const { paymentInstructions: _removed, ...withoutPaymentDetails } = member;
+        return withoutPaymentDetails;
+      }),
+    });
+    if (qrCodeImageId) {
+      deletePaymentImage(group.id, qrCodeImageId).catch(() => {});
+    }
+    setPaymentDetailsOpen(false);
+  }
+
+  async function viewPaymentImage(imageId: string, title: string) {
+    setImagePreview({ title });
+    try {
+      setImagePreview({ title, dataUrl: await loadPaymentImage(group.id, imageId) });
+    } catch (err) {
+      setImagePreview({
+        title,
+        error: err instanceof Error ? err.message : "Unable to load image",
+      });
+    }
+  }
+
+  function openPaymentSubmission(expense: Expense, split: Split) {
+    const recipient = getMemberById(group, expense.paidBy);
+    setSubmitPayment({ expense, split });
+    setSubmissionMethod(recipient?.paymentInstructions?.method ?? "Cash / other");
+    setReferenceNumber("");
+    setSubmissionNote("");
+    setProofFile(null);
+    setPaymentActionError("");
+  }
+
+  async function submitPaymentForReview() {
+    if (!submitPayment || !currentMember) return;
+    if (!submissionMethod.trim()) {
+      setPaymentActionError("Enter the payment method used");
+      return;
+    }
+    setPaymentSaving(true);
+    setPaymentActionError("");
+    try {
+      const proofImageId = proofFile ? generateId() : undefined;
+      if (proofFile && proofImageId) {
+        await savePaymentImage(
+          group.id,
+          proofImageId,
+          currentUser.id,
+          "payment-proof",
+          proofFile,
+        );
+      }
+      const { expense, split } = submitPayment;
+      onUpdate({
+        ...group,
+        expenses: group.expenses.map((item) =>
+          item.id === expense.id
+            ? {
+                ...item,
+                splits: item.splits.map((itemSplit) =>
+                  itemSplit.memberId === split.memberId
+                    ? {
+                        ...itemSplit,
+                        paymentStatus: "pending",
+                        paymentSubmission: {
+                          method: submissionMethod.trim(),
+                          referenceNumber: referenceNumber.trim() || undefined,
+                          note: submissionNote.trim() || undefined,
+                          proofImageId,
+                          submittedAt: new Date().toISOString(),
+                        },
+                      }
+                    : itemSplit,
+                ),
+              }
+            : item,
+        ),
+      });
+      setSubmitPayment(null);
+    } catch (err) {
+      setPaymentActionError(err instanceof Error ? err.message : "Unable to submit payment");
+    } finally {
+      setPaymentSaving(false);
+    }
   }
 
   function handleSendMessage() {
@@ -581,6 +767,28 @@ export function GroupScreen({
 
         {tab === "settle" && (
           <div className="p-4 space-y-3">
+            {currentMember && (
+              <button
+                onClick={openPaymentDetails}
+                className="w-full text-left bg-accent rounded-2xl border border-border p-4"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {currentMember.paymentInstructions
+                        ? "Your payment instructions"
+                        : "Help people pay you"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {currentMember.paymentInstructions
+                        ? `${currentMember.paymentInstructions.method} · Tap to edit`
+                        : "Add optional bank, e-wallet, or QR details"}
+                    </p>
+                  </div>
+                  <QrCode size={20} className="text-primary shrink-0" />
+                </div>
+              </button>
+            )}
             {settlements.length === 0 && paymentItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
@@ -604,9 +812,7 @@ export function GroupScreen({
                       const fromMember = getMemberById(group, split.memberId);
                       const toMember = getMemberById(group, expense.paidBy);
                       const isPayer = currentMember?.id === split.memberId;
-                      const isCreator =
-                        currentMember?.id ===
-                        (expense.createdBy ?? expense.paidBy);
+                      const isRecipient = currentMember?.id === expense.paidBy;
                       const isPending = split.paymentStatus === "pending";
                       const isRejected = split.paymentStatus === "rejected";
 
@@ -674,15 +880,65 @@ export function GroupScreen({
                             </div>
                           </div>
 
+                          {isPayer && toMember?.paymentInstructions && (
+                            <div className="rounded-xl bg-muted p-3 text-xs space-y-1">
+                              <p className="font-medium text-foreground">How to pay</p>
+                              <p>{toMember.paymentInstructions.method}</p>
+                              {toMember.paymentInstructions.accountName && (
+                                <p>Account name: {toMember.paymentInstructions.accountName}</p>
+                              )}
+                              {toMember.paymentInstructions.accountIdentifier && (
+                                <p>Account: {toMember.paymentInstructions.accountIdentifier}</p>
+                              )}
+                              {toMember.paymentInstructions.instructions && (
+                                <p>{toMember.paymentInstructions.instructions}</p>
+                              )}
+                              {toMember.paymentInstructions.qrCodeImageId && (
+                                <button
+                                  onClick={() =>
+                                    viewPaymentImage(
+                                      toMember.paymentInstructions!.qrCodeImageId!,
+                                      "Payment QR",
+                                    )
+                                  }
+                                  className="inline-block text-primary font-medium pt-1"
+                                >
+                                  View payment QR
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {split.paymentSubmission && (isPayer || isRecipient) && (
+                            <div className="rounded-xl border border-border p-3 text-xs space-y-1">
+                              <p className="font-medium text-foreground">Payment submission</p>
+                              <p>Method: {split.paymentSubmission.method}</p>
+                              {split.paymentSubmission.referenceNumber && (
+                                <p>Reference: {split.paymentSubmission.referenceNumber}</p>
+                              )}
+                              {split.paymentSubmission.note && <p>{split.paymentSubmission.note}</p>}
+                              {split.paymentSubmission.proofImageId && (
+                                <button
+                                  onClick={() =>
+                                    viewPaymentImage(
+                                      split.paymentSubmission!.proofImageId!,
+                                      "Payment proof",
+                                    )
+                                  }
+                                  className="text-primary font-medium"
+                                >
+                                  View payment proof
+                                </button>
+                              )}
+                              {split.paymentSubmission.rejectionReason && (
+                                <p className="text-destructive">Reason: {split.paymentSubmission.rejectionReason}</p>
+                              )}
+                            </div>
+                          )}
+
                           {isPayer && !isPending && (
                             <button
-                              onClick={() =>
-                                handlePaymentStatus(
-                                  expense.id,
-                                  split.memberId,
-                                  "pending",
-                                )
-                              }
+                              onClick={() => openPaymentSubmission(expense, split)}
                               className="w-full py-2.5 rounded-xl text-primary-foreground text-sm font-semibold transition-all active:scale-95"
                               style={{ backgroundColor: "var(--primary)" }}
                             >
@@ -690,29 +946,17 @@ export function GroupScreen({
                             </button>
                           )}
 
-                          {isCreator && isPending && (
+                          {isRecipient && isPending && (
                             <div className="grid grid-cols-2 gap-2">
                               <button
-                                onClick={() =>
-                                  handlePaymentStatus(
-                                    expense.id,
-                                    split.memberId,
-                                    "confirmed",
-                                  )
-                                }
+                                onClick={() => reviewPayment(expense.id, split.memberId, "confirmed")}
                                 className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-semibold transition-all active:scale-95"
                               >
                                 <Check size={15} />
                                 Confirm
                               </button>
                               <button
-                                onClick={() =>
-                                  handlePaymentStatus(
-                                    expense.id,
-                                    split.memberId,
-                                    "rejected",
-                                  )
-                                }
+                                onClick={() => reviewPayment(expense.id, split.memberId, "rejected")}
                                 className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-destructive text-white text-sm font-semibold transition-all active:scale-95"
                               >
                                 <X size={15} />
@@ -1191,6 +1435,100 @@ export function GroupScreen({
                 </div>
               )}
             </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root open={paymentDetailsOpen} onOpenChange={setPaymentDetailsOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-4 bottom-8 z-50 bg-card rounded-3xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <Dialog.Title className="text-lg font-semibold text-foreground">Payment instructions</Dialog.Title>
+            <Dialog.Description className="text-sm text-muted-foreground mt-1 mb-4">
+              Optional details that help members of this group pay you.
+            </Dialog.Description>
+            <div className="space-y-3">
+              <input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="Method (e.g. GCash, BPI, cash)" className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary" />
+              <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Account name (optional)" className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary" />
+              <input value={accountIdentifier} onChange={(e) => setAccountIdentifier(e.target.value)} placeholder="Account or mobile number (optional)" className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary" />
+              <textarea value={paymentNote} onChange={(e) => setPaymentNote(e.target.value)} placeholder="Additional instructions (optional)" className="w-full min-h-20 px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary resize-none" />
+              <label className="block rounded-xl border border-dashed border-border p-3 text-sm text-muted-foreground cursor-pointer">
+                Payment QR image (optional)
+                <input type="file" accept="image/*" className="block mt-2 text-xs" onChange={(e) => setQrFile(e.target.files?.[0] ?? null)} />
+              </label>
+              {currentMember?.paymentInstructions?.qrCodeImageId && !qrFile && (
+                <p className="text-xs text-muted-foreground">Your current QR image will be kept.</p>
+              )}
+              {paymentActionError && <p className="text-xs text-destructive">{paymentActionError}</p>}
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-5">
+              <button onClick={() => setPaymentDetailsOpen(false)} className="py-3 rounded-2xl bg-muted text-sm font-medium">Cancel</button>
+              <button disabled={paymentSaving} onClick={savePaymentDetails} className="py-3 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50">
+                {paymentSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+            {currentMember?.paymentInstructions && (
+              <button onClick={removePaymentDetails} className="w-full mt-3 py-2 text-sm text-destructive font-medium">
+                Remove payment instructions
+              </button>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root open={!!submitPayment} onOpenChange={(open) => !open && setSubmitPayment(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-4 bottom-8 z-50 bg-card rounded-3xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <Dialog.Title className="text-lg font-semibold text-foreground">Submit payment</Dialog.Title>
+            <Dialog.Description className="text-sm text-muted-foreground mt-1 mb-4">
+              Payment proof and reference details are optional.
+            </Dialog.Description>
+            <div className="space-y-3">
+              <input value={submissionMethod} onChange={(e) => setSubmissionMethod(e.target.value)} placeholder="Payment method used" className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary" />
+              <input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="Reference number (optional)" className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary" />
+              <textarea value={submissionNote} onChange={(e) => setSubmissionNote(e.target.value)} placeholder="Note to collector (optional)" className="w-full min-h-20 px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary resize-none" />
+              <label className="block rounded-xl border border-dashed border-border p-3 text-sm text-muted-foreground cursor-pointer">
+                Payment proof (optional)
+                <input type="file" accept="image/*" className="block mt-2 text-xs" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} />
+              </label>
+              {paymentActionError && <p className="text-xs text-destructive">{paymentActionError}</p>}
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-5">
+              <button onClick={() => setSubmitPayment(null)} className="py-3 rounded-2xl bg-muted text-sm font-medium">Cancel</button>
+              <button disabled={paymentSaving} onClick={submitPaymentForReview} className="py-3 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50">
+                {paymentSaving ? "Submitting…" : "Submit"}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root open={!!imagePreview} onOpenChange={(open) => !open && setImagePreview(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-[60] bg-card rounded-3xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <Dialog.Title className="text-lg font-semibold text-foreground">
+                {imagePreview?.title}
+              </Dialog.Title>
+              <button onClick={() => setImagePreview(null)} className="p-2 rounded-full hover:bg-muted">
+                <X size={18} />
+              </button>
+            </div>
+            {!imagePreview?.dataUrl && !imagePreview?.error && (
+              <div className="py-16 text-center text-sm text-muted-foreground">Loading image…</div>
+            )}
+            {imagePreview?.error && (
+              <div className="py-10 text-center text-sm text-destructive">{imagePreview.error}</div>
+            )}
+            {imagePreview?.dataUrl && (
+              <img
+                src={imagePreview.dataUrl}
+                alt={imagePreview.title}
+                className="w-full max-h-[65vh] object-contain rounded-2xl bg-white"
+              />
+            )}
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

@@ -17,7 +17,8 @@ BayadTayoOpo runs in the browser, so no app-store installation is required. Open
 - Add expenses with equal or custom splits
 - Edit expenses as the expense creator
 - Delete expenses as the expense creator or group admin
-- Settle-up flow where owed users can mark paid and expense creators can confirm or reject
+- Settle-up flow with optional bank, e-wallet, and QR payment instructions
+- Optional payment proof and reference details, reviewed by the payment recipient
 - Group chat
 - Recent activity across groups
 - NEW! CSV tools for expense templates, imports, and exports
@@ -58,6 +59,8 @@ Each group has CSV tools in the three-dot menu. Members can download an expense 
 
 CSV imports check member names, categories, currencies, split totals, and duplicate expenses before anything is added to the group.
 
+Payment QR codes and optional proof images are compressed in the browser and stored as separate, group-protected Firestore documents. Images are kept small to stay within Firestore's per-document size limit.
+
 ## Local Development
 
 Use Node 20 or newer.
@@ -73,7 +76,6 @@ Create a `.env` file with your Firebase web app config:
 VITE_FIREBASE_API_KEY=
 VITE_FIREBASE_AUTH_DOMAIN=
 VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 ```
