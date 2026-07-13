@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { ArrowRight, Mail, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowRight, Mail, Loader2, CheckCircle2, Copy, ExternalLink, Check } from "lucide-react";
 import { sendMagicLink } from "../../lib/firebaseRest";
 import type { AuthUser } from "../../lib/firebaseRest";
 import { BrandMark, BrandWordmark } from "./Brand";
+import { detectInAppBrowser } from "../../lib/inAppBrowser";
 
 interface Props {
   onProfileNeeded: () => void; // unused but kept for API compat
@@ -15,6 +16,18 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  const [linkCopied, setLinkCopied] = useState(false);
+  const inAppBrowser = detectInAppBrowser();
+
+  async function copyBrowserLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      setError("Copying was blocked. Use the Share or ••• menu and choose Open in Browser.");
+    }
+  }
 
   async function handleSend() {
     const trimmed = email.trim();
@@ -73,22 +86,48 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
       <div className="bg-card rounded-t-3xl shadow-lg border-t border-border px-6 pt-8 pb-12">
         {!sent ? (
           <div className="space-y-4">
-            <button
-              onClick={handleGoogleSignIn}
-              disabled={googleLoading || loading}
-              className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-card border border-border text-foreground font-semibold transition-all active:scale-95 disabled:opacity-60"
-            >
-              {googleLoading ? (
-                <Loader2 size={18} className="animate-spin" />
-              ) : (
-                <>
-                  <span className="grid place-items-center size-5 rounded-full bg-white text-sm font-bold text-[#4285f4] border border-border">
-                    G
-                  </span>
-                  Continue with Google
-                </>
-              )}
-            </button>
+            {inAppBrowser ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                    <ExternalLink size={18} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      Open in {inAppBrowser.isIOS ? "Safari" : "your browser"} to use Google
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                      Google blocks sign-in inside {inAppBrowser.appName}. Tap the Share or ••• menu and choose {inAppBrowser.isIOS ? "Open in Safari" : "Open in Chrome / Browser"}, or copy this page's link below.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={copyBrowserLink}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-amber-200 bg-card text-foreground text-sm font-semibold active:scale-[0.98] transition-transform"
+                >
+                  {linkCopied ? <Check size={16} className="text-green-600" /> : <Copy size={16} />}
+                  {linkCopied ? "Link copied" : "Copy link for browser"}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleGoogleSignIn}
+                disabled={googleLoading || loading}
+                className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-card border border-border text-foreground font-semibold transition-all active:scale-95 disabled:opacity-60"
+              >
+                {googleLoading ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <>
+                    <span className="grid place-items-center size-5 rounded-full bg-white text-sm font-bold text-[#4285f4] border border-border">
+                      G
+                    </span>
+                    Continue with Google
+                  </>
+                )}
+              </button>
+            )}
 
             <div className="flex items-center gap-3">
               <div className="h-px flex-1 bg-border" />

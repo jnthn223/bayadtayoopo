@@ -13,6 +13,10 @@ export interface Session extends AuthUser {
 export function saveSession(user: AuthUser): Session {
   const session: Session = { ...user, expiresAt: Date.now() + 55 * 60 * 1000 }; // 55 min
   localStorage.setItem(KEY, JSON.stringify(session));
+  // Firebase recommends clearing the temporary email after an email-link sign-in.
+  // Clearing it for every successful sign-in also prevents Google sessions from
+  // leaving an unrelated address behind for a future invitation link.
+  localStorage.removeItem("emailForSignIn");
   return session;
 }
 

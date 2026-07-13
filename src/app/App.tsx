@@ -106,9 +106,10 @@ export default function App() {
 
       // 1. Magic link callback?
       if (isMagicLink()) {
-        let email = localStorage.getItem("emailForSignIn") ?? "";
+        let email = (localStorage.getItem("emailForSignIn") ?? "").trim();
+        let usedStoredEmail = !!email;
         if (!email) {
-          email = window.prompt("Enter your email to complete sign-in:") ?? "";
+          email = (window.prompt("Enter the email address this sign-in link was sent to:") ?? "").trim();
         }
         if (!email) {
           setAuthState("unauthenticated");
@@ -116,7 +117,37 @@ export default function App() {
         }
 
         try {
-          const user = await completeMagicLink(email);
+          let user;
+          try {
+            user = await completeMagicLink(email);
+          } catch (error) {
+            const message = error instanceof Error ? error.message.toLowerCase() : "";
+            const code = typeof error === "object" && error !== null && "code" in error
+              ? String((error as { code?: unknown }).code)
+              : "";
+            const emailMismatch =
+              message.includes("email provided does not match") ||
+              message.includes("email address does not match") ||
+              code === "auth/invalid-email";
+
+            if (!usedStoredEmail || !emailMismatch) throw error;
+
+            // A prior sign-in attempt can leave a different address in this
+            // browser. Discard it and let the recipient retry the same link.
+            localStorage.removeItem("emailForSignIn");
+            const correctedEmail = (
+              window.prompt(
+                "This link was sent to a different email address. Enter the exact recipient email:",
+              ) ?? ""
+            ).trim();
+            if (!correctedEmail) {
+              setAuthState("unauthenticated");
+              return;
+            }
+            email = correctedEmail;
+            usedStoredEmail = false;
+            user = await completeMagicLink(email);
+          }
           const newSession = saveSession(user);
           setSession(newSession);
 
@@ -140,11 +171,15 @@ export default function App() {
           return;
         } catch (err) {
           showBanner(
-            err instanceof Error ? err.message : "Sign-in failed",
+            err instanceof Error && err.message.toLowerCase().includes("email")
+              ? "That email does not match this magic link. Reload the page and enter the exact address that received it."
+              : err instanceof Error
+                ? err.message
+                : "Sign-in failed",
             "error",
           );
           setAuthState("unauthenticated");
-          window.history.replaceState({}, "", window.location.pathname);
+          // Keep the link parameters so a mistyped email can be retried after reload.
           return;
         }
       }
