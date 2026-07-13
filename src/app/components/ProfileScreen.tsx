@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight } from "lucide-react";
+import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { CurrentUser } from "./types";
 import { MEMBER_COLORS } from "./utils";
+import { UserAvatar } from "./UserAvatar";
 
 interface Props {
   user: CurrentUser;
@@ -17,12 +18,18 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
   const [editName, setEditName] = useState(false);
   const [nameInput, setNameInput] = useState(user.name);
   const [colorInput, setColorInput] = useState(user.color);
+  const [avatarSeedInput, setAvatarSeedInput] = useState(user.avatarSeed);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
 
   function handleSaveName() {
     if (!nameInput.trim()) return;
-    onUpdateUser({ ...user, name: nameInput.trim(), color: colorInput });
+    onUpdateUser({
+      ...user,
+      name: nameInput.trim(),
+      color: colorInput,
+      avatarSeed: avatarSeedInput,
+    });
     setEditName(false);
   }
 
@@ -60,12 +67,20 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
 
         {/* Avatar + name */}
         <div className="flex flex-col items-center pb-2">
-          <div
-            className="w-20 h-20 rounded-full flex items-center justify-center text-3xl text-white font-bold mb-3 shadow-md"
-            style={{ backgroundColor: editName ? colorInput : user.color }}
+          <button
+            type="button"
+            onClick={() => setEditName(true)}
+            disabled={editName}
+            className="rounded-full mb-3 transition-transform active:scale-95 disabled:active:scale-100"
+            aria-label="Edit profile and avatar"
           >
-            {user.name[0].toUpperCase()}
-          </div>
+            <UserAvatar
+              name={editName ? nameInput || user.name : user.name}
+              color={editName ? colorInput : user.color}
+              seed={editName ? avatarSeedInput : user.avatarSeed}
+              className="w-20 h-20 rounded-full shadow-md"
+            />
+          </button>
 
           {editName ? (
             <div className="flex items-center gap-2 mt-1">
@@ -80,7 +95,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
               <button onClick={handleSaveName} className="p-2 rounded-full bg-primary text-white">
                 <Check size={14} />
               </button>
-              <button onClick={() => { setEditName(false); setNameInput(user.name); setColorInput(user.color); }} className="p-2 rounded-full bg-muted">
+              <button onClick={() => { setEditName(false); setNameInput(user.name); setColorInput(user.color); setAvatarSeedInput(user.avatarSeed); }} className="p-2 rounded-full bg-muted">
                 <X size={14} className="text-muted-foreground" />
               </button>
             </div>
@@ -95,18 +110,27 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
           )}
           <p className="text-sm text-muted-foreground mt-0.5">{user.email}</p>
           {editName && (
-            <div className="flex gap-2 mt-3">
-              {MEMBER_COLORS.map((color) => (
-                <button
-                  key={color}
-                  onClick={() => setColorInput(color)}
-                  className={`w-7 h-7 rounded-full border-2 transition-all ${
-                    colorInput === color ? "border-foreground scale-110" : "border-card"
-                  }`}
-                  style={{ backgroundColor: color }}
-                  title="Profile color"
-                />
-              ))}
+            <div className="flex flex-col items-center gap-3 mt-3">
+              <button
+                onClick={() => setAvatarSeedInput(crypto.randomUUID())}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-accent text-accent-foreground text-xs font-semibold active:scale-95 transition-all"
+              >
+                <Shuffle size={14} />
+                Randomize avatar
+              </button>
+              <div className="flex gap-2">
+                {MEMBER_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => setColorInput(color)}
+                    className={`w-7 h-7 rounded-full border-2 transition-all ${
+                      colorInput === color ? "border-foreground scale-110" : "border-card"
+                    }`}
+                    style={{ backgroundColor: color }}
+                    title="Avatar background color"
+                  />
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -182,6 +206,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
             <Dialog.Description className="text-sm text-muted-foreground space-y-3">
               <span className="block">
                 BayadTayoOpo stores your email, display name, profile color,
+                avatar selection,
                 group memberships, expenses, settlements, messages, and activity
                 history so your groups can sync across devices and members.
               </span>
@@ -190,7 +215,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
                 your personal data.
               </span>
               <span className="block">
-                You can update your display name and profile color from this
+                You can update your display name, avatar, and profile color from this
                 profile screen. Group data remains available to other members of
                 the same group.
               </span>

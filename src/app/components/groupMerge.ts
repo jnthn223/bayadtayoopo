@@ -98,6 +98,10 @@ export function mergeGroupChanges(
   return compactGroupHistory({
     ...latest,
     name: base.name !== changed.name ? changed.name : latest.name,
+    avatarSeed:
+      base.avatarSeed !== changed.avatarSeed
+        ? changed.avatarSeed
+        : latest.avatarSeed,
     currency:
       base.currency !== changed.currency ? changed.currency : latest.currency,
     adminId: base.adminId !== changed.adminId ? changed.adminId : latest.adminId,

@@ -6,13 +6,17 @@ import {
   Receipt,
   Trash2,
   Users,
+  Clock3,
 } from "lucide-react";
 import type { Group, CurrentUser } from "./types";
 import { BrandWordmark } from "./Brand";
+import { UserAvatar } from "./UserAvatar";
+import { GroupAvatar } from "./GroupAvatar";
 import {
   formatCurrency,
   getMemberById,
   getTotalExpenses,
+  getUnsettledPaymentSummary,
 } from "./utils";
 import { CreateGroupModal } from "./CreateGroupModal";
 
@@ -118,10 +122,14 @@ export function HomeScreen({
           </div>
           <button
             onClick={onOpenProfile}
-            className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm transition-all active:scale-95"
-            style={{ backgroundColor: user.color }}
+            className="w-10 h-10 rounded-full shadow-sm transition-all active:scale-95 overflow-hidden"
           >
-            {user.name[0].toUpperCase()}
+            <UserAvatar
+              name={user.name}
+              color={user.color}
+              seed={user.avatarSeed}
+              className="w-full h-full rounded-full"
+            />
           </button>
         </div>
       </div>
@@ -156,6 +164,7 @@ export function HomeScreen({
             <div className="space-y-3">
               {groups.map((group) => {
                 const total = getTotalExpenses(group);
+                const unsettled = getUnsettledPaymentSummary(group, user.id);
 
                 return (
                   <button
@@ -163,15 +172,11 @@ export function HomeScreen({
                     onClick={() => onSelectGroup(group)}
                     className="w-full bg-card rounded-2xl border border-border p-4 flex items-center gap-4 text-left hover:border-primary/40 hover:shadow-sm transition-all active:scale-[0.99]"
                   >
-                    <div
-                      className="w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold text-white shrink-0"
-                      style={{
-                        backgroundColor:
-                          group.members[0]?.color ?? "var(--primary)",
-                      }}
-                    >
-                      {group.name[0].toUpperCase()}
-                    </div>
+                    <GroupAvatar
+                      name={group.name}
+                      seed={group.avatarSeed}
+                      className="w-12 h-12 rounded-2xl text-lg shrink-0"
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">
                         {group.name}
@@ -179,13 +184,13 @@ export function HomeScreen({
                       <div className="flex items-center gap-2 mt-1">
                         <div className="flex -space-x-1.5">
                           {group.members.slice(0, 4).map((m) => (
-                            <div
+                            <UserAvatar
                               key={m.id}
-                              className="w-5 h-5 rounded-full border border-card flex items-center justify-center text-[9px] text-white font-bold"
-                              style={{ backgroundColor: m.color }}
-                            >
-                              {m.name[0].toUpperCase()}
-                            </div>
+                              name={m.name}
+                              color={m.color}
+                              seed={m.avatarSeed}
+                              className="w-5 h-5 rounded-full border border-card text-[9px]"
+                            />
                           ))}
                         </div>
                         <span className="text-xs text-muted-foreground">
@@ -193,6 +198,19 @@ export function HomeScreen({
                           {group.expenses.length} expenses
                         </span>
                       </div>
+                      {unsettled.count > 0 && (
+                        <div
+                          className={`inline-flex items-center gap-1.5 mt-2 px-2 py-1 rounded-full text-[11px] font-semibold ${
+                            unsettled.rejectedCount > 0
+                              ? "bg-destructive/10 text-destructive"
+                              : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          <Clock3 size={11} />
+                          {unsettled.count} unsettled payment
+                          {unsettled.count === 1 ? "" : "s"}
+                        </div>
+                      )}
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-sm font-semibold text-foreground">

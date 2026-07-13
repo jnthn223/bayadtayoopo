@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Group } from "./types";
 import {
+  allocateCustomShares,
   computeBalances,
   computeSettlements,
   formatCurrency,
   getCurrencySymbol,
   getMemberById,
   getTotalExpenses,
+  getUnsettledPaymentSummary,
+  mergeGroupMember,
 } from "./utils";
 
 const group: Group = {
@@ -55,6 +58,46 @@ const group: Group = {
 };
 
 describe("expense business logic", () => {
+  it("redistributes the remaining custom amount across non-fixed members", () => {
+    expect(
+      allocateCustomShares(
+        ["you", "christian", "fitz", "lara", "angelica", "djulliane"],
+        1998,
+        { christian: 700 },
+      ),
+    ).toEqual({
+      christian: 700,
+      you: 259.6,
+      fitz: 259.6,
+      lara: 259.6,
+      angelica: 259.6,
+      djulliane: 259.6,
+    });
+
+    expect(
+      allocateCustomShares(
+        ["you", "christian", "fitz", "lara", "angelica", "djulliane"],
+        1998,
+        { christian: 700, fitz: 300 },
+      ),
+    ).toEqual({
+      christian: 700,
+      fitz: 300,
+      you: 249.5,
+      lara: 249.5,
+      angelica: 249.5,
+      djulliane: 249.5,
+    });
+  });
+
+  it("allocates only among included members and keeps cent totals exact", () => {
+    const allocation = allocateCustomShares(["you", "christian", "fitz"], 10, {
+      christian: 3,
+    });
+    expect(allocation).toEqual({ christian: 3, you: 3.5, fitz: 3.5 });
+    expect(Object.values(allocation).reduce((sum, amount) => sum + amount, 0)).toBe(10);
+  });
+
   it("computes balances and excludes confirmed repayments from outstanding debt", () => {
     expect(computeBalances(group)).toEqual([
       { memberId: "alice", memberName: "Alice", net: 60 },
@@ -114,5 +157,129 @@ describe("expense business logic", () => {
     expect(getMemberById(group, "bob")?.name).toBe("Bob");
     expect(getMemberById(group, "missing")).toBeUndefined();
     expect(getTotalExpenses(group)).toBe(150);
+  });
+
+  it("summarizes only the current member's unconfirmed repayments", () => {
+    expect(getUnsettledPaymentSummary(group, "carol")).toEqual({
+      count: 2,
+      amount: 50,
+      pendingCount: 1,
+      rejectedCount: 0,
+    });
+    expect(getUnsettledPaymentSummary(group, "alice")).toEqual({
+      count: 0,
+      amount: 0,
+      pendingCount: 0,
+      rejectedCount: 0,
+    });
+  });
+
+  it("respects the payer selected when an admin records an expense", () => {
+    const createdForAnotherPayer: Group = {
+      ...group,
+      expenses: [
+        {
+          ...group.expenses[0],
+          paidBy: "alice",
+          createdBy: "bob",
+          splits: [
+            { memberId: "alice", amount: 30 },
+            { memberId: "bob", amount: 30 },
+            { memberId: "carol", amount: 30 },
+          ],
+        },
+      ],
+    };
+
+    expect(computeBalances(createdForAnotherPayer)).toEqual([
+      { memberId: "alice", memberName: "Alice", net: 60 },
+      { memberId: "bob", memberName: "Bob", net: -30 },
+      { memberId: "carol", memberName: "Carol", net: -30 },
+    ]);
+    expect(getUnsettledPaymentSummary(createdForAnotherPayer, "bob")).toEqual({
+      count: 1,
+      amount: 30,
+      pendingCount: 0,
+      rejectedCount: 0,
+    });
+  });
+
+  it("assigns an admin-recorded expense to the member who actually paid", () => {
+    const pizzaParty: Group = {
+      ...group,
+      members: [
+        { id: "you", uid: "you", name: "You", color: "#111111" },
+        { id: "christian", uid: "christian", name: "Christian", color: "#222222" },
+        { id: "fitz", uid: "fitz", name: "Fitz", color: "#333333" },
+      ],
+      expenses: [
+        {
+          id: "pizza",
+          description: "Pizza Party",
+          amount: 1998,
+          paidBy: "christian",
+          createdBy: "you",
+          splitType: "custom",
+          category: "food",
+          date: "2026-01-04",
+          splits: [
+            { memberId: "you", amount: 649 },
+            { memberId: "christian", amount: 700 },
+            { memberId: "fitz", amount: 649 },
+          ],
+        },
+      ],
+    };
+
+    expect(computeBalances(pizzaParty)).toEqual([
+      { memberId: "you", memberName: "You", net: -649 },
+      { memberId: "christian", memberName: "Christian", net: 1298 },
+      { memberId: "fitz", memberName: "Fitz", net: -649 },
+    ]);
+  });
+
+  it("merges a placeholder into a joined member without losing expense amounts", () => {
+    const withPlaceholder: Group = {
+      ...group,
+      members: [
+        ...group.members,
+        { id: "nathan-placeholder", name: "Nathan", color: "#444444" },
+        { id: "nate-account", uid: "nate-uid", name: "Nate", color: "#555555" },
+      ],
+      expenses: [
+        {
+          ...group.expenses[0],
+          paidBy: "nathan-placeholder",
+          splits: [
+            { memberId: "alice", amount: 30 },
+            { memberId: "nathan-placeholder", amount: 30 },
+            { memberId: "nate-account", amount: 30 },
+          ],
+        },
+      ],
+      messages: [
+        {
+          id: "message-1",
+          memberId: "nathan-placeholder",
+          text: "Hello",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+
+    const merged = mergeGroupMember(
+      withPlaceholder,
+      "nathan-placeholder",
+      "nate-account",
+    );
+
+    expect(merged.members.some((member) => member.id === "nathan-placeholder"))
+      .toBe(false);
+    expect(merged.expenses[0].paidBy).toBe("nate-account");
+    expect(
+      merged.expenses[0].splits.find((split) => split.memberId === "nate-account")
+        ?.amount,
+    ).toBe(60);
+    expect(merged.messages?.[0].memberId).toBe("nate-account");
   });
 });

@@ -3,6 +3,9 @@ export interface Member {
   uid?: string; // Firebase UID — present for real users, absent for manually-added members
   name: string;
   color: string;
+  avatarSeed?: string;
+  claimCode?: string;
+  claimedFromPlaceholder?: boolean;
   paymentInstructions?: PaymentInstructions;
 }
 
@@ -30,6 +33,8 @@ export interface Split {
   amount: number;
   paymentStatus?: "pending" | "confirmed" | "rejected";
   paymentSubmission?: PaymentSubmission;
+  confirmedAt?: string;
+  confirmedBy?: string;
 }
 
 export type SplitType = "equal" | "custom";
@@ -52,11 +57,19 @@ export interface CurrentUser {
   name: string;
   email: string;
   color: string;
+  avatarSeed?: string;
+}
+
+export interface UserProfile {
+  name?: string;
+  color?: string;
+  avatarSeed?: string;
 }
 
 export interface Group {
   id: string;
   name: string;
+  avatarSeed?: string;
   adminId?: string;
   members: Member[];
   expenses: Expense[];

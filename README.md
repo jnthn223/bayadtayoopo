@@ -13,7 +13,9 @@ BayadTayoOpo runs in the browser, so no app-store installation is required. Open
 ## Features
 
 - Google Sign-In and email magic-link sign-in
+- Randomizable profile avatars that sync across devices and groups
 - Create groups and invite members with QR links
+- Add pending members before they join, with personal claim links and safe member merging
 - Add expenses with equal or custom splits
 - Edit expenses as the expense creator
 - Delete expenses as the expense creator or group admin
@@ -63,7 +65,7 @@ Payment QR codes and optional proof images are compressed in the browser and sto
 
 ## Local Development
 
-Use Node 20 or newer.
+Use Node 22 or newer.
 
 ```bash
 npm install

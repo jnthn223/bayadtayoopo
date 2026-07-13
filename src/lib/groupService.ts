@@ -7,7 +7,7 @@ import { doc as fsDoc, onSnapshot } from "firebase/firestore";
 import { fsGet, fsSet, fsUpdate, fsGetMultiple } from "./firebaseRest";
 import { getValidIdToken } from "./auth";
 import { db } from "./firebase";
-import type { Group, Member } from "../app/components/types";
+import type { Group, Member, UserProfile } from "../app/components/types";
 import { compactGroupHistory } from "../app/components/groupMerge";
 import { MEMBER_COLORS, generateId } from "../app/components/utils";
 
@@ -26,15 +26,44 @@ async function getUserGroupIds(uid: string, idToken: string): Promise<string[]> 
   return (doc?.groupIds as string[] | undefined) ?? [];
 }
 
+async function getUserDocument(
+  uid: string,
+  idToken: string,
+): Promise<Record<string, unknown>> {
+  return (await fsGet(`users/${uid}`, idToken)) ?? {};
+}
+
 async function addGroupIdToUser(uid: string, groupId: string, idToken: string): Promise<void> {
-  const existing = await getUserGroupIds(uid, idToken);
+  const user = await getUserDocument(uid, idToken);
+  const existing = (user.groupIds as string[] | undefined) ?? [];
   if (existing.includes(groupId)) return;
-  await fsSet(`users/${uid}`, { groupIds: [...existing, groupId] }, idToken);
+  await fsSet(`users/${uid}`, { ...user, groupIds: [...existing, groupId] }, idToken);
 }
 
 async function removeGroupIdFromUser(uid: string, groupId: string, idToken: string): Promise<void> {
-  const existing = await getUserGroupIds(uid, idToken);
-  await fsSet(`users/${uid}`, { groupIds: existing.filter((id) => id !== groupId) }, idToken);
+  const user = await getUserDocument(uid, idToken);
+  const existing = (user.groupIds as string[] | undefined) ?? [];
+  await fsSet(
+    `users/${uid}`,
+    { ...user, groupIds: existing.filter((id) => id !== groupId) },
+    idToken,
+  );
+}
+
+export async function loadUserProfile(uid: string): Promise<UserProfile> {
+  const user = await getUserDocument(uid, await token());
+  return {
+    name: typeof user.name === "string" ? user.name : undefined,
+    color: typeof user.color === "string" ? user.color : undefined,
+    avatarSeed:
+      typeof user.avatarSeed === "string" ? user.avatarSeed : undefined,
+  };
+}
+
+export async function saveUserProfile(uid: string, profile: UserProfile): Promise<void> {
+  const idToken = await token();
+  const user = await getUserDocument(uid, idToken);
+  await fsSet(`users/${uid}`, { ...user, ...profile, groupIds: user.groupIds ?? [] }, idToken);
 }
 
 // ─── Group document ────────────────────────────────────────────────────────
@@ -48,7 +77,11 @@ function packGroup(group: Group): Record<string, unknown> {
 
   return {
     data: JSON.stringify(compactGroup),
-    memberIds: compactGroup.members.map((m) => m.uid ?? m.id),
+    memberIds: compactGroup.members.flatMap((member) =>
+      member.uid && member.claimedFromPlaceholder
+        ? [member.uid, member.id]
+        : [member.uid ?? member.id],
+    ),
     adminUid: admin?.uid ?? admin?.id ?? firstMember?.uid ?? firstMember?.id,
     deleted: false,
     updatedAt: new Date().toISOString(),
@@ -120,7 +153,10 @@ export async function joinGroup(
   groupId: string,
   uid: string,
   memberName: string,
-  memberColor: string
+  memberColor: string,
+  avatarSeed?: string,
+  claimMemberId?: string,
+  claimCode?: string,
 ): Promise<Group | null> {
   const idToken = await token();
   const doc = await fsGet(`groups/${groupId}`, idToken);
@@ -131,13 +167,37 @@ export async function joinGroup(
 
   const alreadyMember = group.members.some((m) => (m.uid ?? m.id) === uid);
   if (!alreadyMember) {
-    const newMember: Member = {
-      id: generateId(),
-      uid,
-      name: memberName,
-      color: memberColor,
-    };
-    group.members = [...group.members, newMember];
+    if (claimMemberId) {
+      const placeholder = group.members.find(
+        (member) =>
+          member.id === claimMemberId &&
+          !member.uid &&
+          member.claimCode === claimCode,
+      );
+      if (!placeholder) throw new Error("This personal invite is invalid or already claimed");
+      group.members = group.members.map((member) =>
+        member.id === placeholder.id
+          ? {
+              ...member,
+              uid,
+              name: memberName,
+              color: memberColor,
+              avatarSeed,
+              claimCode: undefined,
+              claimedFromPlaceholder: true,
+            }
+          : member,
+      );
+    } else {
+      const newMember: Member = {
+        id: generateId(),
+        uid,
+        name: memberName,
+        color: memberColor,
+        avatarSeed,
+      };
+      group.members = [...group.members, newMember];
+    }
     await fsSet(`groups/${group.id}`, packGroup(group), idToken);
   }
 

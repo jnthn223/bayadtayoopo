@@ -25,8 +25,15 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
     setError("");
     setLoading(true);
 
-    // continueUrl is the current page; magic link will return here with oobCode params
-    const continueUrl = window.location.href.split("?")[0];
+    // Preserve group/placeholder claim context when the email is opened elsewhere.
+    const continueUrlValue = new URL(window.location.pathname, window.location.origin);
+    const joinGroupId = localStorage.getItem("pendingJoinGroupId");
+    const claimMemberId = localStorage.getItem("pendingClaimMemberId");
+    const claimCode = localStorage.getItem("pendingClaimCode");
+    if (joinGroupId) continueUrlValue.searchParams.set("joinGroupId", joinGroupId);
+    if (claimMemberId) continueUrlValue.searchParams.set("claimMemberId", claimMemberId);
+    if (claimCode) continueUrlValue.searchParams.set("claimCode", claimCode);
+    const continueUrl = continueUrlValue.toString();
 
     try {
       await sendMagicLink(trimmed, continueUrl);

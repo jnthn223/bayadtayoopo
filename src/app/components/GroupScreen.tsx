@@ -17,11 +17,14 @@ import {
   MoreVertical,
   Upload,
   UserPlus,
+  Shuffle,
   X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { CurrentUser, Group, Expense, Split } from "./types";
+import { UserAvatar } from "./UserAvatar";
+import { GroupAvatar } from "./GroupAvatar";
 import {
   deletePaymentImage,
   loadPaymentImage,
@@ -33,8 +36,11 @@ import {
   formatCurrency,
   CATEGORY_ICONS,
   generateId,
+  getExpensePayerId,
   getMemberById,
   getTotalExpenses,
+  MEMBER_COLORS,
+  mergeGroupMember,
 } from "./utils";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { QRModal } from "./QRModal";
@@ -69,6 +75,9 @@ export function GroupScreen({
   const [editGroupOpen, setEditGroupOpen] = useState(false);
   const [groupNameInput, setGroupNameInput] = useState(group.name);
   const [groupCurrencyInput, setGroupCurrencyInput] = useState(group.currency);
+  const [groupAvatarSeedInput, setGroupAvatarSeedInput] = useState(
+    group.avatarSeed,
+  );
   const [groupEditError, setGroupEditError] = useState("");
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -92,6 +101,10 @@ export function GroupScreen({
   const [paymentActionError, setPaymentActionError] = useState("");
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [submitPayment, setSubmitPayment] = useState<{
+    expense: Expense;
+    split: Split;
+  } | null>(null);
+  const [creatorPaidConfirmation, setCreatorPaidConfirmation] = useState<{
     expense: Expense;
     split: Split;
   } | null>(null);
@@ -123,7 +136,7 @@ export function GroupScreen({
     expense.splits
       .filter(
         (split) =>
-          split.memberId !== expense.paidBy &&
+          split.memberId !== getExpensePayerId(expense) &&
           split.amount > 0.005 &&
           split.paymentStatus !== "confirmed",
       )
@@ -189,6 +202,7 @@ export function GroupScreen({
         : undefined;
     if (paymentStatus === "rejected" && !rejectionReason) return;
 
+    const reviewedAt = new Date().toISOString();
     onUpdate({
       ...group,
       expenses: group.expenses.map((expense) =>
@@ -200,10 +214,12 @@ export function GroupScreen({
                   ? {
                       ...split,
                       paymentStatus,
+                      confirmedAt: paymentStatus === "confirmed" ? reviewedAt : undefined,
+                      confirmedBy: paymentStatus === "confirmed" ? currentMember.id : undefined,
                       paymentSubmission: split.paymentSubmission
                         ? {
                             ...split.paymentSubmission,
-                            reviewedAt: new Date().toISOString(),
+                            reviewedAt,
                             reviewedBy: currentMember.id,
                             rejectionReason,
                           }
@@ -215,6 +231,42 @@ export function GroupScreen({
           : expense,
       ),
     });
+  }
+
+  function confirmBorrowerPaidByCreator() {
+    if (!creatorPaidConfirmation || !currentMember) return;
+    const { expense: targetExpense, split: targetSplit } = creatorPaidConfirmation;
+    const confirmedAt = new Date().toISOString();
+
+    onUpdate({
+      ...group,
+      expenses: group.expenses.map((expense) =>
+        expense.id === targetExpense.id
+          ? {
+              ...expense,
+              splits: expense.splits.map((split) =>
+                split.memberId === targetSplit.memberId
+                  ? {
+                      ...split,
+                      paymentStatus: "confirmed",
+                      confirmedAt,
+                      confirmedBy: currentMember.id,
+                      paymentSubmission: split.paymentSubmission
+                        ? {
+                            ...split.paymentSubmission,
+                            reviewedAt: confirmedAt,
+                            reviewedBy: currentMember.id,
+                            rejectionReason: undefined,
+                          }
+                        : undefined,
+                    }
+                  : split,
+              ),
+            }
+          : expense,
+      ),
+    });
+    setCreatorPaidConfirmation(null);
   }
 
   function openPaymentDetails() {
@@ -297,7 +349,7 @@ export function GroupScreen({
   }
 
   function openPaymentSubmission(expense: Expense, split: Split) {
-    const recipient = getMemberById(group, expense.paidBy);
+    const recipient = getMemberById(group, getExpensePayerId(expense));
     setSubmitPayment({ expense, split });
     setSubmissionMethod(recipient?.paymentInstructions?.method ?? "Cash / other");
     setReferenceNumber("");
@@ -378,9 +430,62 @@ export function GroupScreen({
     setMessageText("");
   }
 
+  function handleAddPendingMember(name: string): string | undefined {
+    if (!isAdmin) return "Only the group admin can add pending members";
+    const normalized = name.trim().toLowerCase();
+    if (group.members.some((member) => member.name.trim().toLowerCase() === normalized)) {
+      return "A member with that name already exists";
+    }
+    const index = group.members.length % MEMBER_COLORS.length;
+    onUpdate({
+      ...group,
+      members: [
+        ...group.members,
+        {
+          id: generateId(),
+          name: name.trim(),
+          color: MEMBER_COLORS[index],
+          avatarSeed: crypto.randomUUID(),
+          claimCode: crypto.randomUUID(),
+        },
+      ],
+    });
+    return undefined;
+  }
+
+  function handleMergePendingMember(pendingId: string, joinedId: string) {
+    if (!isAdmin) return;
+    const pending = group.members.find((member) => member.id === pendingId);
+    const joined = group.members.find((member) => member.id === joinedId);
+    if (!pending || pending.uid || !joined?.uid) return;
+    onUpdate(mergeGroupMember(group, pendingId, joinedId));
+  }
+
+  function handleDeletePendingMember(memberId: string): string | undefined {
+    if (!isAdmin) return "Only the group admin can remove pending members";
+    const isUsed =
+      group.expenses.some(
+        (expense) =>
+          expense.paidBy === memberId ||
+          expense.createdBy === memberId ||
+          expense.splits.some((split) => split.memberId === memberId),
+      ) ||
+      (group.messages ?? []).some((message) => message.memberId === memberId) ||
+      (group.deletedExpenses ?? []).some(
+        (expense) => expense.deletedBy === memberId,
+      );
+    if (isUsed) return "This member has group activity. Merge them instead of deleting them.";
+    onUpdate({
+      ...group,
+      members: group.members.filter((member) => member.id !== memberId),
+    });
+    return undefined;
+  }
+
   function openEditGroup() {
     setGroupNameInput(group.name);
     setGroupCurrencyInput(group.currency);
+    setGroupAvatarSeedInput(group.avatarSeed);
     setGroupEditError("");
     setEditGroupOpen(true);
   }
@@ -392,7 +497,12 @@ export function GroupScreen({
       return;
     }
 
-    onUpdate({ ...group, name, currency: groupCurrencyInput });
+    onUpdate({
+      ...group,
+      name,
+      currency: groupCurrencyInput,
+      avatarSeed: groupAvatarSeedInput,
+    });
     setEditGroupOpen(false);
     setGroupEditError("");
   }
@@ -554,18 +664,25 @@ export function GroupScreen({
           </div>
         </div>
 
-        <h1 className="text-foreground mb-1">{group.name}</h1>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <GroupAvatar
+            name={group.name}
+            seed={group.avatarSeed}
+            className="w-12 h-12 rounded-2xl shrink-0"
+          />
+          <div className="min-w-0">
+            <h1 className="text-foreground mb-1 truncate">{group.name}</h1>
+            <div className="flex items-center gap-3 flex-wrap">
           <div className="flex -space-x-2">
             {group.members.slice(0, 5).map((m) => (
-              <div
+              <UserAvatar
                 key={m.id}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-xs text-white font-medium border-2 border-card"
-                style={{ backgroundColor: m.color }}
-                title={m.name}
-              >
-                {m.name[0].toUpperCase()}
-              </div>
+                name={m.name}
+                color={m.color}
+                seed={m.avatarSeed}
+                className={`w-7 h-7 rounded-full text-xs border-2 ${m.uid || m.id === currentUser.id ? "border-card" : "border-amber-400"}`}
+                title={`${m.name}${m.uid || m.id === currentUser.id ? "" : " (pending)"}`}
+              />
             ))}
           </div>
           <span className="text-sm text-muted-foreground">
@@ -575,6 +692,8 @@ export function GroupScreen({
           <span className="text-sm font-medium text-foreground">
             {formatCurrency(total, group.currency)} total
           </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -631,7 +750,8 @@ export function GroupScreen({
                   </p>
                   <div className="space-y-2">
                     {expensesByDate[date].map((exp) => {
-                      const payer = getMemberById(group, exp.paidBy);
+                      const payerId = getExpensePayerId(exp);
+                      const payer = getMemberById(group, payerId);
                       const isCreator =
                         currentMember?.id === (exp.createdBy ?? exp.paidBy);
                       return (
@@ -652,7 +772,7 @@ export function GroupScreen({
                                 className="font-medium"
                                 style={{ color: payer?.color }}
                               >
-                                {displayMemberName(exp.paidBy, payer?.name)}
+                                {displayMemberName(payerId, payer?.name)}
                               </span>{" "}
                               ·{" "}
                               {exp.splitType === "equal"
@@ -719,15 +839,12 @@ export function GroupScreen({
                     key={b.memberId}
                     className="bg-card rounded-2xl border border-border p-4 flex items-center gap-4"
                   >
-                    <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-sm text-white font-medium shrink-0"
-                      style={{
-                        backgroundColor: getMemberById(group, b.memberId)
-                          ?.color,
-                      }}
-                    >
-                      {b.memberName[0].toUpperCase()}
-                    </div>
+                    <UserAvatar
+                      name={b.memberName}
+                      color={getMemberById(group, b.memberId)?.color ?? "var(--primary)"}
+                      seed={getMemberById(group, b.memberId)?.avatarSeed}
+                      className="w-10 h-10 rounded-full text-sm shrink-0"
+                    />
                     <div className="flex-1">
                       <p className="text-sm font-medium text-foreground">
                         {displayMemberName(b.memberId, b.memberName)}
@@ -736,8 +853,8 @@ export function GroupScreen({
                         {Math.abs(b.net) < 0.01
                           ? "All settled up"
                           : b.net > 0
-                            ? "is owed"
-                            : "owes"}
+                            ? "paid upfront · gets back"
+                            : "unpaid share"}
                       </p>
                     </div>
                     <div
@@ -751,7 +868,7 @@ export function GroupScreen({
                     >
                       {Math.abs(b.net) < 0.01
                         ? "Settled"
-                        : `${b.net > 0 ? "+" : ""}${formatCurrency(b.net, group.currency)}`}
+                        : formatCurrency(Math.abs(b.net), group.currency)}
                     </div>
                   </div>
                 ))}
@@ -810,9 +927,12 @@ export function GroupScreen({
                     </p>
                     {paymentItems.map(({ expense, split }) => {
                       const fromMember = getMemberById(group, split.memberId);
-                      const toMember = getMemberById(group, expense.paidBy);
+                      const payerId = getExpensePayerId(expense);
+                      const toMember = getMemberById(group, payerId);
                       const isPayer = currentMember?.id === split.memberId;
-                      const isRecipient = currentMember?.id === expense.paidBy;
+                      const isRecipient = currentMember?.id === payerId;
+                      const isExpenseCreator =
+                        currentMember?.id === (expense.createdBy ?? expense.paidBy);
                       const isPending = split.paymentStatus === "pending";
                       const isRejected = split.paymentStatus === "rejected";
                       const statusLabel = isPending
@@ -837,12 +957,7 @@ export function GroupScreen({
                           className="bg-card rounded-2xl border border-border p-4 space-y-3"
                         >
                           <div className="flex items-center gap-3">
-                            <div
-                              className="w-10 h-10 rounded-full flex items-center justify-center text-sm text-white font-medium shrink-0"
-                              style={{ backgroundColor: fromMember?.color }}
-                            >
-                              {(fromMember?.name ?? "?")[0].toUpperCase()}
-                            </div>
+                            <UserAvatar name={fromMember?.name ?? "Unknown"} color={fromMember?.color ?? "var(--primary)"} seed={fromMember?.avatarSeed} className="w-10 h-10 rounded-full text-sm shrink-0" />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-foreground">
                                 {isPayer ? (
@@ -986,6 +1101,16 @@ export function GroupScreen({
                               </button>
                             </div>
                           )}
+
+                          {isExpenseCreator && !isPayer && !(isRecipient && isPending) && (
+                            <button
+                              onClick={() => setCreatorPaidConfirmation({ expense, split })}
+                              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-green-600 bg-green-50 text-green-700 text-sm font-semibold transition-all active:scale-95"
+                            >
+                              <Check size={15} />
+                              Mark {fromMember?.name ?? "borrower"} as paid
+                            </button>
+                          )}
                         </div>
                       );
                     })}
@@ -1006,12 +1131,7 @@ export function GroupScreen({
                             key={i}
                             className="bg-card rounded-2xl border border-border p-4 flex items-center gap-3"
                           >
-                            <div
-                              className="w-10 h-10 rounded-full flex items-center justify-center text-sm text-white font-medium shrink-0"
-                              style={{ backgroundColor: fromMember?.color }}
-                            >
-                              {s.fromName[0].toUpperCase()}
-                            </div>
+                            <UserAvatar name={s.fromName} color={fromMember?.color ?? "var(--primary)"} seed={fromMember?.avatarSeed} className="w-10 h-10 rounded-full text-sm shrink-0" />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-foreground">
                                 <span style={{ color: fromMember?.color }}>
@@ -1070,12 +1190,7 @@ export function GroupScreen({
                     className={`flex gap-2 ${isMine ? "justify-end" : "justify-start"}`}
                   >
                     {!isMine && (
-                      <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-xs text-white font-medium shrink-0 mt-1"
-                        style={{ backgroundColor: sender?.color }}
-                      >
-                        {(sender?.name ?? "?")[0].toUpperCase()}
-                      </div>
+                      <UserAvatar name={sender?.name ?? "Unknown"} color={sender?.color ?? "var(--primary)"} seed={sender?.avatarSeed} className="w-8 h-8 rounded-full text-xs shrink-0 mt-1" />
                     )}
                     <div
                       className={`max-w-[78%] rounded-2xl px-4 py-3 ${
@@ -1220,6 +1335,22 @@ export function GroupScreen({
             </div>
 
             <div className="p-5 space-y-5 pb-10">
+              <div className="flex flex-col items-center">
+                <GroupAvatar
+                  name={groupNameInput || group.name}
+                  seed={groupAvatarSeedInput}
+                  className="w-20 h-20 rounded-2xl shadow-md"
+                />
+                <button
+                  type="button"
+                  onClick={() => setGroupAvatarSeedInput(crypto.randomUUID())}
+                  className="inline-flex items-center gap-2 mt-3 px-3 py-2 rounded-xl bg-accent text-accent-foreground text-xs font-semibold active:scale-95 transition-all"
+                >
+                  <Shuffle size={14} />
+                  Randomize group image
+                </button>
+              </div>
+
               <div>
                 <label className="block text-sm text-muted-foreground mb-1.5">
                   Group name
@@ -1461,6 +1592,50 @@ export function GroupScreen({
         </Dialog.Portal>
       </Dialog.Root>
 
+      <Dialog.Root
+        open={!!creatorPaidConfirmation}
+        onOpenChange={(open) => !open && setCreatorPaidConfirmation(null)}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-4 bottom-8 z-50 bg-card rounded-3xl p-6 shadow-2xl">
+            <Dialog.Title className="text-base font-semibold text-foreground mb-1">
+              Mark borrower as paid?
+            </Dialog.Title>
+            <Dialog.Description className="text-sm text-muted-foreground leading-relaxed mb-5">
+              This confirms that{" "}
+              <span className="font-medium text-foreground">
+                {creatorPaidConfirmation
+                  ? getMemberById(group, creatorPaidConfirmation.split.memberId)?.name ?? "this borrower"
+                  : "this borrower"}
+              </span>{" "}
+              paid{" "}
+              <span className="font-medium text-foreground">
+                {creatorPaidConfirmation
+                  ? formatCurrency(creatorPaidConfirmation.split.amount, group.currency)
+                  : ""}
+              </span>{" "}
+              for “{creatorPaidConfirmation?.expense.description}”. No payment proof is required because you created this expense.
+            </Dialog.Description>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setCreatorPaidConfirmation(null)}
+                className="py-3.5 rounded-2xl bg-muted text-foreground text-sm font-medium transition-all active:scale-95"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmBorrowerPaidByCreator}
+                className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-green-600 text-white text-sm font-semibold transition-all active:scale-95"
+              >
+                <Check size={16} />
+                Confirm paid
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
       <Dialog.Root open={paymentDetailsOpen} onOpenChange={setPaymentDetailsOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
@@ -1565,12 +1740,22 @@ export function GroupScreen({
         onAdd={handleAddExpense}
         currentUser={currentUser}
         editExpense={editExpense}
+        isAdmin={isAdmin}
       />
-      <QRModal group={group} open={qrOpen} onClose={() => setQrOpen(false)} />
+      <QRModal
+        group={group}
+        open={qrOpen}
+        onClose={() => setQrOpen(false)}
+        isAdmin={isAdmin}
+      />
       <InviteModal
         group={group}
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
+        isAdmin={isAdmin}
+        onAddPending={handleAddPendingMember}
+        onMergePending={handleMergePendingMember}
+        onDeletePending={handleDeletePendingMember}
       />
     </div>
   );

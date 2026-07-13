@@ -11,8 +11,15 @@ service cloud.firestore {
     }
 
     function validUserDoc() {
-      return request.resource.data.keys().hasOnly(['groupIds'])
-        && request.resource.data.groupIds is list;
+      return request.resource.data.keys().hasOnly(['groupIds', 'name', 'color', 'avatarSeed'])
+        && request.resource.data.groupIds is list
+        && (!request.resource.data.keys().hasAny(['name'])
+          || request.resource.data.name is string)
+        && (!request.resource.data.keys().hasAny(['color'])
+          || request.resource.data.color is string)
+        && (!request.resource.data.keys().hasAny(['avatarSeed'])
+          || (request.resource.data.avatarSeed is string
+            && request.resource.data.avatarSeed.size() <= 100));
     }
 
     function validGroupDoc(data) {

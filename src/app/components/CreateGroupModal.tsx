@@ -1,8 +1,10 @@
 import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
-import type { Group, CurrentUser } from "./types";
-import { generateId } from "./utils";
+import { Shuffle, Trash2, UserPlus, X } from "lucide-react";
+import type { Group, CurrentUser, Member } from "./types";
+import { generateId, MEMBER_COLORS } from "./utils";
+import { UserAvatar } from "./UserAvatar";
+import { GroupAvatar } from "./GroupAvatar";
 
 interface Props {
   open: boolean;
@@ -19,6 +21,9 @@ export function CreateGroupModal({
 }: Props) {
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState("PHP");
+  const [avatarSeed, setAvatarSeed] = useState(() => crypto.randomUUID());
+  const [pendingName, setPendingName] = useState("");
+  const [pendingMembers, setPendingMembers] = useState<Member[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   function validate(): boolean {
@@ -38,6 +43,7 @@ export function CreateGroupModal({
     onCreate({
       id: generateId(),
       name: name.trim(),
+      avatarSeed,
       currency,
       adminId: currentUser.id,
       members: [
@@ -45,7 +51,9 @@ export function CreateGroupModal({
           id: currentUser.id,
           name: currentUser.name,
           color: currentUser.color,
+          avatarSeed: currentUser.avatarSeed,
         },
+        ...pendingMembers,
       ],
       expenses: [],
       createdAt: new Date().toISOString().slice(0, 10),
@@ -53,8 +61,38 @@ export function CreateGroupModal({
 
     setName("");
     setCurrency("PHP");
+    setAvatarSeed(crypto.randomUUID());
+    setPendingName("");
+    setPendingMembers([]);
     setErrors({});
     onClose();
+  }
+
+  function addPendingMember() {
+    const memberName = pendingName.trim();
+    if (!memberName) return;
+    const normalized = memberName.toLowerCase();
+    if (
+      normalized === currentUser.name.trim().toLowerCase() ||
+      pendingMembers.some(
+        (member) => member.name.trim().toLowerCase() === normalized,
+      )
+    ) {
+      setErrors((value) => ({ ...value, pending: "That member is already listed" }));
+      return;
+    }
+    setPendingMembers((members) => [
+      ...members,
+      {
+        id: generateId(),
+        name: memberName,
+        color: MEMBER_COLORS[(members.length + 1) % MEMBER_COLORS.length],
+        avatarSeed: crypto.randomUUID(),
+        claimCode: crypto.randomUUID(),
+      },
+    ]);
+    setPendingName("");
+    setErrors((value) => ({ ...value, pending: "" }));
   }
 
   return (
@@ -79,6 +117,22 @@ export function CreateGroupModal({
           </div>
 
           <div className="p-5 space-y-5 pb-10">
+            <div className="flex flex-col items-center">
+              <GroupAvatar
+                name={name || "New group"}
+                seed={avatarSeed}
+                className="w-20 h-20 rounded-2xl shadow-md"
+              />
+              <button
+                type="button"
+                onClick={() => setAvatarSeed(crypto.randomUUID())}
+                className="inline-flex items-center gap-2 mt-3 px-3 py-2 rounded-xl bg-accent text-accent-foreground text-xs font-semibold active:scale-95 transition-all"
+              >
+                <Shuffle size={14} />
+                Randomize group image
+              </button>
+            </div>
+
             {/* Group name */}
             <div>
               <label className="block text-sm text-muted-foreground mb-1.5">
@@ -122,6 +176,47 @@ export function CreateGroupModal({
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1.5">
+                Members joining later <span className="text-xs">(optional)</span>
+              </label>
+              <p className="text-xs text-muted-foreground mb-3">
+                Add names now so you can include everyone in expenses immediately.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  value={pendingName}
+                  onChange={(event) => {
+                    setPendingName(event.target.value);
+                    setErrors((value) => ({ ...value, pending: "" }));
+                  }}
+                  onKeyDown={(event) => event.key === "Enter" && addPendingMember()}
+                  placeholder="e.g. Nathan"
+                  className="flex-1 min-w-0 px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary"
+                />
+                <button type="button" onClick={addPendingMember} className="px-4 rounded-xl bg-accent text-accent-foreground" title="Add member">
+                  <UserPlus size={18} />
+                </button>
+              </div>
+              {errors.pending && <p className="text-destructive text-xs mt-1">{errors.pending}</p>}
+              {pendingMembers.length > 0 && (
+                <div className="space-y-2 mt-3">
+                  {pendingMembers.map((member) => (
+                    <div key={member.id} className="flex items-center gap-3 p-3 rounded-xl bg-muted/40 border border-border">
+                      <UserAvatar name={member.name} color={member.color} seed={member.avatarSeed} className="w-8 h-8 rounded-full" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{member.name}</p>
+                        <p className="text-[11px] text-amber-700">Pending</p>
+                      </div>
+                      <button type="button" onClick={() => setPendingMembers((members) => members.filter((item) => item.id !== member.id))} className="p-2 rounded-lg text-destructive hover:bg-destructive/10">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Creator */}
             <div>
               <label className="block text-sm text-muted-foreground mb-1.5">
@@ -129,12 +224,7 @@ export function CreateGroupModal({
               </label>
 
               <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border bg-muted/30">
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium text-white"
-                  style={{ backgroundColor: currentUser.color }}
-                >
-                  {currentUser.name.charAt(0).toUpperCase()}
-                </div>
+                <UserAvatar name={currentUser.name} color={currentUser.color} seed={currentUser.avatarSeed} className="w-10 h-10 rounded-full" />
 
                 <div>
                   <p className="font-medium text-foreground">

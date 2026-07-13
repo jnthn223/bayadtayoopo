@@ -23,6 +23,8 @@ import {
   fetchGroup,
   pollGroup,
   subscribeGroup,
+  loadUserProfile,
+  saveUserProfile,
 } from "../lib/groupService";
 import { MEMBER_COLORS } from "./components/utils";
 import { compactGroupHistory, mergeGroupChanges } from "./components/groupMerge";
@@ -48,6 +50,12 @@ const SPLASH_MIN_MS = 1200;
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
+}
+
+function clearPendingJoin() {
+  localStorage.removeItem("pendingJoinGroupId");
+  localStorage.removeItem("pendingClaimMemberId");
+  localStorage.removeItem("pendingClaimCode");
 }
 
 export default function App() {
@@ -89,6 +97,12 @@ export default function App() {
       const rawParams = new URLSearchParams(window.location.search);
       const pendingJoin = rawParams.get("joinGroupId");
       if (pendingJoin) localStorage.setItem("pendingJoinGroupId", pendingJoin);
+      const pendingClaimMember = rawParams.get("claimMemberId");
+      const pendingClaimCode = rawParams.get("claimCode");
+      if (pendingClaimMember) {
+        localStorage.setItem("pendingClaimMemberId", pendingClaimMember);
+      }
+      if (pendingClaimCode) localStorage.setItem("pendingClaimCode", pendingClaimCode);
 
       // 1. Magic link callback?
       if (isMagicLink()) {
@@ -117,7 +131,7 @@ export default function App() {
 
             if (joinId) {
               await handleJoinGroup(joinId, user);
-              localStorage.removeItem("pendingJoinGroupId");
+              clearPendingJoin();
             }
           }
 
@@ -162,7 +176,7 @@ export default function App() {
       params.get("joinGroupId") ?? localStorage.getItem("pendingJoinGroupId");
     if (joinId) {
       handleJoinGroup(joinId, session).finally(() => {
-        localStorage.removeItem("pendingJoinGroupId");
+        clearPendingJoin();
       });
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -173,8 +187,21 @@ export default function App() {
   async function fetchGroups(uid: string) {
     setGroupsLoading(true);
     try {
-      const loaded = await loadUserGroups(uid);
+      const [loaded, profile] = await Promise.all([
+        loadUserGroups(uid),
+        loadUserProfile(uid),
+      ]);
       setGroups(loaded);
+      setCurrentUser((user) =>
+        user
+          ? {
+              ...user,
+              name: profile.name ?? user.name,
+              color: profile.color ?? user.color,
+              avatarSeed: profile.avatarSeed,
+            }
+          : user,
+      );
     } catch (err) {
       showBanner(errorMessage(err, "Unable to load groups"), "error");
     } finally {
@@ -256,6 +283,7 @@ export default function App() {
   ) {
     const newSession = saveSession(user);
     const cu = sessionToCurrentUser(newSession);
+    const savedProfile = await loadUserProfile(user.uid).catch(() => ({}));
     const colorIndex = user.uid.charCodeAt(0) % MEMBER_COLORS.length;
 
     try {
@@ -263,7 +291,10 @@ export default function App() {
         groupId,
         user.uid,
         cu.name,
-        MEMBER_COLORS[colorIndex],
+        savedProfile.color ?? MEMBER_COLORS[colorIndex],
+        savedProfile.avatarSeed,
+        localStorage.getItem("pendingClaimMemberId") ?? undefined,
+        localStorage.getItem("pendingClaimCode") ?? undefined,
       );
       if (joined) {
         setGroups((prev) => {
@@ -302,7 +333,7 @@ export default function App() {
 
     if (joinId) {
       await handleJoinGroup(joinId, user);
-      localStorage.removeItem("pendingJoinGroupId");
+      clearPendingJoin();
     }
   }
 
@@ -323,7 +354,7 @@ export default function App() {
     const joinId = localStorage.getItem("pendingJoinGroupId");
     if (joinId) {
       await handleJoinGroup(joinId, updatedSession);
-      localStorage.removeItem("pendingJoinGroupId");
+      clearPendingJoin();
     }
   }
 
@@ -347,6 +378,13 @@ export default function App() {
         color: updated.color,
       });
       setSession(next);
+      saveUserProfile(updated.id, {
+        name: updated.name,
+        color: updated.color,
+        avatarSeed: updated.avatarSeed,
+      }).catch((err) => {
+        showBanner(errorMessage(err, "Unable to save profile"), "error");
+      });
       setDisplayName(next.idToken, updated.name).catch((err) => {
         showBanner(errorMessage(err, "Unable to update profile name"), "error");
       });
@@ -360,7 +398,12 @@ export default function App() {
           }
 
           changed = true;
-          return { ...member, name: updated.name, color: updated.color };
+          return {
+            ...member,
+            name: updated.name,
+            color: updated.color,
+            avatarSeed: updated.avatarSeed,
+          };
         });
 
         if (!changed) return group;

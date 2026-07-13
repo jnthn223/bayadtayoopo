@@ -39,8 +39,12 @@ function group(overrides: Partial<Group> = {}): Group {
 
 describe("group merge business logic", () => {
   it("applies local scalar changes while preserving latest concurrent additions", () => {
-    const base = group();
-    const changed = group({ name: "Beach Trip", currency: "USD" });
+    const base = group({ avatarSeed: "old-avatar" });
+    const changed = group({
+      name: "Beach Trip",
+      currency: "USD",
+      avatarSeed: "new-avatar",
+    });
     const latest = group({
       members: [
         ...members,
@@ -52,6 +56,7 @@ describe("group merge business logic", () => {
     expect(mergeGroupChanges(base, changed, latest)).toMatchObject({
       name: "Beach Trip",
       currency: "USD",
+      avatarSeed: "new-avatar",
       members: [
         { id: "alice" },
         { id: "bob" },

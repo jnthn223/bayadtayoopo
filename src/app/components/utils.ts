@@ -1,4 +1,4 @@
-import type { Group, Balance, Settlement, Member, Expense } from "./types";
+import type { Group, Balance, Settlement, Member, Expense, Split } from "./types";
 
 export const MEMBER_COLORS = [
   "#5b4cf5", "#e84393", "#00b896", "#f59e0b", "#3b82f6",
@@ -34,22 +34,65 @@ export function getCurrencySymbol(currency = "USD"): string {
   }
 }
 
+export function getExpensePayerId(expense: Expense): string {
+  return expense.paidBy;
+}
+
+export function allocateCustomShares(
+  memberIds: string[],
+  total: number,
+  fixedAmounts: Record<string, number>,
+): Record<string, number> {
+  if (memberIds.length === 0) return {};
+
+  const totalCents = Math.max(0, Math.round(total * 100));
+  const allocation: Record<string, number> = {};
+  let fixedCents = 0;
+
+  for (const memberId of memberIds) {
+    if (!(memberId in fixedAmounts)) continue;
+    const cents = Math.max(0, Math.round((fixedAmounts[memberId] || 0) * 100));
+    allocation[memberId] = cents / 100;
+    fixedCents += cents;
+  }
+
+  const automaticMemberIds = memberIds.filter(
+    (memberId) => !(memberId in fixedAmounts),
+  );
+  const remainingCents = Math.max(0, totalCents - fixedCents);
+  const baseCents = automaticMemberIds.length
+    ? Math.floor(remainingCents / automaticMemberIds.length)
+    : 0;
+  let extraCents = automaticMemberIds.length
+    ? remainingCents % automaticMemberIds.length
+    : 0;
+
+  for (const memberId of automaticMemberIds) {
+    const cents = baseCents + (extraCents > 0 ? 1 : 0);
+    allocation[memberId] = cents / 100;
+    if (extraCents > 0) extraCents -= 1;
+  }
+
+  return allocation;
+}
+
 export function computeBalances(group: Group): Balance[] {
   const balances: Record<string, number> = {};
   group.members.forEach((m) => (balances[m.id] = 0));
 
   group.expenses.forEach((exp) => {
+    const payerId = getExpensePayerId(exp);
     const confirmedPayments = exp.splits.reduce(
       (sum, s) =>
-        s.memberId !== exp.paidBy && s.paymentStatus === "confirmed"
+        s.memberId !== payerId && s.paymentStatus === "confirmed"
           ? sum + s.amount
           : sum,
       0,
     );
 
-    balances[exp.paidBy] += exp.amount - confirmedPayments;
+    balances[payerId] += exp.amount - confirmedPayments;
     exp.splits.forEach((s) => {
-      if (s.memberId !== exp.paidBy && s.paymentStatus === "confirmed") return;
+      if (s.memberId !== payerId && s.paymentStatus === "confirmed") return;
       balances[s.memberId] -= s.amount;
     });
   });
@@ -96,6 +139,100 @@ export function getMemberById(group: Group, id: string): Member | undefined {
 
 export function getTotalExpenses(group: Group): number {
   return group.expenses.reduce((sum, e) => sum + e.amount, 0);
+}
+
+export function getUnsettledPaymentSummary(group: Group, userId: string) {
+  const member = group.members.find(
+    (candidate) => candidate.id === userId || candidate.uid === userId,
+  );
+  if (!member) return { count: 0, amount: 0, pendingCount: 0, rejectedCount: 0 };
+
+  const splits = group.expenses.flatMap((expense) =>
+    expense.splits.filter(
+      (split) =>
+        split.memberId === member.id &&
+        split.memberId !== getExpensePayerId(expense) &&
+        split.amount > 0.005 &&
+        split.paymentStatus !== "confirmed",
+    ),
+  );
+
+  return {
+    count: splits.length,
+    amount: splits.reduce((sum, split) => sum + split.amount, 0),
+    pendingCount: splits.filter((split) => split.paymentStatus === "pending")
+      .length,
+    rejectedCount: splits.filter((split) => split.paymentStatus === "rejected")
+      .length,
+  };
+}
+
+export function mergeGroupMember(
+  group: Group,
+  placeholderId: string,
+  joinedMemberId: string,
+): Group {
+  if (placeholderId === joinedMemberId) return group;
+
+  const replace = (memberId: string) =>
+    memberId === placeholderId ? joinedMemberId : memberId;
+
+  return {
+    ...group,
+    adminId: group.adminId ? replace(group.adminId) : group.adminId,
+    members: group.members.filter((member) => member.id !== placeholderId),
+    expenses: group.expenses.map((expense) => {
+      const combined = new Map<string, Split>();
+      for (const split of expense.splits) {
+        const memberId = replace(split.memberId);
+        const existing = combined.get(memberId);
+        if (!existing) {
+          combined.set(memberId, { ...split, memberId });
+          continue;
+        }
+        combined.set(memberId, {
+          ...existing,
+          amount: existing.amount + split.amount,
+          paymentStatus: [existing.paymentStatus, split.paymentStatus].every(
+            (status) => status === "confirmed",
+          )
+            ? "confirmed"
+            : [existing.paymentStatus, split.paymentStatus].includes("rejected")
+              ? "rejected"
+              : [existing.paymentStatus, split.paymentStatus].includes("pending")
+                ? "pending"
+                : undefined,
+          paymentSubmission:
+            split.paymentSubmission ?? existing.paymentSubmission,
+        });
+      }
+
+      return {
+        ...expense,
+        paidBy: replace(expense.paidBy),
+        createdBy: expense.createdBy ? replace(expense.createdBy) : undefined,
+        splits: [...combined.values()].map((split) => ({
+          ...split,
+          paymentSubmission: split.paymentSubmission
+            ? {
+                ...split.paymentSubmission,
+                reviewedBy: split.paymentSubmission.reviewedBy
+                  ? replace(split.paymentSubmission.reviewedBy)
+                  : undefined,
+              }
+            : undefined,
+        })),
+      };
+    }),
+    messages: group.messages?.map((message) => ({
+      ...message,
+      memberId: replace(message.memberId),
+    })),
+    deletedExpenses: group.deletedExpenses?.map((expense) => ({
+      ...expense,
+      deletedBy: replace(expense.deletedBy),
+    })),
+  };
 }
 
 export const CATEGORY_ICONS: Record<string, string> = {
