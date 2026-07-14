@@ -1,7 +1,7 @@
 {
   "name": "BayadTayoOpo",
   "short_name": "BayadTayoOpo",
-  "description": "Split group expenses, settle balances, chat, and track shared activity.",
+  "description": "Split group expenses, track payments, and settle with proof—without spreadsheets or awkward singilan.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -2,10 +2,6 @@ import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   X,
-  Mail,
-  Loader2,
-  CheckCircle2,
-  Send,
   UserPlus,
   Merge,
   Trash2,
@@ -13,7 +9,6 @@ import {
   MessageSquareText,
   ShieldCheck,
 } from "lucide-react";
-import { sendMagicLink } from "../../lib/firebaseRest";
 import type { Group } from "./types";
 import { UserAvatar } from "./UserAvatar";
 
@@ -32,8 +27,6 @@ interface Props {
   ) => string | undefined;
 }
 
-type Step = "form" | "sent";
-
 export function InviteModal({
   group,
   open,
@@ -45,11 +38,6 @@ export function InviteModal({
   onRemoveMember,
   onSetMemberAdmin,
 }: Props) {
-  const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [step, setStep] = useState<Step>("form");
-  const [sentTo, setSentTo] = useState("");
   const [pendingName, setPendingName] = useState("");
   const [pendingError, setPendingError] = useState("");
   const [showSharePreview, setShowSharePreview] = useState(false);
@@ -89,9 +77,6 @@ export function InviteModal({
   }
 
   function handleClose() {
-    setEmail("");
-    setError("");
-    setStep("form");
     setPendingName("");
     setPendingError("");
     setShowSharePreview(false);
@@ -158,39 +143,6 @@ export function InviteModal({
     }
   }
 
-  async function handleSend() {
-    const trimmed = email.trim();
-    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setError("Enter a valid email address");
-      return;
-    }
-    setError("");
-    setLoading(true);
-
-    const continueUrlValue = new URL(
-      window.location.pathname,
-      window.location.origin,
-    );
-    continueUrlValue.searchParams.set("joinGroupId", group.id);
-    const continueUrl = continueUrlValue.toString();
-
-    try {
-      await sendMagicLink(trimmed, continueUrl);
-      setSentTo(trimmed);
-      setStep("sent");
-    } catch (err: any) {
-      setError(err.message ?? "Failed to send invite. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleSendAnother() {
-    setEmail("");
-    setError("");
-    setStep("form");
-  }
-
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && handleClose()}>
       <Dialog.Portal>
@@ -210,8 +162,18 @@ export function InviteModal({
           </div>
 
           <div className="px-5 pb-10">
-            {step === "form" ? (
-              <div className="space-y-4">
+            <div className="space-y-4">
+                {!isAdmin && (
+                  <div className="rounded-2xl border border-border bg-muted/30 p-4">
+                    <p className="text-sm font-semibold text-foreground">
+                      Members are managed by group admins
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      You can still use the QR button in the group header to
+                      share a general join code or link—no email address needed.
+                    </p>
+                  </div>
+                )}
                 {isAdmin && (
                   <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3">
                     <div className="space-y-2 pb-3 border-b border-border">
@@ -456,89 +418,7 @@ export function InviteModal({
                   </div>
                 )}
 
-                <div>
-                  <p className="text-sm font-semibold text-foreground">
-                    Invite by email
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    We'll email them a magic link. When they click it, they'll
-                    be signed in and automatically added to this group.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-muted-foreground mb-1.5">
-                    Email address
-                  </label>
-                  <div className="relative">
-                    <Mail
-                      size={16}
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    />
-                    <input
-                      type="email"
-                      placeholder="friend@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                      className="w-full pl-10 pr-4 py-3.5 rounded-xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                    />
-                  </div>
-                  {error && (
-                    <p className="text-destructive text-xs mt-1.5">{error}</p>
-                  )}
-                </div>
-
-                <button
-                  onClick={handleSend}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-primary-foreground font-semibold transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: "var(--primary)" }}
-                >
-                  {loading ? (
-                    <Loader2 size={18} className="animate-spin" />
-                  ) : (
-                    <>
-                      <Send size={17} />
-                      Send Invite
-                    </>
-                  )}
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center text-center space-y-4 py-4">
-                <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center">
-                  <CheckCircle2 size={32} className="text-accent-foreground" />
-                </div>
-                <div>
-                  <p className="text-foreground font-semibold mb-1">
-                    Invite sent!
-                  </p>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    A magic link was sent to{" "}
-                    <span className="font-medium text-foreground">
-                      {sentTo}
-                    </span>
-                    . They'll join the group when they click it.
-                  </p>
-                </div>
-                <div className="flex gap-3 w-full pt-2">
-                  <button
-                    onClick={handleSendAnother}
-                    className="flex-1 py-3.5 rounded-2xl border border-border bg-muted text-foreground text-sm font-medium transition-all active:scale-95"
-                  >
-                    Invite another
-                  </button>
-                  <button
-                    onClick={handleClose}
-                    className="flex-1 py-3.5 rounded-2xl text-primary-foreground text-sm font-semibold transition-all active:scale-95"
-                    style={{ backgroundColor: "var(--primary)" }}
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

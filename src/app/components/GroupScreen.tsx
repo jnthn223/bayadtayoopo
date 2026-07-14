@@ -1,31 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ArrowLeft,
   Check,
   Download,
-  Clock3,
-  Coffee,
   FileSpreadsheet,
-  MessageCircle,
   Plus,
-  QrCode,
   Send,
-  Users,
-  Receipt,
-  BarChart2,
-  Trash2,
-  Edit2,
-  ExternalLink,
-  MoreVertical,
   Upload,
   Shuffle,
   X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { CurrentUser, Group, Expense, Split } from "./types";
-import { UserAvatar } from "./UserAvatar";
-import { GroupAvatar } from "./GroupAvatar";
 import {
   deletePaymentImage,
   loadPaymentImage,
@@ -36,7 +21,6 @@ import {
   computeBalances,
   computeSettlements,
   formatCurrency,
-  CATEGORY_ICONS,
   generateId,
   getExpensePayerId,
   getMemberById,
@@ -47,13 +31,17 @@ import {
 import { AddExpenseModal } from "./AddExpenseModal";
 import { QRModal } from "./QRModal";
 import { InviteModal } from "./InviteModal";
+import { getGroupTourTarget, GroupTour } from "./GroupTour";
+import { GroupHeader } from "./GroupHeader";
+import type { GroupTab } from "./GroupHeader";
+import { GroupContent } from "./GroupContent";
 import {
   exportExpensesCsv,
   exportExpensesTemplateCsv,
   parseExpensesCsv,
 } from "./csvExpenses";
 
-type Tab = "expenses" | "balances" | "settle" | "chat";
+type Tab = GroupTab;
 
 interface Props {
   group: Group;
@@ -72,10 +60,16 @@ export function GroupScreen({
 }: Props) {
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const chatReadKey = `bayadtayoopo:chat-read:${currentUser.id}:${group.id}`;
+  const groupTourKey = `bayadtayoopo:group-tour:${currentUser.id}:${group.id}`;
   const [tab, setTab] = useState<Tab>("expenses");
+  const [groupTourStep, setGroupTourStep] = useState<number | null>(null);
   const [lastChatReadAt, setLastChatReadAt] = useState(
     () => localStorage.getItem(chatReadKey) ?? "",
   );
+  const [chatRevealMessageId, setChatRevealMessageId] = useState<string | null>(
+    null,
+  );
+  const firstUnreadMessageRef = useRef<HTMLDivElement | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -147,6 +141,7 @@ export function GroupScreen({
       (memberId) => memberId === currentMember.id || memberId === currentMember.uid,
     )
   );
+  const activeGroupTourTarget = getGroupTourTarget(groupTourStep);
   const displayMemberName = (memberId: string, fallback?: string) =>
     memberId === currentMember?.id ? "You" : (fallback ?? "Unknown");
 
@@ -194,8 +189,17 @@ export function GroupScreen({
   }
 
   function handleTabChange(nextTab: Tab) {
+    if (nextTab === "chat" && tab !== "chat") {
+      const firstUnreadMessage = messages.find(
+        (message) =>
+          message.memberId !== currentMember?.id &&
+          (!lastChatReadAt || message.createdAt > lastChatReadAt),
+      );
+      setChatRevealMessageId(firstUnreadMessage?.id ?? null);
+    } else if (nextTab !== "chat") {
+      setChatRevealMessageId(null);
+    }
     setTab(nextTab);
-    if (nextTab === "chat") markChatRead();
   }
 
   useEffect(() => {
@@ -203,8 +207,31 @@ export function GroupScreen({
   }, [chatReadKey]);
 
   useEffect(() => {
+    setGroupTourStep(null);
+    if (localStorage.getItem(groupTourKey) === "complete") return;
+    const timeout = window.setTimeout(() => setGroupTourStep(0), 700);
+    return () => window.clearTimeout(timeout);
+  }, [groupTourKey]);
+
+  useEffect(() => {
+    if (tab !== "chat" || !chatRevealMessageId) return;
+    const frame = window.requestAnimationFrame(() => {
+      firstUnreadMessageRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [tab, chatRevealMessageId]);
+
+  useEffect(() => {
     if (tab === "chat") markChatRead();
   }, [tab, messages.at(-1)?.id, chatReadKey]);
+
+  function closeGroupTour() {
+    localStorage.setItem(groupTourKey, "complete");
+    setGroupTourStep(null);
+  }
 
   function handleAddExpense(expense: Expense) {
     const updated = { ...group };
@@ -686,689 +713,55 @@ export function GroupScreen({
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <div className="bg-card border-b border-border px-4 pt-12 pb-4">
-        <div className="flex items-center justify-between mb-4">
-          <button
-            onClick={onBack}
-            className="p-2 -ml-2 rounded-full hover:bg-muted transition-colors"
-          >
-            <ArrowLeft size={20} className="text-foreground" />
-          </button>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setInviteOpen(true)}
-              className="p-2 rounded-full hover:bg-muted transition-colors"
-              title="Manage members"
-              aria-label="Manage members"
-            >
-              <Users size={19} className="text-foreground" />
-            </button>
-            <button
-              onClick={() => setQrOpen(true)}
-              className="p-2 rounded-full hover:bg-muted transition-colors"
-              title="Share QR code"
-            >
-              <QrCode size={19} className="text-foreground" />
-            </button>
-
-            {/* ⋯ menu */}
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <button className="p-2 rounded-full hover:bg-muted transition-colors">
-                  <MoreVertical size={19} className="text-foreground" />
-                </button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  align="end"
-                  sideOffset={6}
-                  className="z-50 min-w-[170px] bg-card border border-border rounded-2xl shadow-xl overflow-hidden py-1"
-                >
-                  <DropdownMenu.Item
-                    onSelect={() => {
-                      setCsvErrors([]);
-                      setCsvImportCount(null);
-                      setPendingCsvExpenses(null);
-                      setCsvOpen(true);
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 text-sm text-foreground cursor-pointer hover:bg-muted outline-none transition-colors"
-                  >
-                    <FileSpreadsheet size={15} />
-                    CSV Tools
-                  </DropdownMenu.Item>
-                  {isAdmin && (
-                    <>
-                    <DropdownMenu.Item
-                      onSelect={openEditGroup}
-                      className="flex items-center gap-3 px-4 py-3 text-sm text-foreground cursor-pointer hover:bg-muted outline-none transition-colors"
-                    >
-                      <Edit2 size={15} />
-                      Edit Details
-                    </DropdownMenu.Item>
-                    {isOwner && <DropdownMenu.Item
-                      onSelect={() => setConfirmDelete(true)}
-                      className="flex items-center gap-3 px-4 py-3 text-sm text-destructive cursor-pointer hover:bg-destructive/10 outline-none transition-colors"
-                    >
-                      <Trash2 size={15} />
-                      Delete Group
-                    </DropdownMenu.Item>}
-                    </>
-                  )}
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <GroupAvatar
-            name={group.name}
-            seed={group.avatarSeed}
-            className="w-12 h-12 rounded-2xl shrink-0"
-          />
-          <div className="min-w-0">
-            <h1 className="text-foreground mb-1 truncate">{group.name}</h1>
-            <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex -space-x-2">
-            {group.members.slice(0, 5).map((m) => (
-              <UserAvatar
-                key={m.id}
-                name={m.name}
-                color={m.color}
-                seed={m.avatarSeed}
-                className={`w-7 h-7 rounded-full text-xs border-2 ${m.uid || m.id === currentUser.id ? "border-card" : "border-amber-400"}`}
-                title={`${m.name}${m.uid || m.id === currentUser.id ? "" : " (pending)"}`}
-              />
-            ))}
-          </div>
-          <span className="text-sm text-muted-foreground">
-            {group.members.length} members
-          </span>
-          <span className="text-sm text-muted-foreground">·</span>
-          <span className="text-sm font-medium text-foreground">
-            {formatCurrency(total, group.currency)} total
-          </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-border bg-card">
-        {(
-          [
-            { id: "expenses", label: "Expenses", icon: Receipt, badge: 0, badgeLabel: "" },
-            { id: "balances", label: "Balances", icon: BarChart2, badge: 0, badgeLabel: "" },
-            { id: "settle", label: "Settle Up", icon: Users, badge: outstandingMemberCount, badgeLabel: "relevant members with outstanding payments" },
-            { id: "chat", label: "Chat", icon: MessageCircle, badge: unreadChatCount, badgeLabel: "unread messages" },
-          ] as { id: Tab; label: string; icon: any; badge: number; badgeLabel: string }[]
-        ).map(({ id, label, icon: Icon, badge, badgeLabel }) => (
-          <button
-            key={id}
-            onClick={() => handleTabChange(id)}
-            aria-label={`${label}${badge ? `, ${badge} ${badgeLabel}` : ""}`}
-            className={`flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium border-b-2 transition-all ${
-              tab === id
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground"
-            }`}
-          >
-            <span className="relative">
-              <Icon size={16} />
-              {badge > 0 && (
-                <span className="absolute -right-3 -top-2 min-w-4 h-4 px-1 rounded-full bg-destructive text-white text-[9px] leading-4 text-center font-bold shadow-sm">
-                  {badge > 99 ? "99+" : badge}
-                </span>
-              )}
-            </span>
-            {label}
-          </button>
-        ))}
-      </div>
-
+      <GroupHeader
+        group={group}
+        currentUser={currentUser}
+        total={total}
+        tab={tab}
+        tourTarget={activeGroupTourTarget}
+        unreadChatCount={unreadChatCount}
+        outstandingMemberCount={outstandingMemberCount}
+        isAdmin={isAdmin}
+        isOwner={isOwner}
+        onBack={onBack}
+        onTabChange={handleTabChange}
+        onManageMembers={() => setInviteOpen(true)}
+        onShare={() => setQrOpen(true)}
+        onCsvTools={() => {
+          setCsvErrors([]);
+          setCsvImportCount(null);
+          setPendingCsvExpenses(null);
+          setCsvOpen(true);
+        }}
+        onShowGuide={() => setGroupTourStep(0)}
+        onEdit={openEditGroup}
+        onDelete={() => setConfirmDelete(true)}
+      />
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
-        {tab === "expenses" && (
-          <div className="p-4 space-y-6">
-            {group.expenses.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center mb-4">
-                  <Receipt size={28} className="text-accent-foreground" />
-                </div>
-                <p className="text-foreground font-medium mb-1">
-                  No expenses yet
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Tap + to add your first expense
-                </p>
-              </div>
-            ) : (
-              sortedDates.map((date) => (
-                <div key={date}>
-                  <p className="text-xs text-muted-foreground font-medium mb-2 px-1">
-                    {new Date(date + "T12:00:00").toLocaleDateString("en-US", {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </p>
-                  <div className="space-y-2">
-                    {expensesByDate[date].map((exp) => {
-                      const payerId = getExpensePayerId(exp);
-                      const payer = getMemberById(group, payerId);
-                      const isCreator =
-                        currentMember?.id === (exp.createdBy ?? exp.paidBy);
-                      return (
-                        <div
-                          key={exp.id}
-                          className="bg-card rounded-2xl border border-border p-4 flex items-center gap-4"
-                        >
-                          <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-xl shrink-0">
-                            {CATEGORY_ICONS[exp.category]}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">
-                              {exp.description}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              Paid by{" "}
-                              <span
-                                className="font-medium"
-                                style={{ color: payer?.color }}
-                              >
-                                {displayMemberName(payerId, payer?.name)}
-                              </span>{" "}
-                              ·{" "}
-                              {exp.splitType === "equal"
-                                ? "Split equally"
-                                : "Custom split"}
-                            </p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-sm font-semibold text-foreground">
-                              {formatCurrency(exp.amount, group.currency)}
-                            </p>
-                            {(isCreator || isAdmin) && (
-                              <div className="flex gap-1 mt-1 justify-end">
-                                {isCreator && (
-                                  <button
-                                    onClick={() => {
-                                      setEditExpense(exp);
-                                      setAddOpen(true);
-                                    }}
-                                    className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-                                    title="Edit expense"
-                                  >
-                                    <Edit2
-                                      size={12}
-                                      className="text-muted-foreground"
-                                    />
-                                  </button>
-                                )}
-                                {(isCreator || isAdmin) && (
-                                  <button
-                                    onClick={() => openDeleteExpense(exp)}
-                                    className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
-                                    title="Delete expense"
-                                  >
-                                    <Trash2
-                                      size={12}
-                                      className="text-destructive"
-                                    />
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {tab === "balances" && (
-          <div className="p-4 space-y-3">
-            {activeBalances.length === 0 ? (
-              <p className="text-center text-muted-foreground py-20">
-                No members yet
-              </p>
-            ) : (
-              <>
-                {activeBalances.map((b) => (
-                  <div
-                    key={b.memberId}
-                    className="bg-card rounded-2xl border border-border p-4 flex items-center gap-4"
-                  >
-                    <UserAvatar
-                      name={b.memberName}
-                      color={getMemberById(group, b.memberId)?.color ?? "var(--primary)"}
-                      seed={getMemberById(group, b.memberId)?.avatarSeed}
-                      className="w-10 h-10 rounded-full text-sm shrink-0"
-                    />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">
-                        {displayMemberName(b.memberId, b.memberName)}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {Math.abs(b.net) < 0.01
-                          ? "All settled up"
-                          : b.net > 0
-                            ? "paid upfront · gets back"
-                            : "unpaid share"}
-                      </p>
-                    </div>
-                    <div
-                      className={`text-sm font-semibold ${
-                        Math.abs(b.net) < 0.01
-                          ? "text-muted-foreground"
-                          : b.net > 0
-                            ? "text-green-600"
-                            : "text-destructive"
-                      }`}
-                    >
-                      {Math.abs(b.net) < 0.01
-                        ? "Settled"
-                        : formatCurrency(Math.abs(b.net), group.currency)}
-                    </div>
-                  </div>
-                ))}
-                <div className="bg-card rounded-2xl border border-border p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center shrink-0">
-                      <Coffee size={15} className="text-accent-foreground" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground">
-                        Support BayadTayoOpo
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                        Optional support helps cover hosting and ongoing development.
-                      </p>
-                    </div>
-                  </div>
-                  {kofiUrl && (
-                    <a
-                      href={kofiUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-accent-foreground transition-all hover:bg-accent/80 active:scale-[0.98]"
-                    >
-                      Support on Ko-fi
-                      <ExternalLink size={14} aria-hidden="true" />
-                    </a>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {tab === "settle" && (
-          <div className="p-4 space-y-3">
-            {currentMember && (
-              <button
-                onClick={openPaymentDetails}
-                className="w-full text-left bg-accent rounded-2xl border border-border p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {currentMember.paymentInstructions
-                        ? "Your payment instructions"
-                        : "Help people pay you"}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {currentMember.paymentInstructions
-                        ? `${currentMember.paymentInstructions.method} · Tap to edit`
-                        : "Add optional bank, e-wallet, or QR details"}
-                    </p>
-                  </div>
-                  <QrCode size={20} className="text-primary shrink-0" />
-                </div>
-              </button>
-            )}
-            {settlements.length === 0 && paymentItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-                  <span className="text-2xl">🎉</span>
-                </div>
-                <p className="text-foreground font-medium mb-1">
-                  All settled up!
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  No payments needed
-                </p>
-              </div>
-            ) : (
-              <>
-                {paymentItems.length > 0 && (
-                  <>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Expense repayments
-                    </p>
-                    {paymentItems.map(({ expense, split }) => {
-                      const fromMember = getMemberById(group, split.memberId);
-                      const payerId = getExpensePayerId(expense);
-                      const toMember = getMemberById(group, payerId);
-                      const isPayer = currentMember?.id === split.memberId;
-                      const isRecipient = currentMember?.id === payerId;
-                      const isExpenseCreator =
-                        currentMember?.id === (expense.createdBy ?? expense.paidBy);
-                      const isPending = split.paymentStatus === "pending";
-                      const isRejected = split.paymentStatus === "rejected";
-                      const statusLabel = isPending
-                        ? isPayer
-                          ? "Payment submitted"
-                          : isRecipient
-                            ? "Review payment"
-                            : "Awaiting confirmation"
-                        : isRejected
-                          ? isPayer
-                            ? "Needs attention"
-                            : "Payment rejected"
-                          : isPayer
-                            ? "Payment needed"
-                            : isRecipient
-                              ? "Awaiting payment"
-                              : "Unpaid";
-
-                      return (
-                        <div
-                          key={`${expense.id}-${split.memberId}`}
-                          className="bg-card rounded-2xl border border-border p-4 space-y-3"
-                        >
-                          <div className="flex items-center gap-3">
-                            <UserAvatar name={fromMember?.name ?? "Unknown"} color={fromMember?.color ?? "var(--primary)"} seed={fromMember?.avatarSeed} className="w-10 h-10 rounded-full text-sm shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground">
-                                {isPayer ? (
-                                  <>
-                                    <span style={{ color: fromMember?.color }}>You</span>
-                                    <span className="text-muted-foreground"> owe </span>
-                                    <span style={{ color: toMember?.color }}>
-                                      {toMember?.name ?? "Unknown"}
-                                    </span>
-                                  </>
-                                ) : isRecipient ? (
-                                  <>
-                                    <span style={{ color: fromMember?.color }}>
-                                      {fromMember?.name ?? "Unknown"}
-                                    </span>
-                                    <span className="text-muted-foreground"> owes </span>
-                                    <span style={{ color: toMember?.color }}>you</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span style={{ color: fromMember?.color }}>
-                                      {fromMember?.name ?? "Unknown"}
-                                    </span>
-                                    <span className="text-muted-foreground"> owes </span>
-                                    <span style={{ color: toMember?.color }}>
-                                      {toMember?.name ?? "Unknown"}
-                                    </span>
-                                  </>
-                                )}
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                {expense.description}
-                              </p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="text-sm font-semibold text-foreground">
-                                {formatCurrency(split.amount, group.currency)}
-                              </p>
-                              <div
-                                className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                                  isPending
-                                    ? "bg-amber-100 text-amber-700"
-                                    : isRejected
-                                      ? "bg-destructive/10 text-destructive"
-                                      : "bg-muted text-muted-foreground"
-                                }`}
-                              >
-                                {isPending ? (
-                                  <Clock3 size={11} />
-                                ) : isRejected ? (
-                                  <X size={11} />
-                                ) : (
-                                  <Clock3 size={11} />
-                                )}
-                                {statusLabel}
-                              </div>
-                            </div>
-                          </div>
-
-                          {isPayer && toMember?.paymentInstructions && (
-                            <div className="rounded-xl bg-muted p-3 text-xs space-y-1">
-                              <p className="font-medium text-foreground">How to pay</p>
-                              <p>{toMember.paymentInstructions.method}</p>
-                              {toMember.paymentInstructions.accountName && (
-                                <p>Account name: {toMember.paymentInstructions.accountName}</p>
-                              )}
-                              {toMember.paymentInstructions.accountIdentifier && (
-                                <p>Account: {toMember.paymentInstructions.accountIdentifier}</p>
-                              )}
-                              {toMember.paymentInstructions.instructions && (
-                                <p>{toMember.paymentInstructions.instructions}</p>
-                              )}
-                              {toMember.paymentInstructions.qrCodeImageId && (
-                                <button
-                                  onClick={() =>
-                                    viewPaymentImage(
-                                      toMember.paymentInstructions!.qrCodeImageId!,
-                                      "Payment QR",
-                                    )
-                                  }
-                                  className="inline-block text-primary font-medium pt-1"
-                                >
-                                  View payment QR
-                                </button>
-                              )}
-                            </div>
-                          )}
-
-                          {split.paymentSubmission && (isPayer || isRecipient) && (
-                            <div className="rounded-xl border border-border p-3 text-xs space-y-1">
-                              <p className="font-medium text-foreground">Payment submission</p>
-                              <p>Method: {split.paymentSubmission.method}</p>
-                              {split.paymentSubmission.referenceNumber && (
-                                <p>Reference: {split.paymentSubmission.referenceNumber}</p>
-                              )}
-                              {split.paymentSubmission.note && <p>{split.paymentSubmission.note}</p>}
-                              {split.paymentSubmission.proofImageId && (
-                                <button
-                                  onClick={() =>
-                                    viewPaymentImage(
-                                      split.paymentSubmission!.proofImageId!,
-                                      "Payment proof",
-                                    )
-                                  }
-                                  className="text-primary font-medium"
-                                >
-                                  View payment proof
-                                </button>
-                              )}
-                              {split.paymentSubmission.rejectionReason && (
-                                <p className="text-destructive">Reason: {split.paymentSubmission.rejectionReason}</p>
-                              )}
-                            </div>
-                          )}
-
-                          {isPayer && !isPending && (
-                            <button
-                              onClick={() => openPaymentSubmission(expense, split)}
-                              className="w-full py-2.5 rounded-xl text-primary-foreground text-sm font-semibold transition-all active:scale-95"
-                              style={{ backgroundColor: "var(--primary)" }}
-                            >
-                              Mark as Paid
-                            </button>
-                          )}
-
-                          {isRecipient && isPending && (
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                onClick={() => reviewPayment(expense.id, split.memberId, "confirmed")}
-                                className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-semibold transition-all active:scale-95"
-                              >
-                                <Check size={15} />
-                                Confirm
-                              </button>
-                              <button
-                                onClick={() => reviewPayment(expense.id, split.memberId, "rejected")}
-                                className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-destructive text-white text-sm font-semibold transition-all active:scale-95"
-                              >
-                                <X size={15} />
-                                Reject
-                              </button>
-                            </div>
-                          )}
-
-                          {isExpenseCreator && !isPayer && !(isRecipient && isPending) && (
-                            <button
-                              onClick={() => setCreatorPaidConfirmation({ expense, split })}
-                              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-green-600 bg-green-50 text-green-700 text-sm font-semibold transition-all active:scale-95"
-                            >
-                              <Check size={15} />
-                              Mark {fromMember?.name ?? "borrower"} as paid
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </>
-                )}
-
-                {settlements.length > 0 && (
-                  <div className={paymentItems.length > 0 ? "pt-3" : ""}>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Suggested payments to settle the group
-                    </p>
-                    <div className="space-y-3">
-                      {settlements.map((s, i) => {
-                        const fromMember = getMemberById(group, s.from);
-                        const toMember = getMemberById(group, s.to);
-                        return (
-                          <div
-                            key={i}
-                            className="bg-card rounded-2xl border border-border p-4 flex items-center gap-3"
-                          >
-                            <UserAvatar name={s.fromName} color={fromMember?.color ?? "var(--primary)"} seed={fromMember?.avatarSeed} className="w-10 h-10 rounded-full text-sm shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground">
-                                <span style={{ color: fromMember?.color }}>
-                                  {displayMemberName(s.from, s.fromName)}
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {" "}
-                                  pays{" "}
-                                </span>
-                                <span style={{ color: toMember?.color }}>
-                                  {displayMemberName(s.to, s.toName)}
-                                </span>
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                Transfer
-                              </p>
-                            </div>
-                            <p className="text-sm font-semibold text-foreground shrink-0">
-                              {formatCurrency(s.amount, group.currency)}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {tab === "chat" && (
-          <div className="p-4 space-y-3">
-            {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center mb-4">
-                  <MessageCircle
-                    size={28}
-                    className="text-accent-foreground"
-                  />
-                </div>
-                <p className="text-foreground font-medium mb-1">
-                  No messages yet
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Start a group conversation
-                </p>
-              </div>
-            ) : (
-              messages.map((message) => {
-                const sender = getMemberById(group, message.memberId);
-                const isMine = currentMember?.id === message.memberId;
-                return (
-                  <div
-                    key={message.id}
-                    className={`flex gap-2 ${isMine ? "justify-end" : "justify-start"}`}
-                  >
-                    {!isMine && (
-                      <UserAvatar name={sender?.name ?? "Unknown"} color={sender?.color ?? "var(--primary)"} seed={sender?.avatarSeed} className="w-8 h-8 rounded-full text-xs shrink-0 mt-1" />
-                    )}
-                    <div
-                      className={`max-w-[78%] rounded-2xl px-4 py-3 ${
-                        isMine
-                          ? "text-primary-foreground rounded-br-md"
-                          : "bg-card border border-border text-foreground rounded-bl-md"
-                      }`}
-                      style={
-                        isMine
-                          ? { backgroundColor: "var(--primary)" }
-                          : undefined
-                      }
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <p
-                          className={`text-xs font-medium ${
-                            isMine
-                              ? "text-primary-foreground/80"
-                              : "text-muted-foreground"
-                          }`}
-                        >
-                          {displayMemberName(message.memberId, sender?.name)}
-                        </p>
-                        <p
-                          className={`text-[11px] ${
-                            isMine
-                              ? "text-primary-foreground/70"
-                              : "text-muted-foreground"
-                          }`}
-                        >
-                          {new Date(message.createdAt).toLocaleTimeString(
-                            "en-US",
-                            {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            },
-                          )}
-                        </p>
-                      </div>
-                      <p className="text-sm whitespace-pre-wrap break-words">
-                        {message.text}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
-      </div>
-
+      <GroupContent
+        tab={tab}
+        group={group}
+        currentMember={currentMember}
+        isAdmin={isAdmin}
+        activeBalances={activeBalances}
+        settlements={settlements}
+        paymentItems={paymentItems}
+        kofiUrl={kofiUrl}
+        expensesByDate={expensesByDate}
+        sortedDates={sortedDates}
+        messages={messages}
+        chatRevealMessageId={chatRevealMessageId}
+        firstUnreadMessageRef={firstUnreadMessageRef}
+        displayMemberName={displayMemberName}
+        setEditExpense={setEditExpense}
+        setAddOpen={setAddOpen}
+        openDeleteExpense={openDeleteExpense}
+        openPaymentDetails={openPaymentDetails}
+        viewPaymentImage={viewPaymentImage}
+        openPaymentSubmission={openPaymentSubmission}
+        reviewPayment={reviewPayment}
+        setCreatorPaidConfirmation={setCreatorPaidConfirmation}
+      />
       {/* FAB */}
       {tab === "chat" ? (
         <div className="p-4 border-t border-border bg-card">
@@ -1404,7 +797,11 @@ export function GroupScreen({
               setEditExpense(null);
               setAddOpen(true);
             }}
-            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-primary-foreground font-semibold transition-all active:scale-95"
+            className={`w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-primary-foreground font-semibold transition-all active:scale-95 ${
+              activeGroupTourTarget === "expense"
+                ? "relative z-[60] ring-4 ring-primary/35 shadow-2xl scale-[1.02]"
+                : ""
+            }`}
             style={{ backgroundColor: "var(--primary)" }}
           >
             <Plus size={20} />
@@ -1413,6 +810,15 @@ export function GroupScreen({
         </div>
       )}
 
+      {groupTourStep !== null && (
+        <GroupTour
+          groupName={group.name}
+          isAdmin={isAdmin}
+          step={groupTourStep}
+          onStepChange={setGroupTourStep}
+          onClose={closeGroupTour}
+        />
+      )}
       {/* Delete confirmation dialog */}
       <Dialog.Root open={confirmDelete} onOpenChange={setConfirmDelete}>
         <Dialog.Portal>
@@ -1742,7 +1148,12 @@ export function GroupScreen({
                   ? formatCurrency(creatorPaidConfirmation.split.amount, group.currency)
                   : ""}
               </span>{" "}
-              for “{creatorPaidConfirmation?.expense.description}”. No payment proof is required because you created this expense.
+              for “{creatorPaidConfirmation?.expense.description}”.{" "}
+              {creatorPaidConfirmation &&
+              currentMember?.id ===
+                getExpensePayerId(creatorPaidConfirmation.expense)
+                ? "Use this when you received the payment directly; no payment proof is required."
+                : "No payment proof is required because you created this expense."}
             </Dialog.Description>
             <div className="grid grid-cols-2 gap-3">
               <button

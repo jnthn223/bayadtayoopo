@@ -3,6 +3,7 @@ import type { Group } from "./types";
 import {
   allocateCustomShares,
   archiveGroupMember,
+  canDirectlyConfirmSplit,
   computeBalances,
   computeSettlements,
   formatCurrency,
@@ -220,6 +221,21 @@ describe("expense business logic", () => {
       pendingCount: 0,
       rejectedCount: 0,
     });
+
+    const expense = createdForAnotherPayer.expenses[0];
+    const borrowerSplit = expense.splits.find(
+      (split) => split.memberId === "carol",
+    )!;
+    expect(canDirectlyConfirmSplit(expense, borrowerSplit, "alice")).toBe(true);
+    expect(canDirectlyConfirmSplit(expense, borrowerSplit, "carol")).toBe(false);
+
+    expect(
+      canDirectlyConfirmSplit(
+        expense,
+        { ...borrowerSplit, paymentStatus: "pending" },
+        "alice",
+      ),
+    ).toBe(false);
   });
 
   it("assigns an admin-recorded expense to the member who actually paid", () => {

@@ -38,6 +38,23 @@ export function getExpensePayerId(expense: Expense): string {
   return expense.paidBy;
 }
 
+export function canDirectlyConfirmSplit(
+  expense: Expense,
+  split: Split,
+  memberId: string,
+): boolean {
+  const payerId = getExpensePayerId(expense);
+  const isBorrower = split.memberId === memberId;
+  const isRecipient = payerId === memberId;
+  const isExpenseCreator = (expense.createdBy ?? expense.paidBy) === memberId;
+
+  return (
+    !isBorrower &&
+    (isRecipient || isExpenseCreator) &&
+    !(isRecipient && split.paymentStatus === "pending")
+  );
+}
+
 export function allocateCustomShares(
   memberIds: string[],
   total: number,
