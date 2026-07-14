@@ -39,7 +39,18 @@ export interface Split {
 }
 
 export type SplitType = "equal" | "custom";
-export type Category = "food" | "transport" | "accommodation" | "entertainment" | "shopping" | "utilities" | "other";
+export const EXPENSE_CATEGORIES = [
+  "food",
+  "transport",
+  "accommodation",
+  "trip",
+  "entertainment",
+  "shopping",
+  "utilities",
+  "other",
+] as const;
+
+export type Category = (typeof EXPENSE_CATEGORIES)[number];
 
 export interface Expense {
   id: string;

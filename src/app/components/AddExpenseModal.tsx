@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Check, ChevronDown, X } from "lucide-react";
+import { EXPENSE_CATEGORIES } from "./types";
 import type { CurrentUser, Group, Expense, SplitType, Category } from "./types";
 import { allocateCustomShares, generateId, CATEGORY_ICONS, getCurrencySymbol, getExpensePayerId } from "./utils";
 import { UserAvatar } from "./UserAvatar";
@@ -14,16 +15,6 @@ interface Props {
   editExpense?: Expense | null;
   isAdmin?: boolean;
 }
-
-const CATEGORIES: Category[] = [
-  "food",
-  "transport",
-  "accommodation",
-  "entertainment",
-  "shopping",
-  "utilities",
-  "other",
-];
 
 export function AddExpenseModal({
   group,
@@ -283,7 +274,7 @@ export function AddExpenseModal({
                 Category
               </label>
               <div className="grid grid-cols-4 gap-2">
-                {CATEGORIES.map((cat) => (
+                {EXPENSE_CATEGORIES.map((cat) => (
                   <button
                     key={cat}
                     onClick={() => setCategory(cat)}

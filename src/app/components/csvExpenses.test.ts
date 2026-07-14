@@ -108,7 +108,7 @@ describe("CSV expense tools", () => {
 
     expect(result.errors).toContain("Row 2: amount must be greater than zero");
     expect(result.errors).toContain(
-      "Row 2: category must be one of food, transport, accommodation, entertainment, shopping, utilities, other",
+      "Row 2: category must be one of food, transport, accommodation, trip, entertainment, shopping, utilities, other",
     );
   });
 
@@ -130,6 +130,22 @@ describe("CSV expense tools", () => {
       memberId: "alice",
       amount: 300,
     });
+  });
+
+  it("imports trip expenses", () => {
+    const result = parseExpensesCsv(
+      [
+        "date,description,category,amount,currency,paidBy,splitType,splits",
+        '2026-07-10,Island hopping,trip,600,PHP,Alice,equal,"Alice:300;Bob:300"',
+      ].join("\n"),
+      group,
+      "alice",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.expenses[0].category).toBe("trip");
   });
 
   it("rejects a CSV with no expense rows", () => {

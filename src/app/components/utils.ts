@@ -284,6 +284,7 @@ export const CATEGORY_ICONS: Record<string, string> = {
   food: "🍔",
   transport: "🚗",
   accommodation: "🏨",
+  trip: "🧳",
   entertainment: "🎬",
   shopping: "🛍️",
   utilities: "💡",

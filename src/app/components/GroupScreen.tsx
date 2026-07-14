@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { CurrentUser, Group, Expense, Split } from "./types";
+import { GroupAvatar } from "./GroupAvatar";
 import {
   deletePaymentImage,
   loadPaymentImage,

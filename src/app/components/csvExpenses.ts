@@ -1,3 +1,4 @@
+import { EXPENSE_CATEGORIES } from "./types";
 import type { Category, Expense, Group, Member, SplitType } from "./types";
 import { generateId } from "./utils";
 
@@ -11,16 +12,6 @@ const HEADERS = [
   "splitType",
   "splits",
 ] as const;
-
-const CATEGORIES: Category[] = [
-  "food",
-  "transport",
-  "accommodation",
-  "entertainment",
-  "shopping",
-  "utilities",
-  "other",
-];
 
 type CsvRow = Record<(typeof HEADERS)[number], string>;
 
@@ -166,8 +157,10 @@ function parseExpenseRow(
   if (row.currency && row.currency !== group.currency) {
     errors.push(`Row ${lineNumber}: currency must be ${group.currency}`);
   }
-  if (!CATEGORIES.includes(category)) {
-    errors.push(`Row ${lineNumber}: category must be one of ${CATEGORIES.join(", ")}`);
+  if (!EXPENSE_CATEGORIES.includes(category)) {
+    errors.push(
+      `Row ${lineNumber}: category must be one of ${EXPENSE_CATEGORIES.join(", ")}`,
+    );
   }
   if (splitType !== "equal" && splitType !== "custom") {
     errors.push(`Row ${lineNumber}: splitType must be equal or custom`);
