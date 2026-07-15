@@ -1,0 +1,72 @@
+[debug] [2026-07-15T09:53:35.354Z] ----------------------------------------------------------------------
+[debug] [2026-07-15T09:53:35.355Z] Command:       /Users/jonathanaplacador/.nvm/versions/node/v20.15.0/bin/node /Users/jonathanaplacador/.nvm/versions/node/v18.20.3/bin/firebase deploy --only hosting:app,firestore:rules --project staging
+[debug] [2026-07-15T09:53:35.355Z] CLI Version:   15.22.4
+[debug] [2026-07-15T09:53:35.355Z] Platform:      darwin
+[debug] [2026-07-15T09:53:35.355Z] Node Version:  v20.15.0
+[debug] [2026-07-15T09:53:35.355Z] Detected Agent: codex_cli
+[debug] [2026-07-15T09:53:35.356Z] Time:          Wed Jul 15 2026 17:53:35 GMT+0800 (Philippine Standard Time)
+[debug] [2026-07-15T09:53:35.356Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-07-15T09:53:36.092Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-07-15T09:53:36.093Z] > authorizing via signed-in user (jonathanaplacador.dev@gmail.com)
+[debug] [2026-07-15T09:53:36.093Z] [iam] checking project bayadtayoopo-staging for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-07-15T09:53:36.094Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:53:36.094Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:53:36.094Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/bayadtayoopo-staging:testIamPermissions [none]
+[debug] [2026-07-15T09:53:36.095Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/bayadtayoopo-staging:testIamPermissions  x-goog-user-project=bayadtayoopo-staging
+[debug] [2026-07-15T09:53:36.095Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/bayadtayoopo-staging:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-07-15T09:53:38.921Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/bayadtayoopo-staging:testIamPermissions 200
+[debug] [2026-07-15T09:53:38.921Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/bayadtayoopo-staging:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-07-15T09:53:38.921Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:53:38.921Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:53:38.922Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/bayadtayoopo-staging [none]
+[debug] [2026-07-15T09:53:51.928Z] *** [apiv2] error from fetch(https://firebase.googleapis.com/v1beta1/projects/bayadtayoopo-staging, {"headers":{},"method":"GET","signal":{"reason":""}}): FetchError: request to https://firebase.googleapis.com/v1beta1/projects/bayadtayoopo-staging failed, reason: Client network socket disconnected before secure TLS connection was established
+[debug] [2026-07-15T09:53:51.929Z] *** [apiv2] retrying https://firebase.googleapis.com/v1beta1/projects/bayadtayoopo-staging without keep-alive after a premature close error
+[debug] [2026-07-15T09:53:52.931Z] *** [apiv2] Attempting the request again. Attempt number 2
+[debug] [2026-07-15T09:53:52.933Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/bayadtayoopo-staging [none]
+[debug] [2026-07-15T09:54:06.702Z] *** [apiv2] error from fetch(https://firebase.googleapis.com/v1beta1/projects/bayadtayoopo-staging, {"headers":{},"method":"GET","signal":{"reason":""}}): FetchError: request to https://firebase.googleapis.com/v1beta1/projects/bayadtayoopo-staging failed, reason: socket hang up
+[debug] [2026-07-15T09:54:06.703Z] Failed to make request to https://firebase.googleapis.com/v1beta1/projects/bayadtayoopo-staging (original: request to https://firebase.googleapis.com/v1beta1/projects/bayadtayoopo-staging failed, reason: socket hang up)
+[info] 
+[info] === Deploying to 'bayadtayoopo-staging'...
+[info] 
+[info] i  deploying firestore, hosting 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[debug] [2026-07-15T09:54:06.713Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:54:06.714Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:54:06.714Z] >>> [apiv2][query] GET https://firestore.googleapis.com/v1/projects/bayadtayoopo-staging/databases/(default) [none]
+[debug] [2026-07-15T09:54:18.934Z] <<< [apiv2][status] GET https://firestore.googleapis.com/v1/projects/bayadtayoopo-staging/databases/(default) 200
+[debug] [2026-07-15T09:54:18.935Z] <<< [apiv2][body] GET https://firestore.googleapis.com/v1/projects/bayadtayoopo-staging/databases/(default) {"name":"projects/bayadtayoopo-staging/databases/(default)","uid":"dcb05c27-2e0e-45c3-8ab1-3e9ad863fd7b","createTime":"2026-07-15T09:17:58.774790Z","updateTime":"2026-07-15T09:17:58.774790Z","locationId":"asia-southeast1","type":"FIRESTORE_NATIVE","concurrencyMode":"PESSIMISTIC","versionRetentionPeriod":"3600s","earliestVersionTime":"2026-07-15T09:17:58.774790Z","appEngineIntegrationMode":"DISABLED","keyPrefix":"zas","pointInTimeRecoveryEnablement":"POINT_IN_TIME_RECOVERY_DISABLED","deleteProtectionState":"DELETE_PROTECTION_DISABLED","databaseEdition":"STANDARD","freeTier":true,"realtimeUpdatesMode":"REALTIME_UPDATES_MODE_ENABLED","etag":"II2X+fS01JUDMKuCyuis1JUD"}
+[info] i  cloud.firestore: checking firestore.rules for compilation errors... 
+[debug] [2026-07-15T09:54:18.938Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:54:18.938Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:54:18.939Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/bayadtayoopo-staging:test [none]
+[debug] [2026-07-15T09:54:18.939Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/bayadtayoopo-staging:test [omitted]
+[debug] [2026-07-15T09:54:22.618Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/bayadtayoopo-staging:test 200
+[debug] [2026-07-15T09:54:22.619Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/bayadtayoopo-staging:test {}
+[info] ✔  cloud.firestore: rules file firestore.rules compiled successfully 
+[debug] [2026-07-15T09:54:22.622Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:54:22.623Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:54:22.623Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/bayadtayoopo-staging/sites/bayadtayoopo-staging [none]
+[debug] [2026-07-15T09:54:24.439Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/bayadtayoopo-staging/sites/bayadtayoopo-staging 200
+[debug] [2026-07-15T09:54:24.439Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/bayadtayoopo-staging/sites/bayadtayoopo-staging {"name":"projects/bayadtayoopo-staging/sites/bayadtayoopo-staging","defaultUrl":"https://bayadtayoopo-staging.web.app","type":"DEFAULT_SITE"}
+[debug] [2026-07-15T09:54:24.453Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:54:24.453Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:54:24.454Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo-staging/versions [none]
+[debug] [2026-07-15T09:54:24.454Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo-staging/versions {"status":"CREATED","labels":{"deployment-tool":"cli-firebase"}}
+[debug] [2026-07-15T09:54:25.912Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo-staging/versions 200
+[debug] [2026-07-15T09:54:25.912Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo-staging/versions {"name":"projects/823399450682/sites/bayadtayoopo-staging/versions/63f5da4ace3093c7","status":"CREATED","config":{},"labels":{"deployment-tool":"cli-firebase"}}
+[debug] [2026-07-15T09:54:25.915Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:54:25.917Z] Checked if tokens are valid: true, expires at: 1784110481560
+[debug] [2026-07-15T09:54:25.919Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/bayadtayoopo-staging/releases pageSize=10&pageToken=
+[debug] [2026-07-15T10:04:28.684Z] *** [apiv2] error from fetch(https://firebaserules.googleapis.com/v1/projects/bayadtayoopo-staging/releases?pageSize=10&pageToken=, {"headers":{},"method":"GET"}): FetchError: request to https://firebaserules.googleapis.com/v1/projects/bayadtayoopo-staging/releases?pageSize=10&pageToken= failed, reason: read ETIMEDOUT
+[debug] [2026-07-15T10:04:28.692Z] FetchError: request to https://firebaserules.googleapis.com/v1/projects/bayadtayoopo-staging/releases?pageSize=10&pageToken= failed, reason: read ETIMEDOUT
+    at ClientRequest.<anonymous> (/Users/jonathanaplacador/.nvm/versions/node/v18.20.3/lib/node_modules/firebase-tools/node_modules/node-fetch/lib/index.js:1501:11)
+    at ClientRequest.emit (node:events:519:28)
+    at TLSSocket.socketErrorListener (node:_http_client:500:9)
+    at TLSSocket.emit (node:events:519:28)
+    at emitErrorNT (node:internal/streams/destroy:169:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:128:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21)
+[error] 
+[error] Error: Failed to make request to https://firebaserules.googleapis.com/v1/projects/bayadtayoopo-staging/releases?pageSize=10&pageToken=

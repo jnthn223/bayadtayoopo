@@ -1,5 +1,8 @@
 {
   "projects": {
+    "default": "group-expense-management-app",
+    "production": "group-expense-management-app",
+    "staging": "bayadtayoopo-staging",
     "bayadtayoopo": "group-expense-management-app"
   },
   "targets": {
@@ -7,6 +10,13 @@
       "hosting": {
         "app": [
           "bayadtayoopo"
+        ]
+      }
+    },
+    "bayadtayoopo-staging": {
+      "hosting": {
+        "app": [
+          "bayadtayoopo-staging"
         ]
       }
     }

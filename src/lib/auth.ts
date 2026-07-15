@@ -1,6 +1,7 @@
-// Auth session stored in localStorage. Tokens refresh automatically.
+// Auth session stored in localStorage. Firebase Auth refreshes SDK tokens.
 
-import { refreshToken as restRefresh, type AuthUser } from "./firebaseRest";
+import type { AuthUser } from "./firebaseRest";
+import { auth } from "./firebase";
 import { MEMBER_COLORS } from "../app/components/utils";
 import type { CurrentUser } from "../app/components/types";
 
@@ -37,16 +38,31 @@ export async function getValidIdToken(): Promise<string | null> {
   const session = loadSession();
   if (!session) return null;
 
-  if (Date.now() < session.expiresAt - 60_000) {
-    return session.idToken;
-  }
-
-  // Token is close to expiry — refresh it
   try {
-    const { idToken, refreshToken } = await restRefresh(session.refreshToken);
-    saveSession({ ...session, idToken, refreshToken });
+    await auth.authStateReady();
+    const user = auth.currentUser;
+    if (!user || user.uid !== session.uid) {
+      clearSession();
+      return null;
+    }
+
+    const idToken = await user.getIdToken();
+    saveSession({
+      ...session,
+      idToken,
+      refreshToken: user.refreshToken,
+      displayName: user.displayName ?? session.displayName,
+    });
     return idToken;
   } catch {
+    if (
+      typeof navigator !== "undefined" &&
+      !navigator.onLine &&
+      auth.currentUser?.uid === session.uid
+    ) {
+      return session.idToken;
+    }
+
     clearSession();
     return null;
   }

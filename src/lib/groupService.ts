@@ -3,55 +3,46 @@
 //   /users/{uid}        → { groupIds: string[] }
 //   /groups/{groupId}   → { data: JSON<Group>, memberIds: string[] }
 
-import { doc as fsDoc, onSnapshot } from "firebase/firestore";
-import { fsGet, fsSet, fsUpdate, fsGetMultiple } from "./firebaseRest";
-import { getValidIdToken } from "./auth";
-import { db } from "./firebase";
+import {
+  arrayRemove,
+  arrayUnion,
+  doc,
+  getDoc,
+  onSnapshot,
+  setDoc,
+  writeBatch,
+} from "firebase/firestore";
+import { db, finishFirestoreWrite } from "./firebase";
 import type { Group, Member, UserProfile } from "../app/components/types";
 import { compactGroupHistory } from "../app/components/groupMerge";
 import { MEMBER_COLORS, generateId } from "../app/components/utils";
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
-async function token(): Promise<string> {
-  const t = await getValidIdToken();
-  if (!t) throw new Error("Not authenticated");
-  return t;
-}
-
 // ─── User document ─────────────────────────────────────────────────────────
 
-async function getUserGroupIds(uid: string, idToken: string): Promise<string[]> {
-  const doc = await fsGet(`users/${uid}`, idToken);
-  return (doc?.groupIds as string[] | undefined) ?? [];
+async function getUserGroupIds(uid: string): Promise<string[]> {
+  const snapshot = await getDoc(doc(db, "users", uid));
+  return (snapshot.data()?.groupIds as string[] | undefined) ?? [];
 }
 
 async function getUserDocument(
   uid: string,
-  idToken: string,
 ): Promise<Record<string, unknown>> {
-  return (await fsGet(`users/${uid}`, idToken)) ?? {};
+  const snapshot = await getDoc(doc(db, "users", uid));
+  return snapshot.data() ?? {};
 }
 
-async function addGroupIdToUser(uid: string, groupId: string, idToken: string): Promise<void> {
-  const user = await getUserDocument(uid, idToken);
-  const existing = (user.groupIds as string[] | undefined) ?? [];
-  if (existing.includes(groupId)) return;
-  await fsSet(`users/${uid}`, { ...user, groupIds: [...existing, groupId] }, idToken);
-}
-
-async function removeGroupIdFromUser(uid: string, groupId: string, idToken: string): Promise<void> {
-  const user = await getUserDocument(uid, idToken);
-  const existing = (user.groupIds as string[] | undefined) ?? [];
-  await fsSet(
-    `users/${uid}`,
-    { ...user, groupIds: existing.filter((id) => id !== groupId) },
-    idToken,
+async function addGroupIdToUser(uid: string, groupId: string): Promise<void> {
+  await finishFirestoreWrite(
+    setDoc(
+      doc(db, "users", uid),
+      { groupIds: arrayUnion(groupId) },
+      { merge: true },
+    ),
   );
 }
 
 export async function loadUserProfile(uid: string): Promise<UserProfile> {
-  const user = await getUserDocument(uid, await token());
+  const user = await getUserDocument(uid);
   return {
     name: typeof user.name === "string" ? user.name : undefined,
     color: typeof user.color === "string" ? user.color : undefined,
@@ -61,9 +52,9 @@ export async function loadUserProfile(uid: string): Promise<UserProfile> {
 }
 
 export async function saveUserProfile(uid: string, profile: UserProfile): Promise<void> {
-  const idToken = await token();
-  const user = await getUserDocument(uid, idToken);
-  await fsSet(`users/${uid}`, { ...user, ...profile, groupIds: user.groupIds ?? [] }, idToken);
+  await finishFirestoreWrite(
+    setDoc(doc(db, "users", uid), profile, { merge: true }),
+  );
 }
 
 // ─── Group document ────────────────────────────────────────────────────────
@@ -102,7 +93,7 @@ export function subscribeGroup(
   onError?: (error: Error) => void,
 ): () => void {
   return onSnapshot(
-    fsDoc(db, "groups", groupId),
+    doc(db, "groups", groupId),
     (snapshot) => {
       if (!snapshot.exists() || snapshot.data().deleted) {
         onChange(null);
@@ -119,22 +110,31 @@ export function subscribeGroup(
 
 /** Save a group to Firestore and register it for the current user. */
 export async function saveGroup(group: Group, uid: string): Promise<void> {
-  const idToken = await token();
-  await fsSet(`groups/${group.id}`, packGroup(group), idToken);
-  await addGroupIdToUser(uid, group.id, idToken);
+  const batch = writeBatch(db);
+  batch.set(doc(db, "groups", group.id), packGroup(group));
+  batch.set(
+    doc(db, "users", uid),
+    { groupIds: arrayUnion(group.id) },
+    { merge: true },
+  );
+  await finishFirestoreWrite(batch.commit());
 }
 
 /** Load all groups the current user is a member of. */
 export async function loadUserGroups(uid: string): Promise<Group[]> {
-  const idToken = await token();
-  const groupIds = await getUserGroupIds(uid, idToken);
+  const groupIds = await getUserGroupIds(uid);
   if (groupIds.length === 0) return [];
 
-  const paths = groupIds.map((id) => `groups/${id}`);
-  const docs = await fsGetMultiple(paths, idToken);
+  const snapshots = await Promise.all(
+    groupIds.map((id) => getDoc(doc(db, "groups", id))),
+  );
 
-  return docs
-    .map((doc) => (doc ? unpackGroup(doc) : null))
+  return snapshots
+    .map((snapshot) =>
+      snapshot.exists() && !snapshot.data().deleted
+        ? unpackGroup(snapshot.data())
+        : null,
+    )
     .filter(
       (group): group is Group =>
         group !== null &&
@@ -144,9 +144,9 @@ export async function loadUserGroups(uid: string): Promise<Group[]> {
 
 /** Fetch a single group by ID (for join flow). */
 export async function fetchGroup(groupId: string): Promise<Group | null> {
-  const idToken = await token();
-  const doc = await fsGet(`groups/${groupId}`, idToken);
-  return doc ? unpackGroup(doc) : null;
+  const snapshot = await getDoc(doc(db, "groups", groupId));
+  if (!snapshot.exists() || snapshot.data().deleted) return null;
+  return unpackGroup(snapshot.data());
 }
 
 /**
@@ -162,11 +162,10 @@ export async function joinGroup(
   claimMemberId?: string,
   claimCode?: string,
 ): Promise<Group | null> {
-  const idToken = await token();
-  const doc = await fsGet(`groups/${groupId}`, idToken);
-  if (!doc) return null;
+  const snapshot = await getDoc(doc(db, "groups", groupId));
+  if (!snapshot.exists() || snapshot.data().deleted) return null;
 
-  const group = unpackGroup(doc);
+  const group = unpackGroup(snapshot.data());
   if (!group) return null;
 
   const alreadyMember = group.members.some((m) => (m.uid ?? m.id) === uid);
@@ -202,25 +201,30 @@ export async function joinGroup(
       };
       group.members = [...group.members, newMember];
     }
-    await fsSet(`groups/${group.id}`, packGroup(group), idToken);
+    await finishFirestoreWrite(
+      setDoc(doc(db, "groups", group.id), packGroup(group)),
+    );
   }
 
-  await addGroupIdToUser(uid, group.id, idToken);
+  await addGroupIdToUser(uid, group.id);
   return group;
 }
 
 /** Delete a group and unregister it from the user. */
 export async function deleteGroup(groupId: string, uid: string): Promise<void> {
-  const idToken = await token();
-  await removeGroupIdFromUser(uid, groupId, idToken);
-  // Mark group as deleted (soft delete — we don't have DELETE in basic Firestore REST without admin)
-  await fsUpdate(`groups/${groupId}`, { deleted: true }, idToken);
+  const batch = writeBatch(db);
+  batch.set(
+    doc(db, "users", uid),
+    { groupIds: arrayRemove(groupId) },
+    { merge: true },
+  );
+  batch.set(doc(db, "groups", groupId), { deleted: true }, { merge: true });
+  await finishFirestoreWrite(batch.commit());
 }
 
 /** Poll for fresh group data from Firestore. */
 export async function pollGroup(groupId: string): Promise<Group | null> {
-  const idToken = await token();
-  const doc = await fsGet(`groups/${groupId}`, idToken);
-  if (!doc || doc.deleted) return null;
-  return unpackGroup(doc);
+  const snapshot = await getDoc(doc(db, "groups", groupId));
+  if (!snapshot.exists() || snapshot.data().deleted) return null;
+  return unpackGroup(snapshot.data());
 }

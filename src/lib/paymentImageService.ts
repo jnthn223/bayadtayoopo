@@ -1,5 +1,5 @@
-import { getValidIdToken } from "./auth";
-import { fsDelete, fsGet, fsSet } from "./firebaseRest";
+import { deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
+import { db, finishFirestoreWrite } from "./firebase";
 
 const MAX_DATA_URL_LENGTH = 700_000;
 const MAX_DIMENSION = 1200;
@@ -57,26 +57,30 @@ export async function savePaymentImage(
   kind: "qr-code" | "payment-proof",
   file: File,
 ): Promise<void> {
-  const idToken = await getValidIdToken();
-  if (!idToken) throw new Error("Your session expired. Sign in again.");
   const dataUrl = await compressImage(file);
-  await fsSet(
-    `groups/${groupId}/paymentImages/${imageId}`,
-    { dataUrl, ownerUid, kind, createdAt: new Date().toISOString() },
-    idToken,
+  await finishFirestoreWrite(
+    setDoc(doc(db, "groups", groupId, "paymentImages", imageId), {
+      dataUrl,
+      ownerUid,
+      kind,
+      createdAt: new Date().toISOString(),
+    }),
   );
 }
 
 export async function loadPaymentImage(groupId: string, imageId: string): Promise<string> {
-  const idToken = await getValidIdToken();
-  if (!idToken) throw new Error("Your session expired. Sign in again.");
-  const image = await fsGet(`groups/${groupId}/paymentImages/${imageId}`, idToken);
-  if (!image || typeof image.dataUrl !== "string") throw new Error("Image is unavailable");
+  const snapshot = await getDoc(
+    doc(db, "groups", groupId, "paymentImages", imageId),
+  );
+  const image = snapshot.data();
+  if (!snapshot.exists() || typeof image?.dataUrl !== "string") {
+    throw new Error("Image is unavailable");
+  }
   return image.dataUrl;
 }
 
 export async function deletePaymentImage(groupId: string, imageId: string): Promise<void> {
-  const idToken = await getValidIdToken();
-  if (!idToken) return;
-  await fsDelete(`groups/${groupId}/paymentImages/${imageId}`, idToken);
+  await finishFirestoreWrite(
+    deleteDoc(doc(db, "groups", groupId, "paymentImages", imageId)),
+  );
 }

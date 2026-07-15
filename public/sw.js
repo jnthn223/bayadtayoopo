@@ -1,14 +1,35 @@
-const CACHE_NAME = "bayadtayoopo-v2";
+const CACHE_NAME = "bayadtayoopo-v3";
 const APP_SHELL = [
-  "/",
-  "/manifest.webmanifest?v=2",
-  "/icons/icon.svg?v=2",
+  "/manifest.webmanifest",
+  "/icons/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
 ];
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
+async function precacheAppShell() {
+  const cache = await caches.open(CACHE_NAME);
+  await cache.addAll(APP_SHELL);
+
+  const response = await fetch("/", { cache: "reload" });
+  if (!response.ok) throw new Error("Unable to cache the app shell");
+
+  await cache.put("/", response.clone());
+  const html = await response.text();
+  const buildAssets = Array.from(
+    html.matchAll(/(?:src|href)=["'](\/assets\/[^"']+)["']/g),
+    (match) => match[1],
   );
+
+  await Promise.all(
+    [...new Set(buildAssets)].map(async (asset) => {
+      const assetResponse = await fetch(asset, { cache: "reload" });
+      if (assetResponse.ok) await cache.put(asset, assetResponse);
+    }),
+  );
+}
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(precacheAppShell());
   self.skipWaiting();
 });
 

@@ -1,6 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -12,4 +16,24 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
+});
+
+/**
+ * Firestore queues writes locally while offline, but its write promise does not
+ * resolve until the server acknowledges the change. Let UI actions finish once
+ * the mutation is queued when the browser is known to be offline.
+ */
+export function finishFirestoreWrite(write: Promise<void>): Promise<void> {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    void write.catch((error) => {
+      console.error("Queued Firestore write failed", error);
+    });
+    return Promise.resolve();
+  }
+
+  return write;
+}
