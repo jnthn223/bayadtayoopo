@@ -23,7 +23,7 @@ import {
   fetchGroup,
   pollGroup,
   subscribeGroup,
-  loadUserProfile,
+  loadOrCreateUserProfile,
   saveUserProfile,
 } from "../lib/groupService";
 import { MEMBER_COLORS } from "./components/utils";
@@ -39,6 +39,10 @@ import { ProfileScreen } from "./components/ProfileScreen";
 import { BrandMark, BrandWordmark } from "./components/Brand";
 import { auth } from "../lib/firebase";
 import { signOut } from "firebase/auth";
+import {
+  PWA_UPDATE_AVAILABLE_EVENT,
+  restartWithPwaUpdate,
+} from "../lib/pwaUpdate";
 
 /* MARKER-MAKE-KIT-INVOKED */
 
@@ -77,6 +81,8 @@ export default function App() {
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [linkEmailError, setLinkEmailError] = useState("");
   const [splashMinimumElapsed, setSplashMinimumElapsed] = useState(false);
+  const [waitingUpdate, setWaitingUpdate] = useState<ServiceWorker | null>(null);
+  const [restartingForUpdate, setRestartingForUpdate] = useState(false);
   const syncRef = useRef<{
     unsubscribe?: () => void;
     poll?: ReturnType<typeof setInterval>;
@@ -88,6 +94,15 @@ export default function App() {
       SPLASH_MIN_MS,
     );
     return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const handleUpdate = (event: Event) => {
+      setWaitingUpdate((event as CustomEvent<ServiceWorker>).detail);
+    };
+    window.addEventListener(PWA_UPDATE_AVAILABLE_EVENT, handleUpdate);
+    return () =>
+      window.removeEventListener(PWA_UPDATE_AVAILABLE_EVENT, handleUpdate);
   }, []);
 
   // ── Banner helper ───────────────────────────────────────────────────────
@@ -219,7 +234,7 @@ export default function App() {
     try {
       const [loaded, profile] = await Promise.all([
         loadUserGroups(uid),
-        loadUserProfile(uid),
+        loadOrCreateUserProfile(uid),
       ]);
       setGroups(loaded);
       setCurrentUser((user) =>
@@ -324,7 +339,7 @@ export default function App() {
   ) {
     const newSession = saveSession(user);
     const cu = sessionToCurrentUser(newSession);
-    const savedProfile = await loadUserProfile(user.uid).catch(() => ({}));
+    const savedProfile = await loadOrCreateUserProfile(user.uid).catch(() => ({}));
     const colorIndex = user.uid.charCodeAt(0) % MEMBER_COLORS.length;
 
     try {
@@ -543,6 +558,32 @@ export default function App() {
           >
             {banner.type === "success" ? "🎉 " : "⚠️ "}
             {banner.text}
+          </div>
+        )}
+
+        {waitingUpdate && (
+          <div
+            className="absolute bottom-4 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-2xl border border-border bg-card p-4 text-card-foreground shadow-2xl"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Update available</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Restart to use the latest version.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={restartingForUpdate}
+              onClick={() => {
+                setRestartingForUpdate(true);
+                restartWithPwaUpdate(waitingUpdate);
+              }}
+              className="shrink-0 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+            >
+              {restartingForUpdate ? "Restarting…" : "Restart"}
+            </button>
           </div>
         )}
 

@@ -1,4 +1,5 @@
-const CACHE_NAME = "bayadtayoopo-v3";
+const BUILD_ID = new URL(self.location.href).searchParams.get("v") ?? "legacy";
+const CACHE_NAME = `bayadtayoopo-${BUILD_ID}`;
 const APP_SHELL = [
   "/manifest.webmanifest",
   "/icons/icon.svg",
@@ -30,7 +31,10 @@ async function precacheAppShell() {
 
 self.addEventListener("install", (event) => {
   event.waitUntil(precacheAppShell());
-  self.skipWaiting();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {

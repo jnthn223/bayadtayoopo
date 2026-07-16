@@ -12,21 +12,8 @@ interface Props {
 }
 
 export function UserAvatar({ name, color, seed, className = "", title }: Props) {
-  if (!seed) {
-    return (
-      <span
-        className={`flex items-center justify-center text-white font-semibold ${className}`}
-        style={{ backgroundColor: color }}
-        aria-label={`${name}'s avatar`}
-        title={title}
-      >
-        {name.charAt(0).toUpperCase() || "?"}
-      </span>
-    );
-  }
-
   const src = new Avatar(avatarStyle, {
-    seed,
+    seed: seed ?? `${name}-${color}`,
     backgroundColor: [color.replace("#", "")],
   }).toDataUri();
 

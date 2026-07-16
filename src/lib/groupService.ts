@@ -41,13 +41,23 @@ async function addGroupIdToUser(uid: string, groupId: string): Promise<void> {
   );
 }
 
-export async function loadUserProfile(uid: string): Promise<UserProfile> {
+export async function loadOrCreateUserProfile(uid: string): Promise<UserProfile> {
   const user = await getUserDocument(uid);
+  const avatarSeed =
+    typeof user.avatarSeed === "string"
+      ? user.avatarSeed
+      : crypto.randomUUID();
+
+  if (typeof user.avatarSeed !== "string") {
+    await finishFirestoreWrite(
+      setDoc(doc(db, "users", uid), { avatarSeed }, { merge: true }),
+    );
+  }
+
   return {
     name: typeof user.name === "string" ? user.name : undefined,
     color: typeof user.color === "string" ? user.color : undefined,
-    avatarSeed:
-      typeof user.avatarSeed === "string" ? user.avatarSeed : undefined,
+    avatarSeed,
   };
 }
 
