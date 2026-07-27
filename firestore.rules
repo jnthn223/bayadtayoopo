@@ -132,7 +132,7 @@ service cloud.firestore {
       allow create: if isPaymentImageGroupMember()
         && request.resource.data.keys().hasOnly(['dataUrl', 'ownerUid', 'kind', 'createdAt'])
         && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.kind in ['qr-code', 'payment-proof']
+        && request.resource.data.kind in ['qr-code', 'payment-proof', 'expense-receipt']
         && request.resource.data.dataUrl is string
         && request.resource.data.dataUrl.size() < 700000
         && request.resource.data.createdAt is string;

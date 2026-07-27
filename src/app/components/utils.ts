@@ -1,4 +1,12 @@
-import type { Group, Balance, Settlement, Member, Expense, Split } from "./types";
+import type {
+  Group,
+  Balance,
+  Settlement,
+  Member,
+  Expense,
+  Split,
+  PaymentAllocation,
+} from "./types";
 
 export const MEMBER_COLORS = [
   "#5b4cf5", "#e84393", "#00b896", "#f59e0b", "#3b82f6",
@@ -93,7 +101,10 @@ export function allocateCustomShares(
   return allocation;
 }
 
-export function computeBalances(group: Group): Balance[] {
+function computeBalancesWithPaymentStatuses(
+  group: Group,
+  paymentStatuses: Set<"pending" | "confirmed">,
+): Balance[] {
   const balances: Record<string, number> = {};
   const members = [...group.members, ...(group.formerMembers ?? [])];
   members.forEach((m) => (balances[m.id] = 0));
@@ -115,11 +126,128 @@ export function computeBalances(group: Group): Balance[] {
     });
   });
 
+  for (const payment of group.payments ?? []) {
+    if (!paymentStatuses.has(payment.status as "pending" | "confirmed")) continue;
+    balances[payment.fromMemberId] =
+      (balances[payment.fromMemberId] ?? 0) + payment.amount;
+    balances[payment.toMemberId] =
+      (balances[payment.toMemberId] ?? 0) - payment.amount;
+  }
+
   return members.map((m) => ({
     memberId: m.id,
     memberName: m.name,
     net: balances[m.id] ?? 0,
   }));
+}
+
+export function computeBalances(group: Group): Balance[] {
+  return computeBalancesWithPaymentStatuses(group, new Set(["confirmed"]));
+}
+
+export function computeProjectedBalances(group: Group): Balance[] {
+  return computeBalancesWithPaymentStatuses(
+    group,
+    new Set(["confirmed", "pending"]),
+  );
+}
+
+export function getOutstandingExpenseShares(
+  group: Group,
+  fromMemberId: string,
+): PaymentAllocation[] {
+  const alreadyAllocatedCents = new Map<string, number>();
+  for (const payment of group.payments ?? []) {
+    if (
+      payment.fromMemberId !== fromMemberId ||
+      !["pending", "confirmed"].includes(payment.status)
+    ) {
+      continue;
+    }
+    for (const allocation of payment.allocations) {
+      if (!allocation.expenseId) continue;
+      alreadyAllocatedCents.set(
+        allocation.expenseId,
+        (alreadyAllocatedCents.get(allocation.expenseId) ?? 0) +
+          Math.round(allocation.amount * 100),
+      );
+    }
+  }
+
+  const expenses = [...group.expenses].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
+  );
+
+  return expenses.flatMap((expense) => {
+    const split = expense.splits.find(
+      (candidate) => candidate.memberId === fromMemberId,
+    );
+    if (
+      !split ||
+      split.memberId === getExpensePayerId(expense) ||
+      split.paymentStatus === "confirmed"
+    ) {
+      return [];
+    }
+
+    const availableCents = Math.max(
+      0,
+      Math.round(split.amount * 100) -
+        (alreadyAllocatedCents.get(expense.id) ?? 0),
+    );
+    return availableCents > 0
+      ? [
+          {
+            expenseId: expense.id,
+            expenseDescription: expense.description,
+            amount: availableCents / 100,
+          },
+        ]
+      : [];
+  });
+}
+
+export function allocatePaymentToExpenses(
+  group: Group,
+  fromMemberId: string,
+  amount: number,
+  selectedExpenseIds?: string[],
+): PaymentAllocation[] {
+  let remainingCents = Math.max(0, Math.round(amount * 100));
+  if (remainingCents === 0) return [];
+
+  const selectedIds = selectedExpenseIds
+    ? new Set(selectedExpenseIds)
+    : undefined;
+  const outstandingShares = getOutstandingExpenseShares(
+    group,
+    fromMemberId,
+  ).filter(
+    (allocation) =>
+      !selectedIds || (!!allocation.expenseId && selectedIds.has(allocation.expenseId)),
+  );
+  const allocations: PaymentAllocation[] = [];
+
+  for (const share of outstandingShares) {
+    if (remainingCents === 0) break;
+    const allocatedCents = Math.min(
+      remainingCents,
+      Math.round(share.amount * 100),
+    );
+    allocations.push({ ...share, amount: allocatedCents / 100 });
+    remainingCents -= allocatedCents;
+  }
+
+  if (remainingCents > 0) {
+    allocations.push({
+      expenseDescription: selectedExpenseIds
+        ? "Unallocated amount"
+        : "Remaining group balance",
+      amount: remainingCents / 100,
+    });
+  }
+
+  return allocations;
 }
 
 export function computeSettlements(balances: Balance[]): Settlement[] {
@@ -189,7 +317,7 @@ export function getUnsettledPaymentSummary(group: Group, userId: string) {
   );
   if (!member) return { count: 0, amount: 0, pendingCount: 0, rejectedCount: 0 };
 
-  const splits = group.expenses.flatMap((expense) =>
+  const legacySplits = group.expenses.flatMap((expense) =>
     expense.splits.filter(
       (split) =>
         split.memberId === member.id &&
@@ -198,14 +326,25 @@ export function getUnsettledPaymentSummary(group: Group, userId: string) {
         split.paymentStatus !== "confirmed",
     ),
   );
+  const memberPayments = (group.payments ?? []).filter(
+    (payment) => payment.fromMemberId === member.id,
+  );
+  const settlements = computeSettlements(computeBalances(group)).filter(
+    (settlement) => settlement.from === member.id,
+  );
 
   return {
-    count: splits.length,
-    amount: splits.reduce((sum, split) => sum + split.amount, 0),
-    pendingCount: splits.filter((split) => split.paymentStatus === "pending")
-      .length,
-    rejectedCount: splits.filter((split) => split.paymentStatus === "rejected")
-      .length,
+    count: settlements.length,
+    amount: settlements.reduce(
+      (sum, settlement) => sum + settlement.amount,
+      0,
+    ),
+    pendingCount:
+      legacySplits.filter((split) => split.paymentStatus === "pending").length +
+      memberPayments.filter((payment) => payment.status === "pending").length,
+    rejectedCount:
+      legacySplits.filter((split) => split.paymentStatus === "rejected").length +
+      memberPayments.filter((payment) => payment.status === "rejected").length,
   };
 }
 
@@ -267,8 +406,27 @@ export function mergeGroupMember(
               }
             : undefined,
         })),
+        receipts: expense.receipts?.map((receipt) => ({
+          ...receipt,
+          uploadedBy: replace(receipt.uploadedBy),
+        })),
       };
     }),
+    payments: group.payments?.map((payment) => ({
+      ...payment,
+      fromMemberId: replace(payment.fromMemberId),
+      toMemberId: replace(payment.toMemberId),
+      submittedBy: replace(payment.submittedBy),
+      reviewedBy: payment.reviewedBy
+        ? replace(payment.reviewedBy)
+        : undefined,
+      cancelledBy: payment.cancelledBy
+        ? replace(payment.cancelledBy)
+        : undefined,
+      reversedBy: payment.reversedBy
+        ? replace(payment.reversedBy)
+        : undefined,
+    })),
     messages: group.messages?.map((message) => ({
       ...message,
       memberId: replace(message.memberId),

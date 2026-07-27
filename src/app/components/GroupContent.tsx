@@ -22,6 +22,7 @@ import type {
 } from "./types";
 import type { GroupTab } from "./GroupHeader";
 import { UserAvatar } from "./UserAvatar";
+import { GroupPayments } from "./GroupPayments";
 import {
   canDirectlyConfirmSplit,
   CATEGORY_ICONS,
@@ -50,6 +51,7 @@ interface Props {
   openDeleteExpense: (expense: Expense) => void;
   openPaymentDetails: () => void;
   viewPaymentImage: (imageId: string, title: string) => void;
+  onUpdate: (group: Group) => Promise<void> | void;
   openPaymentSubmission: (expense: Expense, split: Split) => void;
   reviewPayment: (
     expenseId: string,
@@ -81,10 +83,17 @@ export function GroupContent({
   openDeleteExpense,
   openPaymentDetails,
   viewPaymentImage,
+  onUpdate,
   openPaymentSubmission,
   reviewPayment,
   setCreatorPaidConfirmation,
 }: Props) {
+  const hasRelevantGroupPayments = (group.payments ?? []).some(
+    (payment) =>
+      payment.fromMemberId === currentMember?.id ||
+      payment.toMemberId === currentMember?.id,
+  );
+
   return (
       <div className="flex-1 overflow-y-auto">
         {tab === "expenses" && (
@@ -142,6 +151,31 @@ export function GroupContent({
                                 ? "Split equally"
                                 : "Custom split"}
                             </p>
+                            {(exp.receipts?.length ?? 0) > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {exp.receipts!.map((receipt, receiptIndex) => (
+                                  <button
+                                    key={receipt.imageId}
+                                    type="button"
+                                    onClick={() =>
+                                      viewPaymentImage(
+                                        receipt.imageId,
+                                        exp.receipts!.length === 1
+                                          ? `Receipt · ${exp.description}`
+                                          : `Receipt ${receiptIndex + 1} · ${exp.description}`,
+                                      )
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-[11px] font-medium text-primary"
+                                  >
+                                    <Receipt size={11} />
+                                    Receipt
+                                    {exp.receipts!.length > 1
+                                      ? ` ${receiptIndex + 1}`
+                                      : ""}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <div className="text-right shrink-0">
                             <p className="text-sm font-semibold text-foreground">
@@ -290,7 +324,9 @@ export function GroupContent({
                 </div>
               </button>
             )}
-            {settlements.length === 0 && paymentItems.length === 0 ? (
+            {settlements.length === 0 &&
+            paymentItems.length === 0 &&
+            !hasRelevantGroupPayments ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
                   <span className="text-2xl">🎉</span>
@@ -504,47 +540,15 @@ export function GroupContent({
                   </>
                 )}
 
-                {settlements.length > 0 && (
-                  <div className={paymentItems.length > 0 ? "pt-3" : ""}>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Suggested payments to settle the group
-                    </p>
-                    <div className="space-y-3">
-                      {settlements.map((s, i) => {
-                        const fromMember = getMemberById(group, s.from);
-                        const toMember = getMemberById(group, s.to);
-                        return (
-                          <div
-                            key={i}
-                            className="bg-card rounded-2xl border border-border p-4 flex items-center gap-3"
-                          >
-                            <UserAvatar name={s.fromName} color={fromMember?.color ?? "var(--primary)"} seed={fromMember?.avatarSeed} className="w-10 h-10 rounded-full text-sm shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground">
-                                <span style={{ color: fromMember?.color }}>
-                                  {displayMemberName(s.from, s.fromName)}
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {" "}
-                                  pays{" "}
-                                </span>
-                                <span style={{ color: toMember?.color }}>
-                                  {displayMemberName(s.to, s.toName)}
-                                </span>
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                Transfer
-                              </p>
-                            </div>
-                            <p className="text-sm font-semibold text-foreground shrink-0">
-                              {formatCurrency(s.amount, group.currency)}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                <div className={paymentItems.length > 0 ? "pt-3" : ""}>
+                  <GroupPayments
+                    group={group}
+                    currentMember={currentMember}
+                    settlements={settlements}
+                    onUpdate={onUpdate}
+                    viewPaymentImage={viewPaymentImage}
+                  />
+                </div>
               </>
             )}
           </div>
@@ -643,4 +647,3 @@ export function GroupContent({
 
   );
 }
-

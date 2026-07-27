@@ -214,8 +214,8 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
               ],
               [
                 "3",
-                "Send proof, then confirm",
-                "Members attach a reference or receipt. The recipient reviews it and marks the payment complete.",
+                "Pay fully or partially",
+                "One transfer can cover several expenses. Attach one proof, then let the recipient confirm it.",
               ],
             ].map(([number, title, copy]) => (
               <div key={number} className="flex gap-3">
@@ -248,7 +248,7 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
             [
               Shield,
               "Payment tracking",
-              "Submit, review, and confirm repayments.",
+              "Track partial payments, remaining balances, and confirmation.",
             ],
             [
               UserPlus,
@@ -268,7 +268,12 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
             [
               CreditCard,
               "Payment instructions & proof",
-              "Share GCash, bank, account, or QR details, then attach a reference, note, or receipt for confirmation.",
+              "Share payment details, attach one proof, and see which expenses the transfer covers.",
+            ],
+            [
+              CheckCircle2,
+              "Expense receipts",
+              "Attach the original receipt to an expense for group transparency.",
             ],
             [
               FileSpreadsheet,

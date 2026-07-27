@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Check, ChevronDown, X } from "lucide-react";
+import { Check, ChevronDown, ImagePlus, X } from "lucide-react";
 import { EXPENSE_CATEGORIES } from "./types";
 import type { CurrentUser, Group, Expense, SplitType, Category } from "./types";
 import { allocateCustomShares, generateId, CATEGORY_ICONS, getCurrencySymbol, getExpensePayerId } from "./utils";
@@ -10,7 +10,7 @@ interface Props {
   group: Group;
   open: boolean;
   onClose: () => void;
-  onAdd: (expense: Expense) => void;
+  onAdd: (expense: Expense, receiptFiles: File[]) => Promise<void> | void;
   currentUser: CurrentUser;
   editExpense?: Expense | null;
   isAdmin?: boolean;
@@ -48,6 +48,8 @@ export function AddExpenseModal({
   );
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -80,6 +82,7 @@ export function AddExpenseModal({
     }
 
     setErrors({});
+    setReceiptFiles([]);
   }, [open, editExpense, isAdmin, defaultPayerId]);
 
   const totalAmount = parseFloat(amount) || 0;
@@ -121,7 +124,7 @@ export function AddExpenseModal({
     return Object.keys(errs).length === 0;
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!validate()) return;
     const creatorId = editExpense?.createdBy ?? currentMember?.id ?? currentUser.id;
     const payerId = isAdmin ? paidBy : creatorId;
@@ -161,18 +164,33 @@ export function AddExpenseModal({
             };
           });
 
-    onAdd({
-      id: editExpense?.id ?? generateId(),
-      description: description.trim(),
-      amount: totalAmount,
-      paidBy: payerId,
-      createdBy: creatorId,
-      splitType,
-      splits,
-      date,
-      category,
-    });
-    onClose();
+    setSaving(true);
+    try {
+      await onAdd(
+        {
+          id: editExpense?.id ?? generateId(),
+          description: description.trim(),
+          amount: totalAmount,
+          paidBy: payerId,
+          createdBy: creatorId,
+          splitType,
+          splits,
+          date,
+          category,
+          receipts: editExpense?.receipts,
+        },
+        receiptFiles,
+      );
+      onClose();
+    } catch (error) {
+      setErrors((current) => ({
+        ...current,
+        receipts:
+          error instanceof Error ? error.message : "Unable to save the receipt",
+      }));
+    } finally {
+      setSaving(false);
+    }
   }
 
   function distributeEqually() {
@@ -494,12 +512,83 @@ export function AddExpenseModal({
               </div>
             )}
 
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1.5">
+                Expense receipts <span className="text-xs">(optional)</span>
+              </label>
+              <label className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-muted/20 px-4 py-3 cursor-pointer">
+                <ImagePlus size={18} className="text-primary shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    Add receipt images
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Show the group what was charged
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files ?? []);
+                    event.target.value = "";
+                    setReceiptFiles((current) => [...current, ...files].slice(0, 5));
+                    setErrors((current) => ({ ...current, receipts: "" }));
+                  }}
+                />
+              </label>
+              {(editExpense?.receipts?.length ?? 0) > 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {editExpense!.receipts!.length} saved receipt
+                  {editExpense!.receipts!.length === 1 ? "" : "s"} will be kept.
+                </p>
+              )}
+              {receiptFiles.length > 0 && (
+                <div className="mt-2 space-y-1.5">
+                  {receiptFiles.map((file, index) => (
+                    <div
+                      key={`${file.name}-${file.lastModified}-${index}`}
+                      className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2"
+                    >
+                      <span className="flex-1 truncate text-xs text-foreground">
+                        {file.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setReceiptFiles((current) =>
+                            current.filter((_, candidate) => candidate !== index),
+                          )
+                        }
+                        className="p-1 text-muted-foreground hover:text-destructive"
+                        aria-label={`Remove ${file.name}`}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {errors.receipts && (
+                <p className="text-destructive text-xs mt-1.5">
+                  {errors.receipts}
+                </p>
+              )}
+            </div>
+
             <button
               onClick={handleSubmit}
+              disabled={saving}
               className="w-full py-4 rounded-2xl text-primary-foreground font-semibold text-base transition-all active:scale-95"
               style={{ backgroundColor: "var(--primary)" }}
             >
-              {editExpense ? "Save Changes" : "Add Expense"}
+              {saving
+                ? "Saving…"
+                : editExpense
+                  ? "Save Changes"
+                  : "Add Expense"}
             </button>
           </div>
         </Dialog.Content>

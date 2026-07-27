@@ -20,6 +20,7 @@ import {
 import {
   archiveGroupMember,
   computeBalances,
+  computeProjectedBalances,
   computeSettlements,
   formatCurrency,
   generateId,
@@ -48,7 +49,7 @@ interface Props {
   group: Group;
   currentUser: CurrentUser;
   onBack: () => void;
-  onUpdate: (group: Group) => void;
+  onUpdate: (group: Group) => Promise<void> | void;
   onDelete: (groupId: string) => void;
 }
 
@@ -125,7 +126,7 @@ export function GroupScreen({
   const activeBalances = balances.filter((balance) =>
     activeMemberIds.has(balance.memberId),
   );
-  const settlements = computeSettlements(balances);
+  const settlements = computeSettlements(computeProjectedBalances(group));
   const total = getTotalExpenses(group);
   const messages = [...(group.messages ?? [])].sort((a, b) =>
     a.createdAt.localeCompare(b.createdAt),
@@ -152,6 +153,7 @@ export function GroupScreen({
         (split) =>
           split.memberId !== getExpensePayerId(expense) &&
           split.amount > 0.005 &&
+          !!(split.paymentStatus || split.paymentSubmission) &&
           split.paymentStatus !== "confirmed",
       )
       .map((split) => ({ expense, split })),
@@ -172,6 +174,36 @@ export function GroupScreen({
         relevantPaymentMemberIds.add(split.memberId);
       }
     });
+    settlements.forEach((settlement) => {
+      if (
+        settlement.from === currentMember.id &&
+        activeMemberIds.has(settlement.to)
+      ) {
+        relevantPaymentMemberIds.add(settlement.to);
+      } else if (
+        settlement.to === currentMember.id &&
+        activeMemberIds.has(settlement.from)
+      ) {
+        relevantPaymentMemberIds.add(settlement.from);
+      }
+    });
+    (group.payments ?? [])
+      .filter((payment) =>
+        ["pending", "rejected"].includes(payment.status),
+      )
+      .forEach((payment) => {
+        if (
+          payment.fromMemberId === currentMember.id &&
+          activeMemberIds.has(payment.toMemberId)
+        ) {
+          relevantPaymentMemberIds.add(payment.toMemberId);
+        } else if (
+          payment.toMemberId === currentMember.id &&
+          activeMemberIds.has(payment.fromMemberId)
+        ) {
+          relevantPaymentMemberIds.add(payment.fromMemberId);
+        }
+      });
   }
   const outstandingMemberCount = relevantPaymentMemberIds.size;
   const unreadChatCount = messages.filter(
@@ -234,17 +266,44 @@ export function GroupScreen({
     setGroupTourStep(null);
   }
 
-  function handleAddExpense(expense: Expense) {
-    const updated = { ...group };
-    const idx = updated.expenses.findIndex((e) => e.id === expense.id);
-    if (idx >= 0) {
-      updated.expenses = updated.expenses.map((e) =>
-        e.id === expense.id ? expense : e,
-      );
-    } else {
-      updated.expenses = [expense, ...updated.expenses];
+  async function handleAddExpense(expense: Expense, receiptFiles: File[]) {
+    const uploadedReceipts = [];
+    try {
+      for (const file of receiptFiles) {
+        const imageId = generateId();
+        await savePaymentImage(
+          group.id,
+          imageId,
+          currentUser.id,
+          "expense-receipt",
+          file,
+        );
+        uploadedReceipts.push({
+          imageId,
+          uploadedBy: currentMember?.id ?? currentUser.id,
+          uploadedAt: new Date().toISOString(),
+        });
+      }
+      const expenseWithReceipts = {
+        ...expense,
+        receipts: [...(expense.receipts ?? []), ...uploadedReceipts],
+      };
+      const updated = { ...group };
+      const idx = updated.expenses.findIndex((e) => e.id === expense.id);
+      if (idx >= 0) {
+        updated.expenses = updated.expenses.map((e) =>
+          e.id === expense.id ? expenseWithReceipts : e,
+        );
+      } else {
+        updated.expenses = [expenseWithReceipts, ...updated.expenses];
+      }
+      await onUpdate(updated);
+    } catch (error) {
+      uploadedReceipts.forEach((receipt) => {
+        deletePaymentImage(group.id, receipt.imageId).catch(() => {});
+      });
+      throw error;
     }
-    onUpdate(updated);
   }
 
   function openDeleteExpense(expense: Expense) {
@@ -562,6 +621,13 @@ export function GroupScreen({
           expense.splits.some((split) => split.memberId === memberId),
       ) ||
       (group.messages ?? []).some((message) => message.memberId === memberId) ||
+      (group.payments ?? []).some(
+        (payment) =>
+          payment.fromMemberId === memberId ||
+          payment.toMemberId === memberId ||
+          payment.submittedBy === memberId ||
+          payment.reviewedBy === memberId,
+      ) ||
       (group.deletedExpenses ?? []).some(
         (expense) => expense.deletedBy === memberId,
       );
@@ -759,6 +825,7 @@ export function GroupScreen({
         openDeleteExpense={openDeleteExpense}
         openPaymentDetails={openPaymentDetails}
         viewPaymentImage={viewPaymentImage}
+        onUpdate={onUpdate}
         openPaymentSubmission={openPaymentSubmission}
         reviewPayment={reviewPayment}
         setCreatorPaidConfirmation={setCreatorPaidConfirmation}

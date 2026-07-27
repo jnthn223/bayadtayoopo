@@ -62,19 +62,19 @@ export function GroupTour({
       icon: Receipt,
       eyebrow: "Start tracking immediately",
       title: "Add the expense now",
-      copy: "Choose who paid, split equally or enter custom amounts, and include joined or pending members in the same expense.",
+      copy: "Choose who paid, split equally or enter custom amounts, include pending members, and optionally attach the original receipt for transparency.",
     },
     {
       icon: CreditCard,
       eyebrow: "Clear payment flow",
-      title: "Instructions in, proof out",
-      copy: "In Settle Up, add your GCash, bank, or QR instructions. The borrower submits a reference or receipt, then the person owed confirms or rejects it.",
+      title: "Pay once—even for several expenses",
+      copy: "In Settle Up, pay in full or partially, see which expenses the payment covers, attach one proof, then let the recipient confirm or request a correction.",
     },
     {
       icon: FileCheck2,
       eyebrow: "You’re ready",
       title: "Walang gulatan sa singilan",
-      copy: "Balances, repayment status, payment proof, and group chat stay together. You can replay this guide anytime from the ⋮ menu.",
+      copy: "Receipts, installment progress, payment proof, balances, and group chat stay together. You can replay this guide anytime from the ⋮ menu.",
     },
   ] as const;
   const active = steps[step];

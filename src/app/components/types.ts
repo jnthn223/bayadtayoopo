@@ -29,6 +29,48 @@ export interface PaymentSubmission {
   rejectionReason?: string;
 }
 
+export interface ExpenseReceipt {
+  imageId: string;
+  uploadedBy: string;
+  uploadedAt: string;
+}
+
+export interface PaymentAllocation {
+  expenseId?: string;
+  expenseDescription: string;
+  amount: number;
+}
+
+export type GroupPaymentStatus =
+  | "pending"
+  | "confirmed"
+  | "rejected"
+  | "cancelled"
+  | "reversed";
+
+export interface GroupPayment {
+  id: string;
+  fromMemberId: string;
+  toMemberId: string;
+  amount: number;
+  method: string;
+  referenceNumber?: string;
+  note?: string;
+  proofImageId?: string;
+  allocations: PaymentAllocation[];
+  status: GroupPaymentStatus;
+  submittedAt: string;
+  submittedBy: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  rejectionReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  reversedAt?: string;
+  reversedBy?: string;
+  reversalReason?: string;
+}
+
 export interface Split {
   memberId: string;
   amount: number;
@@ -62,6 +104,7 @@ export interface Expense {
   splits: Split[];
   date: string;
   category: Category;
+  receipts?: ExpenseReceipt[];
 }
 
 export interface CurrentUser {
@@ -88,6 +131,7 @@ export interface Group {
   /** Members removed from the active roster, retained for historical records. */
   formerMembers?: Member[];
   expenses: Expense[];
+  payments?: GroupPayment[];
   deletedExpenses?: DeletedExpense[];
   messages?: ChatMessage[];
   createdAt: string;

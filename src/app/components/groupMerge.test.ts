@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { ChatMessage, DeletedExpense, Expense, Group, Member } from "./types";
+import type {
+  ChatMessage,
+  DeletedExpense,
+  Expense,
+  Group,
+  GroupPayment,
+  Member,
+} from "./types";
 import { compactGroupHistory, mergeGroupChanges } from "./groupMerge";
 
 const members: Member[] = [
@@ -123,6 +130,20 @@ describe("group merge business logic", () => {
     ]);
   });
 
+  it("merges payment ledger additions and status changes by payment ID", () => {
+    const original = payment("payment-1");
+    const confirmed = { ...original, status: "confirmed" as const };
+    const concurrent = payment("payment-2");
+
+    const merged = mergeGroupChanges(
+      group({ payments: [original] }),
+      group({ payments: [confirmed] }),
+      group({ payments: [original, concurrent] }),
+    );
+
+    expect(merged.payments).toEqual([confirmed, concurrent]);
+  });
+
   it("caps chat and deleted expense history to the latest records", () => {
     const compacted = compactGroupHistory(
       group({
@@ -161,6 +182,26 @@ function deletedExpense(expenseId: string, minute: number): DeletedExpense {
     deletedBy: "alice",
     reason: "duplicate",
     deletedAt: timestamp(minute),
+  };
+}
+
+function payment(id: string): GroupPayment {
+  return {
+    id,
+    fromMemberId: "bob",
+    toMemberId: "alice",
+    amount: 10,
+    method: "GCash",
+    allocations: [
+      {
+        expenseId: "expense-1",
+        expenseDescription: "expense-1",
+        amount: 10,
+      },
+    ],
+    status: "pending",
+    submittedAt: "2026-01-02T00:00:00.000Z",
+    submittedBy: "bob",
   };
 }
 

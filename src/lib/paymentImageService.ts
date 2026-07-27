@@ -54,7 +54,7 @@ export async function savePaymentImage(
   groupId: string,
   imageId: string,
   ownerUid: string,
-  kind: "qr-code" | "payment-proof",
+  kind: "qr-code" | "payment-proof" | "expense-receipt",
   file: File,
 ): Promise<void> {
   const dataUrl = await compressImage(file);

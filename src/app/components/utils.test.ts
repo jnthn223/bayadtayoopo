@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { Group } from "./types";
 import {
   allocateCustomShares,
+  allocatePaymentToExpenses,
   archiveGroupMember,
   canDirectlyConfirmSplit,
   computeBalances,
+  computeProjectedBalances,
   computeSettlements,
   formatCurrency,
   getCurrencySymbol,
@@ -108,6 +110,120 @@ describe("expense business logic", () => {
     ]);
   });
 
+  it("applies confirmed group payments while keeping pending payments projected", () => {
+    const withInstallments: Group = {
+      ...group,
+      payments: [
+        {
+          id: "payment-confirmed",
+          fromMemberId: "carol",
+          toMemberId: "alice",
+          amount: 20,
+          method: "GCash",
+          allocations: [
+            {
+              expenseId: "expense-1",
+              expenseDescription: "Dinner",
+              amount: 20,
+            },
+          ],
+          status: "confirmed",
+          submittedAt: "2026-01-04T00:00:00.000Z",
+          submittedBy: "carol",
+        },
+        {
+          id: "payment-pending",
+          fromMemberId: "carol",
+          toMemberId: "alice",
+          amount: 10,
+          method: "GCash",
+          allocations: [
+            {
+              expenseId: "expense-2",
+              expenseDescription: "Taxi",
+              amount: 10,
+            },
+          ],
+          status: "pending",
+          submittedAt: "2026-01-05T00:00:00.000Z",
+          submittedBy: "carol",
+        },
+      ],
+    };
+
+    expect(computeBalances(withInstallments)).toEqual([
+      { memberId: "alice", memberName: "Alice", net: 40 },
+      { memberId: "bob", memberName: "Bob", net: -10 },
+      { memberId: "carol", memberName: "Carol", net: -30 },
+    ]);
+    expect(computeProjectedBalances(withInstallments)).toEqual([
+      { memberId: "alice", memberName: "Alice", net: 30 },
+      { memberId: "bob", memberName: "Bob", net: -10 },
+      { memberId: "carol", memberName: "Carol", net: -20 },
+    ]);
+  });
+
+  it("allocates partial payments to the oldest unpaid expense shares", () => {
+    expect(allocatePaymentToExpenses(group, "carol", 40)).toEqual([
+      {
+        expenseId: "expense-1",
+        expenseDescription: "Dinner",
+        amount: 30,
+      },
+      {
+        expenseId: "expense-2",
+        expenseDescription: "Taxi",
+        amount: 10,
+      },
+    ]);
+
+    const withPendingAllocation: Group = {
+      ...group,
+      payments: [
+        {
+          id: "payment-1",
+          fromMemberId: "carol",
+          toMemberId: "alice",
+          amount: 15,
+          method: "GCash",
+          allocations: [
+            {
+              expenseId: "expense-1",
+              expenseDescription: "Dinner",
+              amount: 15,
+            },
+          ],
+          status: "pending",
+          submittedAt: "2026-01-04T00:00:00.000Z",
+          submittedBy: "carol",
+        },
+      ],
+    };
+
+    expect(allocatePaymentToExpenses(withPendingAllocation, "carol", 25)).toEqual([
+      {
+        expenseId: "expense-1",
+        expenseDescription: "Dinner",
+        amount: 15,
+      },
+      {
+        expenseId: "expense-2",
+        expenseDescription: "Taxi",
+        amount: 10,
+      },
+    ]);
+
+    expect(
+      allocatePaymentToExpenses(group, "carol", 15, ["expense-2"]),
+    ).toEqual([
+      {
+        expenseId: "expense-2",
+        expenseDescription: "Taxi",
+        amount: 15,
+      },
+    ]);
+  });
+
   it("computes settlements from debtor and creditor balances", () => {
     expect(
       computeSettlements([
@@ -180,7 +296,7 @@ describe("expense business logic", () => {
 
   it("summarizes only the current member's unconfirmed repayments", () => {
     expect(getUnsettledPaymentSummary(group, "carol")).toEqual({
-      count: 2,
+      count: 1,
       amount: 50,
       pendingCount: 1,
       rejectedCount: 0,
@@ -190,6 +306,55 @@ describe("expense business logic", () => {
       amount: 0,
       pendingCount: 0,
       rejectedCount: 0,
+    });
+  });
+
+  it("includes group-level installment statuses in the unsettled summary", () => {
+    const withInstallments: Group = {
+      ...group,
+      payments: [
+        {
+          id: "pending-payment",
+          fromMemberId: "carol",
+          toMemberId: "alice",
+          amount: 10,
+          method: "GCash",
+          allocations: [
+            {
+              expenseId: "expense-1",
+              expenseDescription: "Dinner",
+              amount: 10,
+            },
+          ],
+          status: "pending",
+          submittedAt: "2026-01-04T00:00:00.000Z",
+          submittedBy: "carol",
+        },
+        {
+          id: "rejected-payment",
+          fromMemberId: "carol",
+          toMemberId: "alice",
+          amount: 5,
+          method: "GCash",
+          allocations: [
+            {
+              expenseId: "expense-1",
+              expenseDescription: "Dinner",
+              amount: 5,
+            },
+          ],
+          status: "rejected",
+          submittedAt: "2026-01-05T00:00:00.000Z",
+          submittedBy: "carol",
+        },
+      ],
+    };
+
+    expect(getUnsettledPaymentSummary(withInstallments, "carol")).toEqual({
+      count: 1,
+      amount: 50,
+      pendingCount: 2,
+      rejectedCount: 1,
     });
   });
 
@@ -284,6 +449,13 @@ describe("expense business logic", () => {
         {
           ...group.expenses[0],
           paidBy: "nathan-placeholder",
+          receipts: [
+            {
+              imageId: "receipt-1",
+              uploadedBy: "nathan-placeholder",
+              uploadedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
           splits: [
             { memberId: "alice", amount: 30 },
             { memberId: "nathan-placeholder", amount: 30 },
@@ -297,6 +469,26 @@ describe("expense business logic", () => {
           memberId: "nathan-placeholder",
           text: "Hello",
           createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      payments: [
+        {
+          id: "payment-1",
+          fromMemberId: "alice",
+          toMemberId: "nathan-placeholder",
+          amount: 10,
+          method: "Cash",
+          allocations: [
+            {
+              expenseId: "expense-1",
+              expenseDescription: "Dinner",
+              amount: 10,
+            },
+          ],
+          status: "confirmed",
+          submittedAt: "2026-01-02T00:00:00.000Z",
+          submittedBy: "alice",
+          reviewedBy: "nathan-placeholder",
         },
       ],
     };
@@ -315,5 +507,10 @@ describe("expense business logic", () => {
         ?.amount,
     ).toBe(60);
     expect(merged.messages?.[0].memberId).toBe("nate-account");
+    expect(merged.expenses[0].receipts?.[0].uploadedBy).toBe("nate-account");
+    expect(merged.payments?.[0]).toMatchObject({
+      toMemberId: "nate-account",
+      reviewedBy: "nate-account",
+    });
   });
 });

@@ -115,6 +115,7 @@ export function mergeGroupChanges(
       latest.formerMembers,
     ),
     expenses: mergeById(base.expenses, changed.expenses, latest.expenses),
+    payments: mergeById(base.payments, changed.payments, latest.payments),
     deletedExpenses: mergeAppendOnly(
       base.deletedExpenses,
       changed.deletedExpenses,
