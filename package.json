@@ -10,6 +10,7 @@
     "build": "vite build",
     "build:staging": "vite build --mode staging",
     "dev": "vite",
+    "deploy:production": "npm run build && firebase deploy --only hosting:app,firestore:rules --project production",
     "deploy:staging": "npm run build:staging && firebase deploy --only hosting:app,firestore:rules --project staging",
     "test": "vitest run"
   },
