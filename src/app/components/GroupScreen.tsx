@@ -10,7 +10,13 @@ import {
   X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
-import type { CurrentUser, Group, Expense, Split } from "./types";
+import type {
+  CurrentUser,
+  Group,
+  Expense,
+  NotificationDestination,
+  Split,
+} from "./types";
 import { GroupAvatar } from "./GroupAvatar";
 import {
   deletePaymentImage,
@@ -48,6 +54,7 @@ type Tab = GroupTab;
 interface Props {
   group: Group;
   currentUser: CurrentUser;
+  destination?: NotificationDestination | null;
   onBack: () => void;
   onUpdate: (group: Group) => Promise<void> | void;
   onDelete: (groupId: string) => void;
@@ -56,6 +63,7 @@ interface Props {
 export function GroupScreen({
   group,
   currentUser,
+  destination,
   onBack,
   onUpdate,
   onDelete,
@@ -63,7 +71,7 @@ export function GroupScreen({
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const chatReadKey = `bayadtayoopo:chat-read:${currentUser.id}:${group.id}`;
   const groupTourKey = `bayadtayoopo:group-tour:${currentUser.id}:${group.id}`;
-  const [tab, setTab] = useState<Tab>("expenses");
+  const [tab, setTab] = useState<Tab>(destination?.tab ?? "expenses");
   const [groupTourStep, setGroupTourStep] = useState<number | null>(null);
   const [lastChatReadAt, setLastChatReadAt] = useState(
     () => localStorage.getItem(chatReadKey) ?? "",
@@ -238,6 +246,35 @@ export function GroupScreen({
   useEffect(() => {
     setLastChatReadAt(localStorage.getItem(chatReadKey) ?? "");
   }, [chatReadKey]);
+
+  useEffect(() => {
+    if (!destination) return;
+    setTab(destination.tab);
+    if (destination.messageId) {
+      setChatRevealMessageId(destination.messageId);
+    }
+    const targetId =
+      destination.paymentId
+        ? `payment-${destination.paymentId}`
+        : destination.expenseId
+          ? `expense-${destination.expenseId}`
+          : destination.messageId
+            ? `message-${destination.messageId}`
+            : "";
+    if (!targetId) return;
+    const timeout = window.setTimeout(() => {
+      document.getElementById(targetId)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 120);
+    return () => window.clearTimeout(timeout);
+  }, [
+    destination?.tab,
+    destination?.expenseId,
+    destination?.paymentId,
+    destination?.messageId,
+  ]);
 
   useEffect(() => {
     setGroupTourStep(null);
@@ -813,6 +850,8 @@ export function GroupScreen({
         activeBalances={activeBalances}
         settlements={settlements}
         paymentItems={paymentItems}
+        focusedExpenseId={destination?.expenseId}
+        focusedPaymentId={destination?.paymentId}
         kofiUrl={kofiUrl}
         expensesByDate={expensesByDate}
         sortedDates={sortedDates}

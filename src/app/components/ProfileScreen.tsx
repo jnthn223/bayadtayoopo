@@ -1,20 +1,22 @@
 import { useState } from "react";
-import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink } from "lucide-react";
+import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink, Bell } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
-import type { CurrentUser } from "./types";
+import type { CurrentUser, Group, NotificationPreferences } from "./types";
 import { MEMBER_COLORS } from "./utils";
 import { UserAvatar } from "./UserAvatar";
+import { normalizeNotificationPreferences } from "./notifications";
 
 interface Props {
   user: CurrentUser;
   groupCount: number;
   expenseCount: number;
+  groups: Group[];
   onBack: () => void;
   onLogout: () => void;
   onUpdateUser: (user: CurrentUser) => void;
 }
 
-export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout, onUpdateUser }: Props) {
+export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, onLogout, onUpdateUser }: Props) {
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const [editName, setEditName] = useState(false);
   const [nameInput, setNameInput] = useState(user.name);
@@ -22,6 +24,12 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
   const [avatarSeedInput, setAvatarSeedInput] = useState(user.avatarSeed);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationDraft, setNotificationDraft] =
+    useState<NotificationPreferences>(() =>
+      normalizeNotificationPreferences(user.notificationPreferences),
+    );
+  const [notificationError, setNotificationError] = useState("");
 
   function handleSaveName() {
     if (!nameInput.trim()) return;
@@ -43,6 +51,20 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
           label: "Email",
           value: user.email,
           action: null,
+        },
+        {
+          icon: Bell,
+          label: "Notifications",
+          value: user.notificationPreferences?.systemNotifications
+            ? "In-app and system alerts"
+            : "In-app alerts",
+          action: () => {
+            setNotificationDraft(
+              normalizeNotificationPreferences(user.notificationPreferences),
+            );
+            setNotificationError("");
+            setNotificationsOpen(true);
+          },
         },
         {
           icon: Shield,
@@ -238,7 +260,8 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
                 BayadTayoOpo stores your email, display name, profile color,
                 avatar selection,
                 group memberships, expenses, settlements, messages, and activity
-                history so your groups can sync across devices and members.
+                history, plus your notification preferences and read status, so
+                your groups can sync across devices and members.
               </span>
               <span className="block">
                 Your data is used only to provide app features. We do not sell
@@ -257,6 +280,190 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
             >
               Done
             </button>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root open={notificationsOpen} onOpenChange={setNotificationsOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[92vh] overflow-y-auto rounded-t-3xl bg-card shadow-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b border-border bg-card px-5 pb-3 pt-5">
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">
+                  Notifications
+                </Dialog.Title>
+                <Dialog.Description className="mt-0.5 text-xs text-muted-foreground">
+                  Choose what appears in your notification inbox.
+                </Dialog.Description>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotificationsOpen(false)}
+                className="rounded-full p-2 hover:bg-muted"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-5 p-5 pb-10">
+              <div className="space-y-2">
+                <NotificationToggle
+                  label="Payments"
+                  detail="Submissions, confirmations, corrections, and reversals"
+                  checked={notificationDraft.payments}
+                  onChange={(payments) =>
+                    setNotificationDraft((current) => ({
+                      ...current,
+                      payments,
+                    }))
+                  }
+                />
+                <NotificationToggle
+                  label="Expenses involving me"
+                  detail="New, updated, and deleted expenses"
+                  checked={notificationDraft.expenses}
+                  onChange={(expenses) =>
+                    setNotificationDraft((current) => ({
+                      ...current,
+                      expenses,
+                    }))
+                  }
+                />
+                <NotificationToggle
+                  label="Group chat"
+                  detail="Messages from other members"
+                  checked={notificationDraft.chat}
+                  onChange={(chat) =>
+                    setNotificationDraft((current) => ({ ...current, chat }))
+                  }
+                />
+                <NotificationToggle
+                  label="Member activity"
+                  detail="Let admins know when someone joins"
+                  checked={notificationDraft.memberActivity}
+                  onChange={(memberActivity) =>
+                    setNotificationDraft((current) => ({
+                      ...current,
+                      memberActivity,
+                    }))
+                  }
+                />
+              </div>
+
+              {notificationDraft.chat && groups.length > 0 && (
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">
+                    Chat notifications by group
+                  </p>
+                  <div className="overflow-hidden rounded-2xl border border-border">
+                    {groups.map((group, index) => {
+                      const enabled =
+                        !notificationDraft.mutedChatGroupIds.includes(group.id);
+                      return (
+                        <NotificationToggle
+                          key={group.id}
+                          label={group.name}
+                          detail={enabled ? "Chat alerts on" : "Muted"}
+                          checked={enabled}
+                          bordered={index < groups.length - 1}
+                          onChange={(nextEnabled) =>
+                            setNotificationDraft((current) => ({
+                              ...current,
+                              mutedChatGroupIds: nextEnabled
+                                ? current.mutedChatGroupIds.filter(
+                                    (id) => id !== group.id,
+                                  )
+                                : [
+                                    ...new Set([
+                                      ...current.mutedChatGroupIds,
+                                      group.id,
+                                    ]),
+                                  ],
+                            }))
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-border p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent">
+                    <Bell size={16} className="text-accent-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">
+                      System alerts while running
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Show an OS notification when the PWA or browser is still
+                      running in the background. This does not wake a fully
+                      closed app.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (notificationDraft.systemNotifications) {
+                      setNotificationDraft((current) => ({
+                        ...current,
+                        systemNotifications: false,
+                      }));
+                      return;
+                    }
+                    if (!("Notification" in window)) {
+                      setNotificationError(
+                        "System notifications are not supported in this browser.",
+                      );
+                      return;
+                    }
+                    const permission = await Notification.requestPermission();
+                    if (permission === "granted") {
+                      setNotificationDraft((current) => ({
+                        ...current,
+                        systemNotifications: true,
+                      }));
+                      setNotificationError("");
+                    } else {
+                      setNotificationError(
+                        "Notification permission was not granted. You can still use the in-app inbox.",
+                      );
+                    }
+                  }}
+                  className={`mt-4 w-full rounded-xl py-2.5 text-sm font-semibold ${
+                    notificationDraft.systemNotifications
+                      ? "bg-muted text-muted-foreground"
+                      : "bg-primary text-primary-foreground"
+                  }`}
+                >
+                  {notificationDraft.systemNotifications
+                    ? "Turn off system alerts"
+                    : "Enable system alerts"}
+                </button>
+              </div>
+
+              {notificationError && (
+                <p className="text-xs text-destructive">{notificationError}</p>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateUser({
+                    ...user,
+                    notificationPreferences: notificationDraft,
+                  });
+                  setNotificationsOpen(false);
+                }}
+                className="w-full rounded-2xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground"
+              >
+                Save notification settings
+              </button>
+            </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
@@ -288,5 +495,47 @@ export function ProfileScreen({ user, groupCount, expenseCount, onBack, onLogout
         </Dialog.Portal>
       </Dialog.Root>
     </div>
+  );
+}
+
+function NotificationToggle({
+  label,
+  detail,
+  checked,
+  onChange,
+  bordered = false,
+}: {
+  label: string;
+  detail: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  bordered?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`flex w-full items-center gap-3 bg-card px-4 py-3 text-left ${
+        bordered ? "border-b border-border" : ""
+      }`}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
+      </div>
+      <span
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+          checked ? "bg-primary" : "bg-muted"
+        }`}
+      >
+        <span
+          className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+            checked ? "translate-x-6" : "translate-x-1"
+          }`}
+        />
+      </span>
+    </button>
   );
 }

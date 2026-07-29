@@ -62,6 +62,7 @@ describe("CSV expense tools", () => {
         ...group.expenses[0],
         id: "imported-id",
         createdBy: "alice",
+        createdAt: expect.any(String),
       },
     ]);
   });

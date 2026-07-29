@@ -16,6 +16,7 @@ import { db, finishFirestoreWrite } from "./firebase";
 import type { Group, Member, UserProfile } from "../app/components/types";
 import { compactGroupHistory } from "../app/components/groupMerge";
 import { MEMBER_COLORS, generateId } from "../app/components/utils";
+import { normalizeNotificationPreferences } from "../app/components/notifications";
 
 // ─── User document ─────────────────────────────────────────────────────────
 
@@ -43,14 +44,26 @@ async function addGroupIdToUser(uid: string, groupId: string): Promise<void> {
 
 export async function loadOrCreateUserProfile(uid: string): Promise<UserProfile> {
   const user = await getUserDocument(uid);
+  const now = new Date().toISOString();
   const avatarSeed =
     typeof user.avatarSeed === "string"
       ? user.avatarSeed
       : crypto.randomUUID();
+  const notificationReadAt =
+    typeof user.notificationReadAt === "string"
+      ? user.notificationReadAt
+      : now;
 
-  if (typeof user.avatarSeed !== "string") {
+  if (
+    typeof user.avatarSeed !== "string" ||
+    typeof user.notificationReadAt !== "string"
+  ) {
     await finishFirestoreWrite(
-      setDoc(doc(db, "users", uid), { avatarSeed }, { merge: true }),
+      setDoc(
+        doc(db, "users", uid),
+        { avatarSeed, notificationReadAt },
+        { merge: true },
+      ),
     );
   }
 
@@ -58,12 +71,22 @@ export async function loadOrCreateUserProfile(uid: string): Promise<UserProfile>
     name: typeof user.name === "string" ? user.name : undefined,
     color: typeof user.color === "string" ? user.color : undefined,
     avatarSeed,
+    notificationReadAt,
+    notificationPreferences: normalizeNotificationPreferences(
+      typeof user.notificationPreferences === "object" &&
+        user.notificationPreferences !== null
+        ? (user.notificationPreferences as UserProfile["notificationPreferences"])
+        : undefined,
+    ),
   };
 }
 
 export async function saveUserProfile(uid: string, profile: UserProfile): Promise<void> {
+  const definedProfile = Object.fromEntries(
+    Object.entries(profile).filter(([, value]) => value !== undefined),
+  );
   await finishFirestoreWrite(
-    setDoc(doc(db, "users", uid), profile, { merge: true }),
+    setDoc(doc(db, "users", uid), definedProfile, { merge: true }),
   );
 }
 
@@ -181,6 +204,7 @@ export async function joinGroup(
   const alreadyMember = group.members.some((m) => (m.uid ?? m.id) === uid);
   if (!alreadyMember) {
     if (claimMemberId) {
+      const joinedAt = new Date().toISOString();
       const placeholder = group.members.find(
         (member) =>
           member.id === claimMemberId &&
@@ -198,16 +222,19 @@ export async function joinGroup(
               avatarSeed,
               claimCode: undefined,
               claimedFromPlaceholder: true,
+              joinedAt,
             }
           : member,
       );
     } else {
+      const joinedAt = new Date().toISOString();
       const newMember: Member = {
         id: generateId(),
         uid,
         name: memberName,
         color: memberColor,
         avatarSeed,
+        joinedAt,
       };
       group.members = [...group.members, newMember];
     }

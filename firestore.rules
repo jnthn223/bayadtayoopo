@@ -11,7 +11,14 @@ service cloud.firestore {
     }
 
     function validUserDoc() {
-      return request.resource.data.keys().hasOnly(['groupIds', 'name', 'color', 'avatarSeed'])
+      return request.resource.data.keys().hasOnly([
+          'groupIds',
+          'name',
+          'color',
+          'avatarSeed',
+          'notificationReadAt',
+          'notificationPreferences'
+        ])
         && request.resource.data.groupIds is list
         && (!request.resource.data.keys().hasAny(['name'])
           || request.resource.data.name is string)
@@ -19,7 +26,26 @@ service cloud.firestore {
           || request.resource.data.color is string)
         && (!request.resource.data.keys().hasAny(['avatarSeed'])
           || (request.resource.data.avatarSeed is string
-            && request.resource.data.avatarSeed.size() <= 100));
+            && request.resource.data.avatarSeed.size() <= 100))
+        && (!request.resource.data.keys().hasAny(['notificationReadAt'])
+          || request.resource.data.notificationReadAt is string)
+        && (!request.resource.data.keys().hasAny(['notificationPreferences'])
+          || (request.resource.data.notificationPreferences is map
+            && request.resource.data.notificationPreferences.keys().hasOnly([
+              'payments',
+              'expenses',
+              'chat',
+              'memberActivity',
+              'systemNotifications',
+              'mutedChatGroupIds'
+            ])
+            && request.resource.data.notificationPreferences.payments is bool
+            && request.resource.data.notificationPreferences.expenses is bool
+            && request.resource.data.notificationPreferences.chat is bool
+            && request.resource.data.notificationPreferences.memberActivity is bool
+            && request.resource.data.notificationPreferences.systemNotifications is bool
+            && request.resource.data.notificationPreferences.mutedChatGroupIds is list
+            && request.resource.data.notificationPreferences.mutedChatGroupIds.size() <= 100));
     }
 
     function validGroupDoc(data) {

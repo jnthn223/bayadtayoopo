@@ -197,6 +197,7 @@ function parseExpenseRow(
       splits: splits.splits,
       date: row.date,
       category,
+      createdAt: new Date().toISOString(),
     },
   };
 }

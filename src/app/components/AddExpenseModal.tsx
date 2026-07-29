@@ -126,6 +126,7 @@ export function AddExpenseModal({
 
   async function handleSubmit() {
     if (!validate()) return;
+    const savedAt = new Date().toISOString();
     const creatorId = editExpense?.createdBy ?? currentMember?.id ?? currentUser.id;
     const payerId = isAdmin ? paidBy : creatorId;
     const previousSplitsByMember = new Map(
@@ -178,6 +179,11 @@ export function AddExpenseModal({
           date,
           category,
           receipts: editExpense?.receipts,
+          createdAt: editExpense?.createdAt ?? savedAt,
+          updatedAt: editExpense ? savedAt : undefined,
+          updatedBy: editExpense
+            ? (currentMember?.id ?? currentUser.id)
+            : undefined,
         },
         receiptFiles,
       );

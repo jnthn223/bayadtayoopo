@@ -32,6 +32,7 @@ interface Props {
   group: Group;
   currentMember?: Member;
   settlements: Settlement[];
+  focusedPaymentId?: string;
   onUpdate: (group: Group) => Promise<void> | void;
   viewPaymentImage: (imageId: string, title: string) => void;
 }
@@ -79,6 +80,7 @@ export function GroupPayments({
   group,
   currentMember,
   settlements,
+  focusedPaymentId,
   onUpdate,
   viewPaymentImage,
 }: Props) {
@@ -384,7 +386,12 @@ export function GroupPayments({
             return (
               <article
                 key={payment.id}
-                className="rounded-2xl border border-border bg-card p-4 space-y-3"
+                id={`payment-${payment.id}`}
+                className={`rounded-2xl border bg-card p-4 space-y-3 scroll-mt-4 transition-all ${
+                  focusedPaymentId === payment.id
+                    ? "border-primary ring-4 ring-primary/15"
+                    : "border-border"
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <UserAvatar

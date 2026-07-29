@@ -8,6 +8,7 @@ export interface Member {
   claimedFromPlaceholder?: boolean;
   paymentInstructions?: PaymentInstructions;
   removedAt?: string;
+  joinedAt?: string;
 }
 
 export interface PaymentInstructions {
@@ -105,6 +106,18 @@ export interface Expense {
   date: string;
   category: Category;
   receipts?: ExpenseReceipt[];
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface NotificationPreferences {
+  payments: boolean;
+  expenses: boolean;
+  chat: boolean;
+  memberActivity: boolean;
+  systemNotifications: boolean;
+  mutedChatGroupIds: string[];
 }
 
 export interface CurrentUser {
@@ -113,12 +126,47 @@ export interface CurrentUser {
   email: string;
   color: string;
   avatarSeed?: string;
+  notificationReadAt?: string;
+  notificationPreferences?: NotificationPreferences;
 }
 
 export interface UserProfile {
   name?: string;
   color?: string;
   avatarSeed?: string;
+  notificationReadAt?: string;
+  notificationPreferences?: NotificationPreferences;
+}
+
+export type NotificationType =
+  | "payment_submitted"
+  | "payment_confirmed"
+  | "payment_rejected"
+  | "payment_cancelled"
+  | "payment_reversed"
+  | "expense_created"
+  | "expense_updated"
+  | "expense_deleted"
+  | "chat_message"
+  | "member_joined";
+
+export interface NotificationDestination {
+  tab: "expenses" | "balances" | "settle" | "chat";
+  expenseId?: string;
+  paymentId?: string;
+  messageId?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  groupId: string;
+  groupName: string;
+  title: string;
+  body: string;
+  at: string;
+  actorId?: string;
+  destination: NotificationDestination;
 }
 
 export interface Group {

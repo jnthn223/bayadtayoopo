@@ -11,7 +11,7 @@ import {
   Users,
   Clock3,
 } from "lucide-react";
-import type { Group, CurrentUser } from "./types";
+import type { AppNotification, Group, CurrentUser } from "./types";
 import { BrandWordmark } from "./Brand";
 import { UserAvatar } from "./UserAvatar";
 import { GroupAvatar } from "./GroupAvatar";
@@ -22,6 +22,7 @@ import {
   getUnsettledPaymentSummary,
 } from "./utils";
 import { CreateGroupModal } from "./CreateGroupModal";
+import { NotificationInbox } from "./NotificationInbox";
 
 interface Props {
   groups: Group[];
@@ -29,6 +30,10 @@ interface Props {
   onSelectGroup: (group: Group) => void;
   onCreateGroup: (group: Group) => void;
   onOpenProfile: () => void;
+  notifications: AppNotification[];
+  notificationReadAt?: string;
+  onOpenNotification: (notification: AppNotification) => void;
+  onMarkAllNotificationsRead: () => void;
 }
 
 export function HomeScreen({
@@ -37,6 +42,10 @@ export function HomeScreen({
   onSelectGroup,
   onCreateGroup,
   onOpenProfile,
+  notifications,
+  notificationReadAt,
+  onOpenNotification,
+  onMarkAllNotificationsRead,
 }: Props) {
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const [createOpen, setCreateOpen] = useState(false);
@@ -125,17 +134,25 @@ export function HomeScreen({
               Hey {user.name.split(" ")[0]} 👋
             </p>
           </div>
-          <button
-            onClick={onOpenProfile}
-            className="w-10 h-10 rounded-full shadow-sm transition-all active:scale-95 overflow-hidden"
-          >
-            <UserAvatar
-              name={user.name}
-              color={user.color}
-              seed={user.avatarSeed}
-              className="w-full h-full rounded-full"
+          <div className="flex items-center gap-2">
+            <NotificationInbox
+              notifications={notifications}
+              readAt={notificationReadAt}
+              onOpenNotification={onOpenNotification}
+              onMarkAllRead={onMarkAllNotificationsRead}
             />
-          </button>
+            <button
+              onClick={onOpenProfile}
+              className="w-10 h-10 rounded-full shadow-sm transition-all active:scale-95 overflow-hidden"
+            >
+              <UserAvatar
+                name={user.name}
+                color={user.color}
+                seed={user.avatarSeed}
+                className="w-full h-full rounded-full"
+              />
+            </button>
+          </div>
         </div>
       </div>
 

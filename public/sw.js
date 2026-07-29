@@ -92,3 +92,20 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url ?? "/";
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then(async (clients) => {
+        const existing = clients[0];
+        if (existing) {
+          await existing.navigate(targetUrl);
+          return existing.focus();
+        }
+        return self.clients.openWindow(targetUrl);
+      }),
+  );
+});

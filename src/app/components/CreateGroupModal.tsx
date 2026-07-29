@@ -39,6 +39,7 @@ export function CreateGroupModal({
 
   function handleCreate() {
     if (!validate()) return;
+    const createdAt = new Date().toISOString();
 
     onCreate({
       id: generateId(),
@@ -54,11 +55,12 @@ export function CreateGroupModal({
           name: currentUser.name,
           color: currentUser.color,
           avatarSeed: currentUser.avatarSeed,
+          joinedAt: createdAt,
         },
         ...pendingMembers,
       ],
       expenses: [],
-      createdAt: new Date().toISOString().slice(0, 10),
+      createdAt,
     });
 
     setName("");

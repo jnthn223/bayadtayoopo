@@ -39,6 +39,8 @@ interface Props {
   activeBalances: Balance[];
   settlements: Settlement[];
   paymentItems: Array<{ expense: Expense; split: Split }>;
+  focusedExpenseId?: string;
+  focusedPaymentId?: string;
   kofiUrl?: string;
   expensesByDate: Record<string, Expense[]>;
   sortedDates: string[];
@@ -71,6 +73,8 @@ export function GroupContent({
   activeBalances,
   settlements,
   paymentItems,
+  focusedExpenseId,
+  focusedPaymentId,
   kofiUrl,
   expensesByDate,
   sortedDates,
@@ -129,7 +133,12 @@ export function GroupContent({
                       return (
                         <div
                           key={exp.id}
-                          className="bg-card rounded-2xl border border-border p-4 flex items-center gap-4"
+                          id={`expense-${exp.id}`}
+                          className={`bg-card rounded-2xl border p-4 flex items-center gap-4 scroll-mt-4 transition-all ${
+                            focusedExpenseId === exp.id
+                              ? "border-primary ring-4 ring-primary/15"
+                              : "border-border"
+                          }`}
                         >
                           <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-xl shrink-0">
                             {CATEGORY_ICONS[exp.category]}
@@ -545,6 +554,7 @@ export function GroupContent({
                     group={group}
                     currentMember={currentMember}
                     settlements={settlements}
+                    focusedPaymentId={focusedPaymentId}
                     onUpdate={onUpdate}
                     viewPaymentImage={viewPaymentImage}
                   />
@@ -577,7 +587,11 @@ export function GroupContent({
                 const isMine = currentMember?.id === message.memberId;
                 const isFirstUnread = message.id === chatRevealMessageId;
                 return (
-                  <div key={message.id} className={isFirstUnread ? "space-y-3" : undefined}>
+                  <div
+                    key={message.id}
+                    id={`message-${message.id}`}
+                    className={isFirstUnread ? "space-y-3 scroll-mt-4" : "scroll-mt-4"}
+                  >
                     {isFirstUnread && (
                       <div
                         ref={firstUnreadMessageRef}

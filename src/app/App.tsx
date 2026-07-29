@@ -1,5 +1,10 @@
-import { useState, useEffect, useRef } from "react";
-import type { Group, CurrentUser } from "./components/types";
+import { useState, useEffect, useMemo, useRef } from "react";
+import type {
+  AppNotification,
+  Group,
+  CurrentUser,
+  NotificationDestination,
+} from "./components/types";
 import {
   isMagicLink,
   completeMagicLink,
@@ -43,6 +48,12 @@ import {
   PWA_UPDATE_AVAILABLE_EVENT,
   restartWithPwaUpdate,
 } from "../lib/pwaUpdate";
+import {
+  deriveNotifications,
+  isNotificationUnread,
+  normalizeNotificationPreferences,
+  notificationUrl,
+} from "./components/notifications";
 
 /* MARKER-MAKE-KIT-INVOKED */
 
@@ -73,6 +84,8 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [notificationDestination, setNotificationDestination] =
+    useState<NotificationDestination | null>(null);
   const [screen, setScreen] = useState<Screen>("home");
   const [banner, setBanner] = useState<{
     text: string;
@@ -87,6 +100,9 @@ export default function App() {
     unsubscribe?: () => void;
     poll?: ReturnType<typeof setInterval>;
   }>({});
+  const handledDeepLinkRef = useRef("");
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
+  const notificationStreamReadyRef = useRef(false);
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -244,6 +260,8 @@ export default function App() {
               name: profile.name ?? user.name,
               color: profile.color ?? user.color,
               avatarSeed: profile.avatarSeed,
+              notificationReadAt: profile.notificationReadAt,
+              notificationPreferences: profile.notificationPreferences,
             }
           : user,
       );
@@ -320,6 +338,32 @@ export default function App() {
       syncRef.current = {};
     };
   }, [screen, selectedGroup?.id]);
+
+  const backgroundGroupIds = groups
+    .map((group) => group.id)
+    .sort()
+    .join("|");
+  useEffect(() => {
+    if (authState !== "authenticated") return;
+    const foregroundGroupId =
+      screen === "group" ? selectedGroup?.id : undefined;
+    const unsubscribes = groups
+      .filter((group) => group.id !== foregroundGroupId)
+      .map((group) =>
+        subscribeGroup(group.id, (fresh) => {
+          if (!fresh) return;
+          setGroups((current) =>
+            current.map((item) => (item.id === fresh.id ? fresh : item)),
+          );
+        }),
+      );
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }, [
+    authState,
+    backgroundGroupIds,
+    screen,
+    selectedGroup?.id,
+  ]);
 
   useEffect(() => {
     if (authState !== "authenticated" || !session) return;
@@ -421,11 +465,31 @@ export default function App() {
     setCurrentUser(null);
     setGroups([]);
     setSelectedGroup(null);
+    setNotificationDestination(null);
     setScreen("home");
     setAuthState("unauthenticated");
+    seenNotificationIdsRef.current = new Set();
+    notificationStreamReadyRef.current = false;
   }
 
   function handleUpdateUser(updated: CurrentUser) {
+    const identityChanged =
+      !currentUser ||
+      currentUser.name !== updated.name ||
+      currentUser.color !== updated.color ||
+      currentUser.avatarSeed !== updated.avatarSeed;
+    const notificationPreferencesChanged =
+      JSON.stringify(
+        normalizeNotificationPreferences(currentUser?.notificationPreferences),
+      ) !==
+      JSON.stringify(
+        normalizeNotificationPreferences(updated.notificationPreferences),
+      );
+    if (notificationPreferencesChanged) {
+      // Re-baseline live alerts so enabling a category does not toast every
+      // older unread item. Those items remain available in the inbox.
+      notificationStreamReadyRef.current = false;
+    }
     setCurrentUser(updated);
     if (session) {
       const next = saveSession({
@@ -438,12 +502,18 @@ export default function App() {
         name: updated.name,
         color: updated.color,
         avatarSeed: updated.avatarSeed,
+        notificationReadAt: updated.notificationReadAt,
+        notificationPreferences: updated.notificationPreferences,
       }).catch((err) => {
         showBanner(errorMessage(err, "Unable to save profile"), "error");
       });
-      setDisplayName(next.idToken, updated.name).catch((err) => {
-        showBanner(errorMessage(err, "Unable to update profile name"), "error");
-      });
+      if (identityChanged) {
+        setDisplayName(next.idToken, updated.name).catch((err) => {
+          showBanner(errorMessage(err, "Unable to update profile name"), "error");
+        });
+      }
+
+      if (!identityChanged) return;
 
       const affectedGroups: Group[] = [];
       const updatedGroups = groups.map((group) => {
@@ -535,6 +605,137 @@ export default function App() {
   }
 
   const totalExpenses = groups.reduce((sum, g) => sum + g.expenses.length, 0);
+  const notifications = useMemo(
+    () =>
+      currentUser
+        ? deriveNotifications(
+            groups,
+            currentUser.id,
+            currentUser.notificationPreferences,
+          )
+        : [],
+    [currentUser, groups],
+  );
+  const unreadNotificationCount = notifications.filter((notification) =>
+    isNotificationUnread(notification, currentUser?.notificationReadAt),
+  ).length;
+
+  useEffect(() => {
+    if (!currentUser?.notificationReadAt) return;
+    const currentIds = new Set(
+      notifications.map((notification) => notification.id),
+    );
+    if (!notificationStreamReadyRef.current) {
+      seenNotificationIdsRef.current = currentIds;
+      notificationStreamReadyRef.current = true;
+      return;
+    }
+
+    const newNotifications = notifications.filter(
+      (notification) =>
+        !seenNotificationIdsRef.current.has(notification.id) &&
+        isNotificationUnread(notification, currentUser.notificationReadAt),
+    );
+    seenNotificationIdsRef.current = currentIds;
+    const latest = newNotifications[0];
+    if (!latest) return;
+
+    if (document.visibilityState === "visible") {
+      showBanner(`${latest.title} · ${latest.body}`);
+      return;
+    }
+    if (
+      currentUser.notificationPreferences?.systemNotifications &&
+      "Notification" in window &&
+      Notification.permission === "granted" &&
+      "serviceWorker" in navigator
+    ) {
+      navigator.serviceWorker.ready
+        .then((registration) =>
+          registration.showNotification(latest.title, {
+            body: latest.body,
+            icon: "/icons/icon-192.png",
+            badge: "/icons/icon-192.png",
+            tag: latest.id,
+            data: { url: notificationUrl(latest) },
+          }),
+        )
+        .catch(() => {});
+    }
+  }, [
+    currentUser?.notificationReadAt,
+    currentUser?.notificationPreferences?.systemNotifications,
+    notifications,
+  ]);
+
+  useEffect(() => {
+    const badgeNavigator = navigator as Navigator & {
+      setAppBadge?: (contents?: number) => Promise<void>;
+      clearAppBadge?: () => Promise<void>;
+    };
+    const update = unreadNotificationCount > 0
+      ? badgeNavigator.setAppBadge?.(unreadNotificationCount)
+      : badgeNavigator.clearAppBadge?.();
+    update?.catch(() => {});
+  }, [unreadNotificationCount]);
+
+  function saveNotificationReadAt(readAt: string) {
+    if (!currentUser) return;
+    const nextReadAt =
+      currentUser.notificationReadAt &&
+      currentUser.notificationReadAt > readAt
+        ? currentUser.notificationReadAt
+        : readAt;
+    setCurrentUser({ ...currentUser, notificationReadAt: nextReadAt });
+    saveUserProfile(currentUser.id, {
+      notificationReadAt: nextReadAt,
+    }).catch((err) => {
+      showBanner(
+        errorMessage(err, "Unable to update notifications"),
+        "error",
+      );
+    });
+  }
+
+  function openNotification(notification: AppNotification) {
+    const group = groups.find(
+      (candidate) => candidate.id === notification.groupId,
+    );
+    if (!group) return;
+    saveNotificationReadAt(notification.at);
+    setSelectedGroup(group);
+    setNotificationDestination(notification.destination);
+    setScreen("group");
+  }
+
+  useEffect(() => {
+    if (authState !== "authenticated" || groups.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const groupId = params.get("openGroup");
+    if (!groupId) return;
+    const key = params.toString();
+    if (handledDeepLinkRef.current === key) return;
+    const group = groups.find((candidate) => candidate.id === groupId);
+    if (!group) return;
+
+    const tabValue = params.get("tab");
+    const tab =
+      tabValue === "balances" ||
+      tabValue === "settle" ||
+      tabValue === "chat"
+        ? tabValue
+        : "expenses";
+    handledDeepLinkRef.current = key;
+    setSelectedGroup(group);
+    setNotificationDestination({
+      tab,
+      expenseId: params.get("expense") ?? undefined,
+      paymentId: params.get("payment") ?? undefined,
+      messageId: params.get("message") ?? undefined,
+    });
+    setScreen("group");
+    window.history.replaceState({}, "", window.location.pathname);
+  }, [authState, groups]);
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
@@ -635,6 +836,7 @@ export default function App() {
             {screen === "profile" && (
               <ProfileScreen
                 user={currentUser}
+                groups={groups}
                 groupCount={groups.length}
                 expenseCount={totalExpenses}
                 onBack={() => setScreen("home")}
@@ -646,7 +848,11 @@ export default function App() {
               <GroupScreen
                 group={selectedGroup}
                 currentUser={currentUser}
-                onBack={() => setScreen("home")}
+                destination={notificationDestination}
+                onBack={() => {
+                  setNotificationDestination(null);
+                  setScreen("home");
+                }}
                 onUpdate={handleUpdateGroup}
                 onDelete={handleDeleteGroup}
               />
@@ -655,8 +861,15 @@ export default function App() {
               <HomeScreen
                 groups={groups}
                 user={currentUser}
+                notifications={notifications}
+                notificationReadAt={currentUser.notificationReadAt}
+                onOpenNotification={openNotification}
+                onMarkAllNotificationsRead={() =>
+                  saveNotificationReadAt(new Date().toISOString())
+                }
                 onSelectGroup={(g) => {
                   setSelectedGroup(groups.find((group) => group.id === g.id) ?? g);
+                  setNotificationDestination(null);
                   setScreen("group");
                 }}
                 onCreateGroup={handleCreateGroup}
