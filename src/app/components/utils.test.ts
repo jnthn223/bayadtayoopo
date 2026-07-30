@@ -158,8 +158,8 @@ describe("expense business logic", () => {
     ]);
     expect(computeProjectedBalances(withInstallments)).toEqual([
       { memberId: "alice", memberName: "Alice", net: 30 },
-      { memberId: "bob", memberName: "Bob", net: -10 },
-      { memberId: "carol", memberName: "Carol", net: -20 },
+      { memberId: "bob", memberName: "Bob", net: -30 },
+      { memberId: "carol", memberName: "Carol", net: 0 },
     ]);
   });
 
@@ -171,8 +171,7 @@ describe("expense business logic", () => {
         amount: 30,
       },
       {
-        expenseId: "expense-2",
-        expenseDescription: "Taxi",
+        expenseDescription: "Remaining group balance",
         amount: 10,
       },
     ]);
@@ -207,8 +206,7 @@ describe("expense business logic", () => {
         amount: 15,
       },
       {
-        expenseId: "expense-2",
-        expenseDescription: "Taxi",
+        expenseDescription: "Remaining group balance",
         amount: 10,
       },
     ]);
@@ -217,8 +215,7 @@ describe("expense business logic", () => {
       allocatePaymentToExpenses(group, "carol", 15, ["expense-2"]),
     ).toEqual([
       {
-        expenseId: "expense-2",
-        expenseDescription: "Taxi",
+        expenseDescription: "Unallocated amount",
         amount: 15,
       },
     ]);

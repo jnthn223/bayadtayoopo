@@ -29,6 +29,7 @@ import {
   formatCurrency,
   getExpensePayerId,
   getMemberById,
+  getOutstandingExpenseShares,
 } from "./utils";
 
 interface Props {
@@ -97,6 +98,9 @@ export function GroupContent({
       payment.fromMemberId === currentMember?.id ||
       payment.toMemberId === currentMember?.id,
   );
+  const hasExpensePaymentOptions = currentMember
+    ? getOutstandingExpenseShares(group, currentMember.id).length > 0
+    : false;
 
   return (
       <div className="flex-1 overflow-y-auto">
@@ -335,7 +339,8 @@ export function GroupContent({
             )}
             {settlements.length === 0 &&
             paymentItems.length === 0 &&
-            !hasRelevantGroupPayments ? (
+            !hasRelevantGroupPayments &&
+            !hasExpensePaymentOptions ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
                   <span className="text-2xl">🎉</span>

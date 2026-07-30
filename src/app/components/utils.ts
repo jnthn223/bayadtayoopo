@@ -111,17 +111,29 @@ function computeBalancesWithPaymentStatuses(
 
   group.expenses.forEach((exp) => {
     const payerId = getExpensePayerId(exp);
-    const confirmedPayments = exp.splits.reduce(
+    const reservedSplitStatuses = paymentStatuses.has("pending")
+      ? new Set(["pending", "confirmed"])
+      : new Set(["confirmed"]);
+    const completedOrReservedPayments = exp.splits.reduce(
       (sum, s) =>
-        s.memberId !== payerId && s.paymentStatus === "confirmed"
+        s.memberId !== payerId &&
+        s.paymentStatus &&
+        reservedSplitStatuses.has(s.paymentStatus)
           ? sum + s.amount
           : sum,
       0,
     );
 
-    balances[payerId] = (balances[payerId] ?? 0) + exp.amount - confirmedPayments;
+    balances[payerId] =
+      (balances[payerId] ?? 0) + exp.amount - completedOrReservedPayments;
     exp.splits.forEach((s) => {
-      if (s.memberId !== payerId && s.paymentStatus === "confirmed") return;
+      if (
+        s.memberId !== payerId &&
+        s.paymentStatus &&
+        reservedSplitStatuses.has(s.paymentStatus)
+      ) {
+        return;
+      }
       balances[s.memberId] = (balances[s.memberId] ?? 0) - s.amount;
     });
   });
@@ -185,7 +197,8 @@ export function getOutstandingExpenseShares(
     if (
       !split ||
       split.memberId === getExpensePayerId(expense) ||
-      split.paymentStatus === "confirmed"
+      split.paymentStatus === "confirmed" ||
+      split.paymentStatus === "pending"
     ) {
       return [];
     }

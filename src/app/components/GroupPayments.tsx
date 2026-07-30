@@ -19,6 +19,7 @@ import {
   allocatePaymentToExpenses,
   formatCurrency,
   generateId,
+  getExpensePayerId,
   getMemberById,
   getOutstandingExpenseShares,
 } from "./utils";
@@ -41,6 +42,9 @@ interface PaymentDraft {
   fromMemberId: string;
   toMemberId: string;
   maximumAmount: number;
+  flow: "expense" | "full" | "custom" | "correction";
+  expenseId?: string;
+  expenseDescription?: string;
   payment?: GroupPayment;
   confirmImmediately?: boolean;
 }
@@ -112,6 +116,22 @@ export function GroupPayments({
         .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
     [group.payments, memberId],
   );
+  const expensePaymentOptions = useMemo(
+    () =>
+      memberId
+        ? getOutstandingExpenseShares(group, memberId).flatMap((share) => {
+            const expense = group.expenses.find(
+              (candidate) => candidate.id === share.expenseId,
+            );
+            if (!expense) return [];
+            const recipientId = getExpensePayerId(expense);
+            if (recipientId === memberId) return [];
+            const recipient = getMemberById(group, recipientId);
+            return recipient ? [{ ...share, recipientId, recipient }] : [];
+          })
+        : [],
+    [group, memberId],
+  );
 
   const draftAmount = Math.round((parseFloat(amountInput) || 0) * 100) / 100;
   const draftAllocations = useMemo(
@@ -137,6 +157,30 @@ export function GroupPayments({
     ? getMemberById(group, draft.toMemberId)
     : undefined;
 
+  function resetPaymentForm(recipient?: Member) {
+    setMethod(recipient?.paymentInstructions?.method ?? "");
+    setReferenceNumber("");
+    setNote("");
+    setProofFile(null);
+    setPaymentError("");
+  }
+
+  function openExpensePayment(option: (typeof expensePaymentOptions)[number]) {
+    if (!memberId || !option.expenseId) return;
+    setDraft({
+      fromMemberId: memberId,
+      toMemberId: option.recipientId,
+      maximumAmount: option.amount,
+      flow: "expense",
+      expenseId: option.expenseId,
+      expenseDescription: option.expenseDescription,
+    });
+    setAmountInput(option.amount.toFixed(2));
+    resetPaymentForm(option.recipient);
+    setChooseExpenses(true);
+    setSelectedExpenseIds(new Set([option.expenseId]));
+  }
+
   function openPayment(
     settlement: Settlement,
     confirmImmediately = false,
@@ -147,6 +191,7 @@ export function GroupPayments({
       fromMemberId: settlement.from,
       toMemberId: settlement.to,
       maximumAmount: settlement.amount,
+      flow: useFullAmount ? "full" : "custom",
       confirmImmediately,
     });
     setAmountInput(useFullAmount ? settlement.amount.toFixed(2) : "");
@@ -173,6 +218,7 @@ export function GroupPayments({
       fromMemberId: payment.fromMemberId,
       toMemberId: payment.toMemberId,
       maximumAmount: Math.max(currentOutstanding, payment.amount),
+      flow: "correction",
       payment,
     });
     setAmountInput(payment.amount.toFixed(2));
@@ -533,11 +579,64 @@ export function GroupPayments({
         </section>
       )}
 
+      {expensePaymentOptions.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              Pay by expense
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Choose exactly what you are paying for.
+            </p>
+          </div>
+          {expensePaymentOptions.map((option) => (
+            <article
+              key={option.expenseId}
+              className="rounded-2xl border border-border bg-card p-4"
+            >
+              <div className="flex items-center gap-3">
+                <UserAvatar
+                  name={option.recipient.name}
+                  color={option.recipient.color}
+                  seed={option.recipient.avatarSeed}
+                  className="h-10 w-10 shrink-0 rounded-full"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {option.expenseDescription}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Pay {option.recipient.name}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-semibold text-foreground">
+                    {formatCurrency(option.amount, group.currency)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openExpensePayment(option)}
+                    className="mt-1 text-xs font-semibold text-primary"
+                  >
+                    Pay this
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
+
       {settlements.length > 0 && (
         <section className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Suggested payments to settle the group
-          </p>
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              Pay the balance instead
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Combine expenses into one full or partial payment.
+            </p>
+          </div>
           {settlements.map((settlement) => {
             const fromMember = getMemberById(group, settlement.from);
             const toMember = getMemberById(group, settlement.to);
@@ -611,7 +710,7 @@ export function GroupPayments({
                       onClick={() => openPayment(settlement)}
                       className="rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground"
                     >
-                      Pay full
+                      Pay all
                     </button>
                     <button
                       type="button"
@@ -648,10 +747,14 @@ export function GroupPayments({
                     ? "Record payment received"
                     : draft?.payment
                       ? "Correct payment"
-                      : "Record payment"}
+                      : draft?.flow === "expense"
+                        ? `Pay for ${draft.expenseDescription}`
+                        : "Record payment"}
                 </Dialog.Title>
                 <Dialog.Description className="text-xs text-muted-foreground mt-1">
-                  Pay the full balance or enter any partial amount.
+                  {draft?.flow === "expense"
+                    ? `Send one payment to ${draftRecipient?.name ?? "the expense payer"} with one proof.`
+                    : "Pay the full balance or enter any partial amount."}
                 </Dialog.Description>
               </div>
               <button
@@ -714,34 +817,37 @@ export function GroupPayments({
                     max={draft.maximumAmount}
                     step="0.01"
                     value={amountInput}
+                    readOnly={draft.flow === "expense"}
                     onChange={(event) => {
                       setAmountInput(event.target.value);
                       setPaymentError("");
                     }}
-                    className="w-full rounded-xl border border-border bg-input-background px-4 py-3 text-foreground outline-none focus:border-primary"
+                    className="w-full rounded-xl border border-border bg-input-background px-4 py-3 text-foreground outline-none focus:border-primary read-only:cursor-not-allowed read-only:opacity-75"
                   />
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {[0.25, 0.5, 1].map((portion) => (
-                      <button
-                        key={portion}
-                        type="button"
-                        onClick={() =>
-                          setAmountInput(
-                            (
-                              Math.round(
-                                draft.maximumAmount * portion * 100,
-                              ) / 100
-                            ).toFixed(2),
-                          )
-                        }
-                        className="rounded-full bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground"
-                      >
-                        {portion === 1
-                          ? "Full amount"
-                          : `${portion * 100}%`}
-                      </button>
-                    ))}
-                  </div>
+                  {draft.flow !== "expense" && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {[0.25, 0.5, 1].map((portion) => (
+                        <button
+                          key={portion}
+                          type="button"
+                          onClick={() =>
+                            setAmountInput(
+                              (
+                                Math.round(
+                                  draft.maximumAmount * portion * 100,
+                                ) / 100
+                              ).toFixed(2),
+                            )
+                          }
+                          className="rounded-full bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground"
+                        >
+                          {portion === 1
+                            ? "Full amount"
+                            : `${portion * 100}%`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -790,7 +896,8 @@ export function GroupPayments({
                         {chooseExpenses ? "Your selection" : "Oldest first"}
                       </span>
                     </div>
-                    {outstandingExpenseShares.length > 1 && (
+                    {draft.flow !== "expense" &&
+                      outstandingExpenseShares.length > 1 && (
                       <button
                         type="button"
                         onClick={() => {
@@ -802,9 +909,9 @@ export function GroupPayments({
                       >
                         {chooseExpenses ? "Use automatic" : "Choose expenses"}
                       </button>
-                    )}
+                      )}
                   </div>
-                  {chooseExpenses && (
+                  {chooseExpenses && draft.flow !== "expense" && (
                     <div className="mb-3 space-y-1.5 border-b border-border pb-3">
                       {outstandingExpenseShares.map((share) => {
                         const expenseId = share.expenseId!;

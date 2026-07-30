@@ -1,0 +1,196 @@
+[debug] [2026-07-30T14:29:40.702Z] ----------------------------------------------------------------------
+[debug] [2026-07-30T14:29:40.704Z] Command:       /Users/jonathanaplacador/.nvm/versions/node/v20.15.0/bin/node /opt/homebrew/bin/firebase deploy --only hosting:app,firestore:rules --project production
+[debug] [2026-07-30T14:29:40.704Z] CLI Version:   14.27.0
+[debug] [2026-07-30T14:29:40.704Z] Platform:      darwin
+[debug] [2026-07-30T14:29:40.704Z] Node Version:  v20.15.0
+[debug] [2026-07-30T14:29:40.704Z] Time:          Thu Jul 30 2026 22:29:40 GMT+0800 (Philippine Standard Time)
+[debug] [2026-07-30T14:29:40.704Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-07-30T14:29:40.705Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-07-30T14:29:40.821Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-07-30T14:29:40.821Z] > authorizing via signed-in user (jonathanaplacador.dev@gmail.com)
+[debug] [2026-07-30T14:29:40.821Z] [iam] checking project group-expense-management-app for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-07-30T14:29:40.822Z] Checked if tokens are valid: false, expires at: 1785235134542
+[debug] [2026-07-30T14:29:40.822Z] Checked if tokens are valid: false, expires at: 1785235134542
+[debug] [2026-07-30T14:29:40.822Z] > refreshing access token with scopes: []
+[debug] [2026-07-30T14:29:40.823Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-07-30T14:29:40.823Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-07-30T14:29:41.191Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-07-30T14:29:41.191Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-07-30T14:29:41.213Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/group-expense-management-app:testIamPermissions [none]
+[debug] [2026-07-30T14:29:41.214Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/group-expense-management-app:testIamPermissions x-goog-quota-user=projects/group-expense-management-app
+[debug] [2026-07-30T14:29:41.214Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/group-expense-management-app:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-07-30T14:29:41.462Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2026-07-30T14:29:41.462Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}
+[debug] [2026-07-30T14:29:42.672Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/group-expense-management-app:testIamPermissions 200
+[debug] [2026-07-30T14:29:42.673Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/group-expense-management-app:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-07-30T14:29:42.674Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:42.674Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:42.678Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/group-expense-management-app [none]
+[debug] [2026-07-30T14:29:43.381Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/group-expense-management-app 200
+[debug] [2026-07-30T14:29:43.381Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/group-expense-management-app {"projectId":"group-expense-management-app","projectNumber":"239943067123","displayName":"group-expense-management-app","name":"projects/group-expense-management-app","resources":{"hostingSite":"group-expense-management-app"},"state":"ACTIVE","labels":{"firebase":"enabled"},"etag":"1_af293162-5e44-4d86-a981-160d856e60d5"}
+[info] 
+[info] === Deploying to 'group-expense-management-app'...
+[info] 
+[info] i  deploying firestore, hosting 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[debug] [2026-07-30T14:29:43.384Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:43.384Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:43.385Z] >>> [apiv2][query] GET https://firestore.googleapis.com/v1/projects/group-expense-management-app/databases/(default) [none]
+[debug] [2026-07-30T14:29:43.940Z] <<< [apiv2][status] GET https://firestore.googleapis.com/v1/projects/group-expense-management-app/databases/(default) 200
+[debug] [2026-07-30T14:29:43.940Z] <<< [apiv2][body] GET https://firestore.googleapis.com/v1/projects/group-expense-management-app/databases/(default) {"name":"projects/group-expense-management-app/databases/(default)","uid":"75301070-161e-4189-a98f-2ff655b6f281","createTime":"2026-06-22T03:22:51.779269Z","updateTime":"2026-06-22T03:22:51.779269Z","locationId":"asia-southeast1","type":"FIRESTORE_NATIVE","concurrencyMode":"PESSIMISTIC","versionRetentionPeriod":"3600s","earliestVersionTime":"2026-07-30T13:29:45.162942Z","appEngineIntegrationMode":"DISABLED","keyPrefix":"zas","pointInTimeRecoveryEnablement":"POINT_IN_TIME_RECOVERY_DISABLED","deleteProtectionState":"DELETE_PROTECTION_DISABLED","databaseEdition":"STANDARD","freeTier":true,"realtimeUpdatesMode":"REALTIME_UPDATES_MODE_ENABLED","etag":"II/EnbrO+pUDMOLFtPTymZUD"}
+[info] i  cloud.firestore: checking firestore.rules for compilation errors... 
+[debug] [2026-07-30T14:29:43.945Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:43.945Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:43.945Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/group-expense-management-app:test [none]
+[debug] [2026-07-30T14:29:43.945Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/group-expense-management-app:test [omitted]
+[debug] [2026-07-30T14:29:45.500Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/group-expense-management-app:test 200
+[debug] [2026-07-30T14:29:45.500Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/group-expense-management-app:test {}
+[info] ✔  cloud.firestore: rules file firestore.rules compiled successfully 
+[debug] [2026-07-30T14:29:45.506Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:45.506Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:45.507Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/versions [none]
+[debug] [2026-07-30T14:29:45.507Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/versions {"status":"CREATED","labels":{"deployment-tool":"cli-firebase"}}
+[debug] [2026-07-30T14:29:47.088Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/versions 200
+[debug] [2026-07-30T14:29:47.088Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/versions {"name":"projects/239943067123/sites/bayadtayoopo/versions/309a5dd7bd0f915c","status":"CREATED","config":{},"labels":{"deployment-tool":"cli-firebase"}}
+[debug] [2026-07-30T14:29:47.090Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:47.090Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:47.091Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/releases pageSize=10&pageToken=
+[debug] [2026-07-30T14:29:48.286Z] <<< [apiv2][status] GET https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/releases 200
+[debug] [2026-07-30T14:29:48.286Z] <<< [apiv2][body] GET https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/releases {"releases":[{"name":"projects/group-expense-management-app/releases/cloud.firestore","rulesetName":"projects/group-expense-management-app/rulesets/672f10ba-6d53-42b0-8acd-788dcd53e486","createTime":"2026-06-22T03:22:55.772544Z","updateTime":"2026-07-27T02:50:29.319550Z"}]}
+[debug] [2026-07-30T14:29:48.287Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:48.287Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:48.287Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/rulesets/672f10ba-6d53-42b0-8acd-788dcd53e486 [none]
+[debug] [2026-07-30T14:29:49.555Z] <<< [apiv2][status] GET https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/rulesets/672f10ba-6d53-42b0-8acd-788dcd53e486 200
+[debug] [2026-07-30T14:29:49.555Z] <<< [apiv2][body] GET https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/rulesets/672f10ba-6d53-42b0-8acd-788dcd53e486 [omitted]
+[info] i  firestore: uploading rules firestore.rules... 
+[debug] [2026-07-30T14:29:49.557Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:49.558Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:49.560Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/rulesets [none]
+[debug] [2026-07-30T14:29:49.561Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/rulesets [omitted]
+[debug] [2026-07-30T14:29:50.824Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/rulesets 200
+[debug] [2026-07-30T14:29:50.824Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/rulesets {"name":"projects/group-expense-management-app/rulesets/68e70a92-ba18-436c-8b8a-ee8d958a7186","source":{"files":[{"content":"rules_version = '2';\n\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    function signedIn() {\n      return request.auth != null;\n    }\n\n    function isSelf(userId) {\n      return signedIn() && request.auth.uid == userId;\n    }\n\n    function validUserDoc() {\n      return request.resource.data.keys().hasOnly([\n          'groupIds',\n          'name',\n          'color',\n          'avatarSeed',\n          'notificationReadAt',\n          'notificationPreferences'\n        ])\n        && request.resource.data.groupIds is list\n        && (!request.resource.data.keys().hasAny(['name'])\n          || request.resource.data.name is string)\n        && (!request.resource.data.keys().hasAny(['color'])\n          || request.resource.data.color is string)\n        && (!request.resource.data.keys().hasAny(['avatarSeed'])\n          || (request.resource.data.avatarSeed is string\n            && request.resource.data.avatarSeed.size() <= 100))\n        && (!request.resource.data.keys().hasAny(['notificationReadAt'])\n          || request.resource.data.notificationReadAt is string)\n        && (!request.resource.data.keys().hasAny(['notificationPreferences'])\n          || (request.resource.data.notificationPreferences is map\n            && request.resource.data.notificationPreferences.keys().hasOnly([\n              'payments',\n              'expenses',\n              'chat',\n              'memberActivity',\n              'systemNotifications',\n              'mutedChatGroupIds'\n            ])\n            && request.resource.data.notificationPreferences.payments is bool\n            && request.resource.data.notificationPreferences.expenses is bool\n            && request.resource.data.notificationPreferences.chat is bool\n            && request.resource.data.notificationPreferences.memberActivity is bool\n            && request.resource.data.notificationPreferences.systemNotifications is bool\n            && request.resource.data.notificationPreferences.mutedChatGroupIds is list\n            && request.resource.data.notificationPreferences.mutedChatGroupIds.size() <= 100));\n    }\n\n    function validGroupDoc(data) {\n      return data.keys().hasOnly(['data', 'memberIds', 'adminUid', 'deleted', 'updatedAt'])\n        && data.data is string\n        && data.memberIds is list\n        && data.memberIds.size() > 0\n        && data.adminUid is string\n        && data.deleted is bool\n        && data.updatedAt is string;\n    }\n\n    function hasDeletedFlag(data) {\n      return data.keys().hasAny(['deleted']);\n    }\n\n    function hasAdminUid(data) {\n      return data.keys().hasAny(['adminUid']);\n    }\n\n    function isNotDeleted(data) {\n      return !hasDeletedFlag(data) || data.deleted == false;\n    }\n\n    function isGroupMember() {\n      return signedIn()\n        && resource.data.memberIds.hasAny([request.auth.uid])\n        && isNotDeleted(resource.data);\n    }\n\n    function isIncomingGroupMember() {\n      return signedIn()\n        && request.resource.data.memberIds.hasAny([request.auth.uid])\n        && request.resource.data.deleted == false;\n    }\n\n    function isGroupAdmin() {\n      return isGroupMember() && resource.data.adminUid == request.auth.uid;\n    }\n\n    function adminUnchanged() {\n      return request.resource.data.adminUid == resource.data.adminUid;\n    }\n\n    function adminUnchangedOrBackfilled() {\n      return adminUnchanged()\n        || (!hasAdminUid(resource.data)\n          && request.resource.data.memberIds.hasAny([request.resource.data.adminUid]));\n    }\n\n    function memberUpdateKeepsSecurityFields() {\n      return isGroupMember()\n        && isIncomingGroupMember()\n        && adminUnchangedOrBackfilled()\n        && (!hasDeletedFlag(resource.data)\n          || request.resource.data.deleted == resource.data.deleted);\n    }\n\n    function adminUpdate() {\n      return isGroupAdmin()\n        && request.resource.data.memberIds.hasAny([request.auth.uid]);\n    }\n\n    function joinByInviteLink() {\n      return signedIn()\n        && isNotDeleted(resource.data)\n        && !resource.data.memberIds.hasAny([request.auth.uid])\n        && request.resource.data.memberIds.hasAll(resource.data.memberIds)\n        && request.resource.data.memberIds.hasAny([request.auth.uid])\n        && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1\n        && adminUnchangedOrBackfilled()\n        && (!hasDeletedFlag(resource.data)\n          || request.resource.data.deleted == resource.data.deleted);\n    }\n\n    match /users/{userId} {\n      allow read: if isSelf(userId);\n      allow create, update: if isSelf(userId) && validUserDoc();\n      allow delete: if false;\n\n    }\n\n    match /groups/{groupId} {\n      allow create: if signedIn()\n        && validGroupDoc(request.resource.data)\n        && request.resource.data.memberIds.hasAny([request.auth.uid])\n        && request.resource.data.adminUid == request.auth.uid\n        && request.resource.data.deleted == false;\n\n      allow get: if isGroupMember() || (signedIn() && isNotDeleted(resource.data));\n      allow list: if isGroupMember();\n\n      allow update: if validGroupDoc(request.resource.data)\n        && (memberUpdateKeepsSecurityFields() || adminUpdate() || joinByInviteLink());\n\n      allow delete: if false;\n    }\n\n    match /groups/{groupId}/paymentImages/{imageId} {\n      function parentGroup() {\n        return get(/databases/$(database)/documents/groups/$(groupId));\n      }\n\n      function isPaymentImageGroupMember() {\n        return signedIn()\n          && parentGroup().data.memberIds.hasAny([request.auth.uid])\n          && isNotDeleted(parentGroup().data);\n      }\n\n      allow read: if isPaymentImageGroupMember();\n      allow create: if isPaymentImageGroupMember()\n        && request.resource.data.keys().hasOnly(['dataUrl', 'ownerUid', 'kind', 'createdAt'])\n        && request.resource.data.ownerUid == request.auth.uid\n        && request.resource.data.kind in ['qr-code', 'payment-proof', 'expense-receipt']\n        && request.resource.data.dataUrl is string\n        && request.resource.data.dataUrl.size() < 700000\n        && request.resource.data.createdAt is string;\n      allow update: if false;\n      allow delete: if isPaymentImageGroupMember()\n        && resource.data.ownerUid == request.auth.uid;\n    }\n\n    // Legacy path from the early local-per-user Firestore model.\n    match /users/{userId}/groups/{groupId} {\n      allow read, write: if false;\n    }\n  }\n}\n","name":"firestore.rules"}]},"createTime":"2026-07-30T14:29:51.961919Z","metadata":{"services":["cloud.firestore"]}}
+[debug] [2026-07-30T14:29:50.824Z] [rules] created ruleset projects/group-expense-management-app/rulesets/68e70a92-ba18-436c-8b8a-ee8d958a7186
+[info] i  hosting[bayadtayoopo]: beginning deploy... 
+[info] i  hosting[bayadtayoopo]: found 13 files in dist 
+[debug] [2026-07-30T14:29:50.846Z] [hosting] uploading with 200 concurrency
+[debug] [2026-07-30T14:29:50.892Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:50.892Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:50.893Z] [hosting] hash cache [ZGlzdA] stored for 13 files
+[debug] [2026-07-30T14:29:50.893Z] [hosting][hash queue][FINAL] {"max":42,"min":5,"avg":9,"active":0,"complete":13,"success":13,"errored":0,"retried":0,"total":13,"elapsed":46}
+[debug] [2026-07-30T14:29:50.894Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/239943067123/sites/bayadtayoopo/versions/309a5dd7bd0f915c:populateFiles [none]
+[debug] [2026-07-30T14:29:50.894Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/239943067123/sites/bayadtayoopo/versions/309a5dd7bd0f915c:populateFiles {"files":{"/icons/icon.svg":"0f919847492582489c44b4ce351a1a12418693f0e83746d7d60dc24577a60a77","/sw.js":"bcd17c361733c83c357210c5f0eb0a084fcd0d64f20876896f27280ddafea6da","/icons/icon-192.png":"b0c2f1b91cdb621382d083c75b864b912ff037670a4d61a7f06608e924d66109","/icons/icon-maskable-512.png":"989b2a581a4b08b54d3c09fc69b8042b61cf9cf8c20c0a11675d3318e0d21ac7","/icons/icon-512.png":"989b2a581a4b08b54d3c09fc69b8042b61cf9cf8c20c0a11675d3318e0d21ac7","/version.json":"ed3d18f924d944ea48878a6c39d71248d3aa2b31179e120a87f609e29f19b620","/index.html":"7370a08397de5720e474c9b775cfb18c5a1490d39621d9307e036d986c350aa5","/manifest.webmanifest":"d397137e8b250e73a933bcc41e3d04b2f8929c265e12f75ea69a51c6a1b50c3a","/icons/icon-180.png":"91891b76f79bff310956cb17244f6ba8189fed5aed47db4cdd999115633eff86","/social-card.svg":"c7ba1c0b05dc61bf2b54be2bd3579f1c34692fddfadc3f27135d9a2570f96d6b","/assets/index-ICwzqbf3.css":"2102e27baba45c5763d8cf9901796756818762fa5baca84fe5e8c823ea085315","/social-card.png":"b92c381bca0a63e807f02d8039e67ed548545fb8bf059da020c24c1364c14fd2","/assets/index-66orcAB0.js":"813671148d5915c6b32d6a218622c7d815ffde850149630e67691583a9f7bf0c"}}
+[debug] [2026-07-30T14:29:51.979Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/239943067123/sites/bayadtayoopo/versions/309a5dd7bd0f915c:populateFiles 200
+[debug] [2026-07-30T14:29:51.979Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/239943067123/sites/bayadtayoopo/versions/309a5dd7bd0f915c:populateFiles {"uploadRequiredHashes":["813671148d5915c6b32d6a218622c7d815ffde850149630e67691583a9f7bf0c","bcd17c361733c83c357210c5f0eb0a084fcd0d64f20876896f27280ddafea6da","ed3d18f924d944ea48878a6c39d71248d3aa2b31179e120a87f609e29f19b620","7370a08397de5720e474c9b775cfb18c5a1490d39621d9307e036d986c350aa5","2102e27baba45c5763d8cf9901796756818762fa5baca84fe5e8c823ea085315"],"uploadUrl":"https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files"}
+[debug] [2026-07-30T14:29:51.980Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:51.981Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:51.981Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:51.981Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:51.982Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:51.982Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:51.982Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:51.983Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:51.986Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:51.987Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:51.987Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/813671148d5915c6b32d6a218622c7d815ffde850149630e67691583a9f7bf0c [none]
+[debug] [2026-07-30T14:29:51.987Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/813671148d5915c6b32d6a218622c7d815ffde850149630e67691583a9f7bf0c [stream]
+[debug] [2026-07-30T14:29:51.989Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/bcd17c361733c83c357210c5f0eb0a084fcd0d64f20876896f27280ddafea6da [none]
+[debug] [2026-07-30T14:29:51.989Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/bcd17c361733c83c357210c5f0eb0a084fcd0d64f20876896f27280ddafea6da [stream]
+[debug] [2026-07-30T14:29:51.991Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/ed3d18f924d944ea48878a6c39d71248d3aa2b31179e120a87f609e29f19b620 [none]
+[debug] [2026-07-30T14:29:51.992Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/ed3d18f924d944ea48878a6c39d71248d3aa2b31179e120a87f609e29f19b620 [stream]
+[debug] [2026-07-30T14:29:51.995Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/7370a08397de5720e474c9b775cfb18c5a1490d39621d9307e036d986c350aa5 [none]
+[debug] [2026-07-30T14:29:51.995Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/7370a08397de5720e474c9b775cfb18c5a1490d39621d9307e036d986c350aa5 [stream]
+[debug] [2026-07-30T14:29:51.997Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/2102e27baba45c5763d8cf9901796756818762fa5baca84fe5e8c823ea085315 [none]
+[debug] [2026-07-30T14:29:51.997Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/2102e27baba45c5763d8cf9901796756818762fa5baca84fe5e8c823ea085315 [stream]
+[debug] [2026-07-30T14:29:52.000Z] [hosting][populate queue][FINAL] {"max":1095,"min":1095,"avg":1095,"active":0,"complete":1,"success":1,"errored":0,"retried":0,"total":1,"elapsed":1108}
+[debug] [2026-07-30T14:29:52.000Z] [hosting] uploads queued: 5
+[info] i  hosting: uploading new files [0/5] (0%) 
+[debug] [2026-07-30T14:29:53.749Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/bcd17c361733c83c357210c5f0eb0a084fcd0d64f20876896f27280ddafea6da 200
+[debug] [2026-07-30T14:29:53.750Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/bcd17c361733c83c357210c5f0eb0a084fcd0d64f20876896f27280ddafea6da [stream]
+[debug] [2026-07-30T14:29:53.754Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/7370a08397de5720e474c9b775cfb18c5a1490d39621d9307e036d986c350aa5 200
+[debug] [2026-07-30T14:29:53.754Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/7370a08397de5720e474c9b775cfb18c5a1490d39621d9307e036d986c350aa5 [stream]
+[debug] [2026-07-30T14:29:53.876Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/813671148d5915c6b32d6a218622c7d815ffde850149630e67691583a9f7bf0c 200
+[debug] [2026-07-30T14:29:53.877Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/813671148d5915c6b32d6a218622c7d815ffde850149630e67691583a9f7bf0c [stream]
+[debug] [2026-07-30T14:29:53.958Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/ed3d18f924d944ea48878a6c39d71248d3aa2b31179e120a87f609e29f19b620 200
+[debug] [2026-07-30T14:29:53.958Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/ed3d18f924d944ea48878a6c39d71248d3aa2b31179e120a87f609e29f19b620 [stream]
+[debug] [2026-07-30T14:29:54.040Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/2102e27baba45c5763d8cf9901796756818762fa5baca84fe5e8c823ea085315 200
+[debug] [2026-07-30T14:29:54.041Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/bayadtayoopo/versions/309a5dd7bd0f915c/files/2102e27baba45c5763d8cf9901796756818762fa5baca84fe5e8c823ea085315 [stream]
+[debug] [2026-07-30T14:29:54.042Z] [hosting][upload queue][FINAL] {"max":2058,"min":1769,"avg":1895,"active":0,"complete":5,"success":5,"errored":0,"retried":0,"total":5,"elapsed":2063}
+[info] i  hosting: upload complete 
+[info] ✔  hosting[bayadtayoopo]: file upload complete 
+[debug] [2026-07-30T14:29:54.042Z] [hosting] deploy completed after 3211ms
+[debug] [2026-07-30T14:29:54.043Z] [rules] releasing cloud.firestore/(default) with ruleset projects/group-expense-management-app/rulesets/68e70a92-ba18-436c-8b8a-ee8d958a7186
+[debug] [2026-07-30T14:29:54.043Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:54.043Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:54.043Z] >>> [apiv2][query] PATCH https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/releases/cloud.firestore/(default) [none]
+[debug] [2026-07-30T14:29:54.043Z] >>> [apiv2][body] PATCH https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/releases/cloud.firestore/(default) {"release":{"name":"projects/group-expense-management-app/releases/cloud.firestore/(default)","rulesetName":"projects/group-expense-management-app/rulesets/68e70a92-ba18-436c-8b8a-ee8d958a7186"}}
+[debug] [2026-07-30T14:29:55.271Z] <<< [apiv2][status] PATCH https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/releases/cloud.firestore/(default) 200
+[debug] [2026-07-30T14:29:55.271Z] <<< [apiv2][body] PATCH https://firebaserules.googleapis.com/v1/projects/group-expense-management-app/releases/cloud.firestore/(default) {"name":"projects/group-expense-management-app/releases/cloud.firestore","rulesetName":"projects/group-expense-management-app/rulesets/68e70a92-ba18-436c-8b8a-ee8d958a7186","createTime":"2026-06-22T03:22:55.772544Z","updateTime":"2026-07-30T14:29:56.407563Z"}
+[debug] [2026-07-30T14:29:55.271Z] [rules] updated release projects/group-expense-management-app/releases/cloud.firestore
+[info] ✔  firestore: released rules firestore.rules to cloud.firestore 
+[debug] [2026-07-30T14:29:55.272Z] [
+  {
+    "config": {
+      "target": "app",
+      "public": "dist",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "/sw.js",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
+          "source": "/version.json",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-store"
+            }
+          ]
+        },
+        {
+          "source": "/manifest.webmanifest",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=3600"
+            }
+          ]
+        }
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ],
+      "site": "bayadtayoopo"
+    },
+    "version": "projects/239943067123/sites/bayadtayoopo/versions/309a5dd7bd0f915c"
+  }
+]
+[info] i  hosting[bayadtayoopo]: finalizing version... 
+[debug] [2026-07-30T14:29:55.274Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:55.277Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:55.277Z] >>> [apiv2][query] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/versions/309a5dd7bd0f915c updateMask=status%2Cconfig
+[debug] [2026-07-30T14:29:55.278Z] >>> [apiv2][body] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/versions/309a5dd7bd0f915c {"status":"FINALIZED","config":{"rewrites":[{"glob":"**","path":"/index.html"}],"headers":[{"glob":"/sw.js","headers":{"Cache-Control":"no-cache"}},{"glob":"/version.json","headers":{"Cache-Control":"no-store"}},{"glob":"/manifest.webmanifest","headers":{"Cache-Control":"public, max-age=3600"}}]}}
+[debug] [2026-07-30T14:29:56.043Z] <<< [apiv2][status] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/versions/309a5dd7bd0f915c 200
+[debug] [2026-07-30T14:29:56.044Z] <<< [apiv2][body] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/versions/309a5dd7bd0f915c {"name":"projects/239943067123/sites/bayadtayoopo/versions/309a5dd7bd0f915c","status":"FINALIZED","config":{"headers":[{"headers":{"Cache-Control":"no-cache"},"glob":"/sw.js"},{"headers":{"Cache-Control":"no-store"},"glob":"/version.json"},{"headers":{"Cache-Control":"public, max-age=3600"},"glob":"/manifest.webmanifest"}],"rewrites":[{"glob":"**","path":"/index.html"}]},"labels":{"deployment-tool":"cli-firebase"},"createTime":"2026-07-30T14:29:47.521959Z","createUser":{"email":"jonathanaplacador.dev@gmail.com"},"finalizeTime":"2026-07-30T14:29:57.080062Z","finalizeUser":{"email":"jonathanaplacador.dev@gmail.com"}}
+[debug] [2026-07-30T14:29:56.044Z] [hosting] finalized version for bayadtayoopo:[object Object]
+[info] ✔  hosting[bayadtayoopo]: version finalized 
+[info] i  hosting[bayadtayoopo]: releasing new version... 
+[debug] [2026-07-30T14:29:56.044Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:56.045Z] Checked if tokens are valid: true, expires at: 1785425380191
+[debug] [2026-07-30T14:29:56.045Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/channels/live/releases versionName=projects%2F239943067123%2Fsites%2Fbayadtayoopo%2Fversions%2F309a5dd7bd0f915c
+[debug] [2026-07-30T14:29:56.045Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/channels/live/releases {}
+[debug] [2026-07-30T14:29:57.095Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/bayadtayoopo/channels/live/releases 200

@@ -1,7 +1,13 @@
 name = "bayadtayoopo-push"
 main = "src/index.js"
 compatibility_date = "2026-07-28"
+workers_dev = true
+preview_urls = false
 
 [vars]
 FIREBASE_PROJECT_ID = "group-expense-management-app"
 ALLOWED_ORIGINS = "https://bayadtayoopo.web.app"
+
+[[kv_namespaces]]
+binding = "PUSH_KV"
+id = "9bb18349b68649f799ee2099bbe24633"
