@@ -125,6 +125,7 @@ service cloud.firestore {
       allow read: if isSelf(userId);
       allow create, update: if isSelf(userId) && validUserDoc();
       allow delete: if false;
+
     }
 
     match /groups/{groupId} {

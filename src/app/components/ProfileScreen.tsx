@@ -5,6 +5,11 @@ import type { CurrentUser, Group, NotificationPreferences } from "./types";
 import { MEMBER_COLORS } from "./utils";
 import { UserAvatar } from "./UserAvatar";
 import { normalizeNotificationPreferences } from "./notifications";
+import {
+  disablePushNotifications,
+  enablePushNotifications,
+  getPushAvailability,
+} from "../../lib/pushNotifications";
 
 interface Props {
   user: CurrentUser;
@@ -30,6 +35,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
       normalizeNotificationPreferences(user.notificationPreferences),
     );
   const [notificationError, setNotificationError] = useState("");
+  const [pushSaving, setPushSaving] = useState(false);
 
   function handleSaveName() {
     if (!nameInput.trim()) return;
@@ -264,6 +270,11 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
                 your groups can sync across devices and members.
               </span>
               <span className="block">
+                If you enable system alerts, a device-specific push token is
+                stored by our push-delivery service so your browser can receive
+                notifications. Turning system alerts off removes that device.
+              </span>
+              <span className="block">
                 Your data is used only to provide app features. We do not sell
                 your personal data.
               </span>
@@ -396,51 +407,61 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">
-                      System alerts while running
+                      System and closed-app alerts
                     </p>
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      Show an OS notification when the PWA or browser is still
-                      running in the background. This does not wake a fully
-                      closed app.
+                      Receive browser notifications through Web Push, including
+                      while the installed app is closed when the device supports
+                      it.
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
+                  disabled={pushSaving}
                   onClick={async () => {
-                    if (notificationDraft.systemNotifications) {
-                      setNotificationDraft((current) => ({
-                        ...current,
-                        systemNotifications: false,
-                      }));
-                      return;
-                    }
-                    if (!("Notification" in window)) {
-                      setNotificationError(
-                        "System notifications are not supported in this browser.",
-                      );
-                      return;
-                    }
-                    const permission = await Notification.requestPermission();
-                    if (permission === "granted") {
+                    setPushSaving(true);
+                    setNotificationError("");
+                    try {
+                      if (notificationDraft.systemNotifications) {
+                        await disablePushNotifications(user.id);
+                        setNotificationDraft((current) => ({
+                          ...current,
+                          systemNotifications: false,
+                        }));
+                        return;
+                      }
+                      const availability = getPushAvailability();
+                      if (!availability.available) {
+                        throw new Error(availability.reason);
+                      }
+                      await enablePushNotifications(user.id, {
+                        ...notificationDraft,
+                        systemNotifications: true,
+                      });
                       setNotificationDraft((current) => ({
                         ...current,
                         systemNotifications: true,
                       }));
-                      setNotificationError("");
-                    } else {
+                    } catch (error) {
                       setNotificationError(
-                        "Notification permission was not granted. You can still use the in-app inbox.",
+                        error instanceof Error
+                          ? error.message
+                          : "Unable to enable push notifications.",
                       );
+                    } finally {
+                      setPushSaving(false);
                     }
                   }}
-                  className={`mt-4 w-full rounded-xl py-2.5 text-sm font-semibold ${
+                  className={`mt-4 w-full rounded-xl py-2.5 text-sm font-semibold disabled:opacity-60 ${
                     notificationDraft.systemNotifications
                       ? "bg-muted text-muted-foreground"
                       : "bg-primary text-primary-foreground"
                   }`}
                 >
-                  {notificationDraft.systemNotifications
+                  {pushSaving
+                    ? "Updating…"
+                    : notificationDraft.systemNotifications
                     ? "Turn off system alerts"
                     : "Enable system alerts"}
                 </button>

@@ -1,0 +1,11 @@
+name = "bayadtayoopo-push-staging"
+main = "src/index.js"
+compatibility_date = "2026-07-28"
+
+[vars]
+FIREBASE_PROJECT_ID = "bayadtayoopo-staging"
+ALLOWED_ORIGINS = "https://bayadtayoopo-staging.web.app"
+
+[[kv_namespaces]]
+binding = "PUSH_KV"
+id = "8b7e83f615954d81a9cd13c9f0f8100a"

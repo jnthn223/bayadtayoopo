@@ -202,3 +202,7 @@ firebase deploy --only hosting:app,firestore:rules --project bayadtayoopo
 ## Architecture Note
 
 Groups are currently stored as serialized JSON inside their Firestore group document, while payment images use separate Firestore documents. This keeps the current realtime model straightforward, but a larger-scale version should move expenses, messages, settlements, and activity history into dedicated subcollections.
+
+## Developer Guides
+
+- [Push notifications explained like you’re 10](docs/push-notifications-guide.md)

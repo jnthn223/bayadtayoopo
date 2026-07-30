@@ -54,6 +54,13 @@ import {
   normalizeNotificationPreferences,
   notificationUrl,
 } from "./components/notifications";
+import { collectPushEvents } from "./components/pushEvents";
+import {
+  disablePushNotifications,
+  sendPushEvents,
+  syncPushNotifications,
+  updatePushPreferences,
+} from "../lib/pushNotifications";
 
 /* MARKER-MAKE-KIT-INVOKED */
 
@@ -397,6 +404,20 @@ export default function App() {
         localStorage.getItem("pendingClaimCode") ?? undefined,
       );
       if (joined) {
+        const joinedMember = joined.members.find(
+          (member) => member.uid === user.uid || member.id === user.uid,
+        );
+        if (joinedMember?.joinedAt) {
+          void sendPushEvents(joined.id, [
+            {
+              type: "member_joined",
+              entityId: joinedMember.id,
+              occurredAt: joinedMember.joinedAt,
+            },
+          ]).catch((error) =>
+            console.warn("Unable to send member notification", error),
+          );
+        }
         setGroups((prev) => {
           const existing = prev.find((g) => g.id === joined.id);
           return existing
@@ -458,7 +479,10 @@ export default function App() {
     }
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    if (session) {
+      await disablePushNotifications(session.uid).catch(() => {});
+    }
     clearSession();
     signOut(auth).catch(() => {});
     setSession(null);
@@ -489,6 +513,11 @@ export default function App() {
       // Re-baseline live alerts so enabling a category does not toast every
       // older unread item. Those items remain available in the inbox.
       notificationStreamReadyRef.current = false;
+      void updatePushPreferences(
+        normalizeNotificationPreferences(updated.notificationPreferences),
+      ).catch((error) =>
+        console.warn("Unable to update push preferences", error),
+      );
     }
     setCurrentUser(updated);
     if (session) {
@@ -584,6 +613,12 @@ export default function App() {
           ? selectedGroup
           : (groups.find((existing) => existing.id === group.id) ?? null);
       const saved = await saveGroupSafely(group, base);
+      const pushEvents = collectPushEvents(base, saved, session.uid);
+      if (pushEvents.length > 0) {
+        void sendPushEvents(saved.id, pushEvents).catch((error) =>
+          console.warn("Unable to send push notification", error),
+        );
+      }
       setSelectedGroup(saved);
       setGroups((prev) => prev.map((g) => (g.id === saved.id ? saved : g)));
     } catch (err) {
@@ -621,6 +656,25 @@ export default function App() {
   ).length;
 
   useEffect(() => {
+    if (
+      authState !== "authenticated" ||
+      !currentUser?.notificationPreferences?.systemNotifications
+    ) {
+      return;
+    }
+    void syncPushNotifications(
+      currentUser.id,
+      normalizeNotificationPreferences(currentUser.notificationPreferences),
+    ).catch((error) =>
+      console.warn("Unable to refresh this device's push token", error),
+    );
+  }, [
+    authState,
+    currentUser?.id,
+    currentUser?.notificationPreferences?.systemNotifications,
+  ]);
+
+  useEffect(() => {
     if (!currentUser?.notificationReadAt) return;
     const currentIds = new Set(
       notifications.map((notification) => notification.id),
@@ -645,6 +699,7 @@ export default function App() {
       return;
     }
     if (
+      !import.meta.env.VITE_PUSH_API_URL &&
       currentUser.notificationPreferences?.systemNotifications &&
       "Notification" in window &&
       Notification.permission === "granted" &&

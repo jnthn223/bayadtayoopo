@@ -93,6 +93,38 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+self.addEventListener("push", (event) => {
+  event.waitUntil(
+    (async () => {
+      let payload = {};
+      try {
+        payload = event.data?.json() ?? {};
+      } catch {
+        payload = { data: { body: event.data?.text() ?? "" } };
+      }
+      const data = payload.data ?? payload;
+      if (!data.title) return;
+
+      const windows = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      if (windows.some((client) => client.visibilityState === "visible")) {
+        return;
+      }
+
+      await self.registration.showNotification(data.title, {
+        body: data.body ?? "",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        tag: data.tag,
+        renotify: true,
+        data: { url: data.url ?? "/" },
+      });
+    })(),
+  );
+});
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const targetUrl = event.notification.data?.url ?? "/";

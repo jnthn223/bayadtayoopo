@@ -1,0 +1,13 @@
+{
+  "name": "bayadtayoopo-push-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:staging": "wrangler dev --config wrangler.staging.toml",
+    "deploy:staging": "wrangler deploy --config wrangler.staging.toml",
+    "deploy:production": "wrangler deploy --config wrangler.production.toml"
+  },
+  "devDependencies": {
+    "wrangler": "^4.26.0"
+  }
+}

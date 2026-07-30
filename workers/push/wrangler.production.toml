@@ -1,0 +1,7 @@
+name = "bayadtayoopo-push"
+main = "src/index.js"
+compatibility_date = "2026-07-28"
+
+[vars]
+FIREBASE_PROJECT_ID = "group-expense-management-app"
+ALLOWED_ORIGINS = "https://bayadtayoopo.web.app"
