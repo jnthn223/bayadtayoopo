@@ -82,7 +82,7 @@ export function GroupHeader({
           <div className="flex items-center gap-1">
             <HeaderAction
               active={tourTarget === "members"}
-              label="Manage members"
+              label={isAdmin ? "Manage members" : "View members"}
               onClick={onManageMembers}
             >
               <Users size={19} />
@@ -147,6 +147,8 @@ export function GroupHeader({
                     name={member.name}
                     color={member.color}
                     seed={member.avatarSeed}
+                    uid={member.uid}
+                    photoVersion={member.profileImageVersion}
                     className={`w-7 h-7 rounded-full text-xs border-2 ${
                       member.uid || member.id === currentUser.id
                         ? "border-card"

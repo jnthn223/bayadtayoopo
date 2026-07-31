@@ -71,6 +71,10 @@ export async function loadOrCreateUserProfile(uid: string): Promise<UserProfile>
     name: typeof user.name === "string" ? user.name : undefined,
     color: typeof user.color === "string" ? user.color : undefined,
     avatarSeed,
+    profileImageVersion:
+      typeof user.profileImageVersion === "string"
+        ? user.profileImageVersion
+        : undefined,
     notificationReadAt,
     notificationPreferences: normalizeNotificationPreferences(
       typeof user.notificationPreferences === "object" &&
@@ -192,6 +196,7 @@ export async function joinGroup(
   memberName: string,
   memberColor: string,
   avatarSeed?: string,
+  profileImageVersion?: string,
   claimMemberId?: string,
   claimCode?: string,
 ): Promise<Group | null> {
@@ -220,6 +225,7 @@ export async function joinGroup(
               name: memberName,
               color: memberColor,
               avatarSeed,
+              profileImageVersion,
               claimCode: undefined,
               claimedFromPlaceholder: true,
               joinedAt,
@@ -234,6 +240,7 @@ export async function joinGroup(
         name: memberName,
         color: memberColor,
         avatarSeed,
+        profileImageVersion,
         joinedAt,
       };
       group.members = [...group.members, newMember];

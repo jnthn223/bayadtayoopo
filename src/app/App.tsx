@@ -41,6 +41,8 @@ import {
   MagicLinkEmailScreen,
 } from "./components/LoginScreen";
 import { ProfileScreen } from "./components/ProfileScreen";
+import { SystemAlertsPrompt } from "./components/SystemAlertsPrompt";
+import { shouldShowSystemAlertsPrompt } from "./components/systemAlertsPromptRules";
 import { BrandMark, BrandWordmark } from "./components/Brand";
 import { auth } from "../lib/firebase";
 import { signOut } from "firebase/auth";
@@ -57,6 +59,8 @@ import {
 import { collectPushEvents } from "./components/pushEvents";
 import {
   disablePushNotifications,
+  enablePushNotifications,
+  getPushAvailability,
   sendPushEvents,
   syncPushNotifications,
   updatePushPreferences,
@@ -74,6 +78,7 @@ type Screen = "home" | "group" | "profile";
 
 const FALLBACK_POLL_MS = 3000;
 const SPLASH_MIN_MS = 1200;
+const SYSTEM_ALERTS_PROMPT_DELAY_MS = 1400;
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -83,6 +88,10 @@ function clearPendingJoin() {
   localStorage.removeItem("pendingJoinGroupId");
   localStorage.removeItem("pendingClaimMemberId");
   localStorage.removeItem("pendingClaimCode");
+}
+
+function systemAlertsPromptDismissedKey(userId: string) {
+  return `bayadtayoopo:system-alerts-prompt-dismissed:${userId}`;
 }
 
 export default function App() {
@@ -99,10 +108,15 @@ export default function App() {
     type: "success" | "error";
   } | null>(null);
   const [groupsLoading, setGroupsLoading] = useState(false);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [linkEmailError, setLinkEmailError] = useState("");
   const [splashMinimumElapsed, setSplashMinimumElapsed] = useState(false);
   const [waitingUpdate, setWaitingUpdate] = useState<ServiceWorker | null>(null);
   const [restartingForUpdate, setRestartingForUpdate] = useState(false);
+  const [systemAlertsPromptOpen, setSystemAlertsPromptOpen] = useState(false);
+  const [systemAlertsPromptSaving, setSystemAlertsPromptSaving] =
+    useState(false);
+  const [systemAlertsPromptError, setSystemAlertsPromptError] = useState("");
   const syncRef = useRef<{
     unsubscribe?: () => void;
     poll?: ReturnType<typeof setInterval>;
@@ -254,6 +268,7 @@ export default function App() {
 
   async function fetchGroups(uid: string) {
     setGroupsLoading(true);
+    setProfileLoaded(false);
     try {
       const [loaded, profile] = await Promise.all([
         loadUserGroups(uid),
@@ -267,11 +282,13 @@ export default function App() {
               name: profile.name ?? user.name,
               color: profile.color ?? user.color,
               avatarSeed: profile.avatarSeed,
+              profileImageVersion: profile.profileImageVersion,
               notificationReadAt: profile.notificationReadAt,
               notificationPreferences: profile.notificationPreferences,
             }
           : user,
       );
+      setProfileLoaded(true);
     } catch (err) {
       showBanner(errorMessage(err, "Unable to load groups"), "error");
     } finally {
@@ -400,6 +417,7 @@ export default function App() {
         cu.name,
         savedProfile.color ?? MEMBER_COLORS[colorIndex],
         savedProfile.avatarSeed,
+        savedProfile.profileImageVersion,
         localStorage.getItem("pendingClaimMemberId") ?? undefined,
         localStorage.getItem("pendingClaimCode") ?? undefined,
       );
@@ -488,6 +506,9 @@ export default function App() {
     setSession(null);
     setCurrentUser(null);
     setGroups([]);
+    setProfileLoaded(false);
+    setSystemAlertsPromptOpen(false);
+    setSystemAlertsPromptError("");
     setSelectedGroup(null);
     setNotificationDestination(null);
     setScreen("home");
@@ -497,11 +518,14 @@ export default function App() {
   }
 
   function handleUpdateUser(updated: CurrentUser) {
+    const displayNameChanged =
+      !currentUser || currentUser.name !== updated.name;
     const identityChanged =
       !currentUser ||
-      currentUser.name !== updated.name ||
+      displayNameChanged ||
       currentUser.color !== updated.color ||
-      currentUser.avatarSeed !== updated.avatarSeed;
+      currentUser.avatarSeed !== updated.avatarSeed ||
+      currentUser.profileImageVersion !== updated.profileImageVersion;
     const notificationPreferencesChanged =
       JSON.stringify(
         normalizeNotificationPreferences(currentUser?.notificationPreferences),
@@ -509,6 +533,24 @@ export default function App() {
       JSON.stringify(
         normalizeNotificationPreferences(updated.notificationPreferences),
       );
+    const systemAlertsWereEnabled = normalizeNotificationPreferences(
+      currentUser?.notificationPreferences,
+    ).systemNotifications;
+    const systemAlertsAreEnabled = normalizeNotificationPreferences(
+      updated.notificationPreferences,
+    ).systemNotifications;
+    if (currentUser && systemAlertsWereEnabled !== systemAlertsAreEnabled) {
+      if (systemAlertsAreEnabled) {
+        localStorage.removeItem(
+          systemAlertsPromptDismissedKey(currentUser.id),
+        );
+      } else {
+        localStorage.setItem(
+          systemAlertsPromptDismissedKey(currentUser.id),
+          "true",
+        );
+      }
+    }
     if (notificationPreferencesChanged) {
       // Re-baseline live alerts so enabling a category does not toast every
       // older unread item. Those items remain available in the inbox.
@@ -531,12 +573,13 @@ export default function App() {
         name: updated.name,
         color: updated.color,
         avatarSeed: updated.avatarSeed,
+        profileImageVersion: updated.profileImageVersion ?? "",
         notificationReadAt: updated.notificationReadAt,
         notificationPreferences: updated.notificationPreferences,
       }).catch((err) => {
         showBanner(errorMessage(err, "Unable to save profile"), "error");
       });
-      if (identityChanged) {
+      if (displayNameChanged) {
         setDisplayName(next.idToken, updated.name).catch((err) => {
           showBanner(errorMessage(err, "Unable to update profile name"), "error");
         });
@@ -558,6 +601,7 @@ export default function App() {
             name: updated.name,
             color: updated.color,
             avatarSeed: updated.avatarSeed,
+            profileImageVersion: updated.profileImageVersion,
           };
         });
 
@@ -654,6 +698,85 @@ export default function App() {
   const unreadNotificationCount = notifications.filter((notification) =>
     isNotificationUnread(notification, currentUser?.notificationReadAt),
   ).length;
+
+  useEffect(() => {
+    if (!currentUser) {
+      setSystemAlertsPromptOpen(false);
+      return;
+    }
+    const availability = getPushAvailability();
+    const dismissed =
+      localStorage.getItem(systemAlertsPromptDismissedKey(currentUser.id)) ===
+      "true";
+    const shouldShow = shouldShowSystemAlertsPrompt({
+      authenticated: authState === "authenticated",
+      profileLoaded,
+      onHomeScreen: screen === "home",
+      available: availability.available,
+      permission:
+        "Notification" in window ? Notification.permission : "denied",
+      systemNotificationsEnabled:
+        normalizeNotificationPreferences(currentUser.notificationPreferences)
+          .systemNotifications,
+      dismissed,
+    });
+
+    if (!shouldShow) {
+      setSystemAlertsPromptOpen(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setSystemAlertsPromptError("");
+      setSystemAlertsPromptOpen(true);
+    }, SYSTEM_ALERTS_PROMPT_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [
+    authState,
+    currentUser?.id,
+    currentUser?.notificationPreferences?.systemNotifications,
+    profileLoaded,
+    screen,
+  ]);
+
+  function dismissSystemAlertsPrompt() {
+    if (!currentUser || systemAlertsPromptSaving) return;
+    localStorage.setItem(
+      systemAlertsPromptDismissedKey(currentUser.id),
+      "true",
+    );
+    setSystemAlertsPromptOpen(false);
+    setSystemAlertsPromptError("");
+  }
+
+  async function enableSystemAlertsFromPrompt() {
+    if (!currentUser || systemAlertsPromptSaving) return;
+    setSystemAlertsPromptSaving(true);
+    setSystemAlertsPromptError("");
+    try {
+      const preferences = {
+        ...normalizeNotificationPreferences(
+          currentUser.notificationPreferences,
+        ),
+        systemNotifications: true,
+      };
+      await enablePushNotifications(currentUser.id, preferences);
+      localStorage.removeItem(
+        systemAlertsPromptDismissedKey(currentUser.id),
+      );
+      handleUpdateUser({
+        ...currentUser,
+        notificationPreferences: preferences,
+      });
+      setSystemAlertsPromptOpen(false);
+      showBanner("System alerts enabled");
+    } catch (error) {
+      setSystemAlertsPromptError(
+        errorMessage(error, "Unable to enable system alerts."),
+      );
+    } finally {
+      setSystemAlertsPromptSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (
@@ -842,6 +965,14 @@ export default function App() {
             </button>
           </div>
         )}
+
+        <SystemAlertsPrompt
+          open={systemAlertsPromptOpen}
+          saving={systemAlertsPromptSaving}
+          error={systemAlertsPromptError}
+          onEnable={enableSystemAlertsFromPrompt}
+          onDismiss={dismissSystemAlertsPrompt}
+        />
 
         {/* Branded startup splash */}
         {(authState === "loading" || !splashMinimumElapsed) && (

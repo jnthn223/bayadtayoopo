@@ -46,6 +46,37 @@ export function getExpensePayerId(expense: Expense): string {
   return expense.paidBy;
 }
 
+export function isExpenseSettled(group: Group, expense: Expense): boolean {
+  const payerId = getExpensePayerId(expense);
+  const confirmedAllocationsByMember = new Map<string, number>();
+
+  for (const payment of group.payments ?? []) {
+    if (payment.status !== "confirmed") continue;
+    const allocatedCents = payment.allocations.reduce(
+      (sum, allocation) =>
+        allocation.expenseId === expense.id
+          ? sum + Math.round(allocation.amount * 100)
+          : sum,
+      0,
+    );
+    if (allocatedCents === 0) continue;
+    confirmedAllocationsByMember.set(
+      payment.fromMemberId,
+      (confirmedAllocationsByMember.get(payment.fromMemberId) ?? 0) +
+        allocatedCents,
+    );
+  }
+
+  return expense.splits.every((split) => {
+    if (split.memberId === payerId || split.amount <= 0.005) return true;
+    if (split.paymentStatus === "confirmed") return true;
+    return (
+      (confirmedAllocationsByMember.get(split.memberId) ?? 0) >=
+      Math.round(split.amount * 100)
+    );
+  });
+}
+
 export function canDirectlyConfirmSplit(
   expense: Expense,
   split: Split,

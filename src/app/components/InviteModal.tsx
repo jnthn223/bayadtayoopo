@@ -151,7 +151,7 @@ export function InviteModal({
           <div className="w-10 h-1 bg-border rounded-full mx-auto mt-4 mb-5" />
           <div className="flex items-center justify-between px-5 mb-5">
             <Dialog.Title className="text-lg font-semibold text-foreground">
-              Manage members
+              {isAdmin ? "Manage members" : "Members"}
             </Dialog.Title>
             <button
               onClick={handleClose}
@@ -164,14 +164,89 @@ export function InviteModal({
           <div className="px-5 pb-10">
             <div className="space-y-4">
                 {!isAdmin && (
-                  <div className="rounded-2xl border border-border bg-muted/30 p-4">
-                    <p className="text-sm font-semibold text-foreground">
-                      Members are managed by group admins
-                    </p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      You can still use the QR button in the group header to
-                      share a general join code or link—no email address needed.
-                    </p>
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-border bg-muted/30 p-4">
+                      <p className="text-sm font-semibold text-foreground">
+                        Read-only member list
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        Group admins manage roles, pending members, and
+                        removals.
+                      </p>
+                    </div>
+
+                    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                      {joinedMembers.map((member, index) => {
+                        const owner = isOwner(member);
+                        const admin = memberIsAdmin(member);
+                        return (
+                          <div
+                            key={member.id}
+                            className={`flex items-center gap-3 p-3 ${
+                              index < joinedMembers.length - 1 ||
+                              pendingMembers.length > 0
+                                ? "border-b border-border"
+                                : ""
+                            }`}
+                          >
+                            <UserAvatar
+                              name={member.name}
+                              color={member.color}
+                              seed={member.avatarSeed}
+                              uid={member.uid}
+                              photoVersion={member.profileImageVersion}
+                              className="h-9 w-9 rounded-full"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-foreground">
+                                {member.name}
+                              </p>
+                              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                {owner
+                                  ? "Group owner"
+                                  : admin
+                                    ? "Co-admin"
+                                    : "Member"}
+                              </p>
+                            </div>
+                            {(owner || admin) && (
+                              <ShieldCheck
+                                size={16}
+                                className="shrink-0 text-primary"
+                                aria-label={owner ? "Group owner" : "Co-admin"}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                      {pendingMembers.map((member, index) => (
+                        <div
+                          key={member.id}
+                          className={`flex items-center gap-3 p-3 ${
+                            index < pendingMembers.length - 1
+                              ? "border-b border-border"
+                              : ""
+                          }`}
+                        >
+                          <UserAvatar
+                            name={member.name}
+                            color={member.color}
+                            seed={member.avatarSeed}
+                            uid={member.uid}
+                            photoVersion={member.profileImageVersion}
+                            className="h-9 w-9 rounded-full"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {member.name}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-amber-700">
+                              Pending member
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {isAdmin && (
@@ -198,6 +273,8 @@ export function InviteModal({
                               name={member.name}
                               color={member.color}
                               seed={member.avatarSeed}
+                              uid={member.uid}
+                              photoVersion={member.profileImageVersion}
                               className="w-8 h-8 rounded-full"
                             />
                             <div className="flex-1 min-w-0">
@@ -288,6 +365,8 @@ export function InviteModal({
                                 name={member.name}
                                 color={member.color}
                                 seed={member.avatarSeed}
+                                uid={member.uid}
+                                photoVersion={member.profileImageVersion}
                                 className="w-8 h-8 rounded-full"
                               />
                               <div className="flex-1 min-w-0">

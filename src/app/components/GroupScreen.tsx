@@ -32,6 +32,7 @@ import {
   generateId,
   getExpensePayerId,
   getMemberById,
+  isExpenseSettled,
   getTotalExpenses,
   MEMBER_COLORS,
   mergeGroupMember,
@@ -304,6 +305,12 @@ export function GroupScreen({
   }
 
   async function handleAddExpense(expense: Expense, receiptFiles: File[]) {
+    const existingExpense = group.expenses.find(
+      (candidate) => candidate.id === expense.id,
+    );
+    if (existingExpense && isExpenseSettled(group, existingExpense)) {
+      throw new Error("Settled expenses cannot be edited.");
+    }
     const uploadedReceipts = [];
     try {
       for (const file of receiptFiles) {
@@ -344,6 +351,7 @@ export function GroupScreen({
   }
 
   function openDeleteExpense(expense: Expense) {
+    if (isExpenseSettled(group, expense)) return;
     setDeleteExpense(expense);
     setDeleteReason("");
     setDeleteReasonError("");
@@ -351,6 +359,10 @@ export function GroupScreen({
 
   function handleDeleteExpense() {
     if (!deleteExpense || !currentMember) return;
+    if (isExpenseSettled(group, deleteExpense)) {
+      setDeleteReasonError("Settled expenses cannot be deleted.");
+      return;
+    }
     const reason = deleteReason.trim();
     if (!reason) {
       setDeleteReasonError("Enter a reason for deleting this expense");

@@ -350,6 +350,8 @@ export function AddExpenseModal({
                     name={currentMember?.name ?? currentUser.name}
                     color={currentMember?.color ?? currentUser.color}
                     seed={currentMember?.avatarSeed ?? currentUser.avatarSeed}
+                    uid={currentMember?.uid ?? currentUser.id}
+                    photoVersion={currentMember?.profileImageVersion ?? currentUser.profileImageVersion}
                     className="w-9 h-9 rounded-full"
                   />
                   <div>
@@ -409,7 +411,7 @@ export function AddExpenseModal({
                       }`}>
                         {includedMemberIds.includes(m.id) && <Check size={13} />}
                       </span>
-                      <UserAvatar name={m.name} color={m.color} seed={m.avatarSeed} className="w-8 h-8 rounded-full text-sm" />
+                      <UserAvatar name={m.name} color={m.color} seed={m.avatarSeed} uid={m.uid} photoVersion={m.profileImageVersion} className="w-8 h-8 rounded-full text-sm" />
                       <span className="text-sm text-foreground">
                         {displayMemberName(m.id, m.name)}
                       </span>
@@ -457,7 +459,7 @@ export function AddExpenseModal({
                     >
                       {includedMemberIds.includes(m.id) && <Check size={14} />}
                     </button>
-                    <UserAvatar name={m.name} color={m.color} seed={m.avatarSeed} className="w-8 h-8 rounded-full text-sm shrink-0" />
+                    <UserAvatar name={m.name} color={m.color} seed={m.avatarSeed} uid={m.uid} photoVersion={m.profileImageVersion} className="w-8 h-8 rounded-full text-sm shrink-0" />
                     <div className="w-24 min-w-0 shrink-0">
                       <p className="text-sm text-foreground truncate">{displayMemberName(m.id, m.name)}</p>
                       {includedMemberIds.includes(m.id) && (

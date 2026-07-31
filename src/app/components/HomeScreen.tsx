@@ -149,6 +149,8 @@ export function HomeScreen({
                 name={user.name}
                 color={user.color}
                 seed={user.avatarSeed}
+                uid={user.id}
+                photoVersion={user.profileImageVersion}
                 className="w-full h-full rounded-full"
               />
             </button>
@@ -211,6 +213,8 @@ export function HomeScreen({
                               name={m.name}
                               color={m.color}
                               seed={m.avatarSeed}
+                              uid={m.uid}
+                              photoVersion={m.profileImageVersion}
                               className="w-5 h-5 rounded-full border border-card text-[9px]"
                             />
                           ))}

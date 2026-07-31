@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink, Bell } from "lucide-react";
+import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink, Bell, Camera, ImageOff } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { CurrentUser, Group, NotificationPreferences } from "./types";
 import { MEMBER_COLORS } from "./utils";
@@ -10,6 +10,10 @@ import {
   enablePushNotifications,
   getPushAvailability,
 } from "../../lib/pushNotifications";
+import {
+  deleteProfileImage,
+  saveProfileImage,
+} from "../../lib/profileImageService";
 
 interface Props {
   user: CurrentUser;
@@ -36,6 +40,8 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
     );
   const [notificationError, setNotificationError] = useState("");
   const [pushSaving, setPushSaving] = useState(false);
+  const [photoSaving, setPhotoSaving] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
   function handleSaveName() {
     if (!nameInput.trim()) return;
@@ -46,6 +52,38 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
       avatarSeed: avatarSeedInput,
     });
     setEditName(false);
+  }
+
+  async function handlePhotoSelected(file?: File) {
+    if (!file || photoSaving) return;
+    setPhotoSaving(true);
+    setPhotoError("");
+    try {
+      const profileImageVersion = await saveProfileImage(user.id, file);
+      onUpdateUser({ ...user, profileImageVersion });
+    } catch (error) {
+      setPhotoError(
+        error instanceof Error ? error.message : "Unable to save that photo.",
+      );
+    } finally {
+      setPhotoSaving(false);
+    }
+  }
+
+  async function handleRemovePhoto() {
+    if (photoSaving || !user.profileImageVersion) return;
+    setPhotoSaving(true);
+    setPhotoError("");
+    try {
+      await deleteProfileImage(user.id);
+      onUpdateUser({ ...user, profileImageVersion: "" });
+    } catch (error) {
+      setPhotoError(
+        error instanceof Error ? error.message : "Unable to remove your photo.",
+      );
+    } finally {
+      setPhotoSaving(false);
+    }
   }
 
   const MENU_SECTIONS = [
@@ -107,6 +145,8 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
               name={editName ? nameInput || user.name : user.name}
               color={editName ? colorInput : user.color}
               seed={editName ? avatarSeedInput : user.avatarSeed}
+              uid={user.id}
+              photoVersion={user.profileImageVersion}
               className="w-20 h-20 rounded-full shadow-md"
             />
           </button>
@@ -138,6 +178,39 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
             </button>
           )}
           <p className="text-sm text-muted-foreground mt-0.5">{user.email}</p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-all active:scale-95">
+              <Camera size={14} />
+              {photoSaving ? "Saving…" : user.profileImageVersion ? "Replace photo" : "Upload photo"}
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                disabled={photoSaving}
+                onChange={(event) => {
+                  void handlePhotoSelected(event.target.files?.[0]);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+            {user.profileImageVersion && (
+              <button
+                type="button"
+                disabled={photoSaving}
+                onClick={() => void handleRemovePhoto()}
+                className="inline-flex items-center gap-2 rounded-xl bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground transition-all active:scale-95 disabled:opacity-60"
+              >
+                <ImageOff size={14} />
+                Use avatar
+              </button>
+            )}
+          </div>
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            Photos are cropped and compressed to a lightweight 128px thumbnail.
+          </p>
+          {photoError && (
+            <p className="mt-1 text-center text-xs text-destructive">{photoError}</p>
+          )}
           {editName && (
             <div className="flex flex-col items-center gap-3 mt-3">
               <button
@@ -264,7 +337,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
             <Dialog.Description className="text-sm text-muted-foreground space-y-3">
               <span className="block">
                 BayadTayoOpo stores your email, display name, profile color,
-                avatar selection,
+                avatar selection or compressed profile photo,
                 group memberships, expenses, settlements, messages, and activity
                 history, plus your notification preferences and read status, so
                 your groups can sync across devices and members.

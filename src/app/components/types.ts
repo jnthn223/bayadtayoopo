@@ -4,6 +4,7 @@ export interface Member {
   name: string;
   color: string;
   avatarSeed?: string;
+  profileImageVersion?: string;
   claimCode?: string;
   claimedFromPlaceholder?: boolean;
   paymentInstructions?: PaymentInstructions;
@@ -126,6 +127,7 @@ export interface CurrentUser {
   email: string;
   color: string;
   avatarSeed?: string;
+  profileImageVersion?: string;
   notificationReadAt?: string;
   notificationPreferences?: NotificationPreferences;
 }
@@ -134,6 +136,7 @@ export interface UserProfile {
   name?: string;
   color?: string;
   avatarSeed?: string;
+  profileImageVersion?: string;
   notificationReadAt?: string;
   notificationPreferences?: NotificationPreferences;
 }

@@ -13,6 +13,7 @@ import {
   getMemberById,
   getTotalExpenses,
   getUnsettledPaymentSummary,
+  isExpenseSettled,
   mergeGroupMember,
 } from "./utils";
 
@@ -219,6 +220,81 @@ describe("expense business logic", () => {
         amount: 15,
       },
     ]);
+  });
+
+  it("settles an expense only after every share has confirmed coverage", () => {
+    const dinner = group.expenses[0];
+    expect(isExpenseSettled(group, dinner)).toBe(false);
+
+    const partiallyCovered: Group = {
+      ...group,
+      payments: [
+        {
+          id: "bob-dinner-payment",
+          fromMemberId: "bob",
+          toMemberId: "alice",
+          amount: 30,
+          method: "GCash",
+          allocations: [
+            {
+              expenseId: dinner.id,
+              expenseDescription: dinner.description,
+              amount: 30,
+            },
+          ],
+          status: "confirmed",
+          submittedAt: "2026-01-04T00:00:00.000Z",
+          submittedBy: "bob",
+        },
+        {
+          id: "carol-dinner-payment",
+          fromMemberId: "carol",
+          toMemberId: "alice",
+          amount: 30,
+          method: "GCash",
+          allocations: [
+            {
+              expenseId: dinner.id,
+              expenseDescription: dinner.description,
+              amount: 30,
+            },
+          ],
+          status: "pending",
+          submittedAt: "2026-01-04T01:00:00.000Z",
+          submittedBy: "carol",
+        },
+      ],
+    };
+    expect(isExpenseSettled(partiallyCovered, dinner)).toBe(false);
+
+    const fullyCovered: Group = {
+      ...partiallyCovered,
+      payments: partiallyCovered.payments!.map((payment) => ({
+        ...payment,
+        status: "confirmed" as const,
+      })),
+    };
+    expect(isExpenseSettled(fullyCovered, dinner)).toBe(true);
+  });
+
+  it("recognizes legacy confirmed expense repayments as settled", () => {
+    const dinner = {
+      ...group.expenses[0],
+      splits: group.expenses[0].splits.map((split) =>
+        split.memberId === "alice"
+          ? split
+          : { ...split, paymentStatus: "confirmed" as const },
+      ),
+    };
+    expect(
+      isExpenseSettled(
+        {
+          ...group,
+          expenses: [dinner],
+        },
+        dinner,
+      ),
+    ).toBe(true);
   });
 
   it("computes settlements from debtor and creditor balances", () => {

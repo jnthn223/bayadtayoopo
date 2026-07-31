@@ -1,10 +1,13 @@
+import { useMemo, useState } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import {
+  ArrowUpDown,
   Check,
   Clock3,
   Coffee,
   Edit2,
   ExternalLink,
+  Filter,
   MessageCircle,
   QrCode,
   Receipt,
@@ -13,6 +16,7 @@ import {
 } from "lucide-react";
 import type {
   Balance,
+  Category,
   ChatMessage,
   Expense,
   Group,
@@ -20,6 +24,7 @@ import type {
   Settlement,
   Split,
 } from "./types";
+import { EXPENSE_CATEGORIES } from "./types";
 import type { GroupTab } from "./GroupHeader";
 import { UserAvatar } from "./UserAvatar";
 import { GroupPayments } from "./GroupPayments";
@@ -30,7 +35,11 @@ import {
   getExpensePayerId,
   getMemberById,
   getOutstandingExpenseShares,
+  isExpenseSettled,
 } from "./utils";
+
+type ExpenseSort = "newest" | "oldest" | "highest" | "lowest";
+type SettlementFilter = "all" | "settled" | "unsettled";
 
 interface Props {
   tab: GroupTab;
@@ -93,6 +102,12 @@ export function GroupContent({
   reviewPayment,
   setCreatorPaidConfirmation,
 }: Props) {
+  const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<Category | "all">("all");
+  const [payerFilter, setPayerFilter] = useState("all");
+  const [settlementFilter, setSettlementFilter] =
+    useState<SettlementFilter>("all");
+  const [expenseSort, setExpenseSort] = useState<ExpenseSort>("newest");
   const hasRelevantGroupPayments = (group.payments ?? []).some(
     (payment) =>
       payment.fromMemberId === currentMember?.id ||
@@ -101,11 +116,211 @@ export function GroupContent({
   const hasExpensePaymentOptions = currentMember
     ? getOutstandingExpenseShares(group, currentMember.id).length > 0
     : false;
+  const expenseSettlementById = useMemo(
+    () =>
+      new Map(
+        group.expenses.map((expense) => [
+          expense.id,
+          isExpenseSettled(group, expense),
+        ]),
+      ),
+    [group],
+  );
+  const expensePayers = useMemo(() => {
+    const payerIds = new Set(group.expenses.map(getExpensePayerId));
+    return [...group.members, ...(group.formerMembers ?? [])].filter((member) =>
+      payerIds.has(member.id),
+    );
+  }, [group.expenses, group.formerMembers, group.members]);
+  const filteredExpenses = useMemo(
+    () =>
+      group.expenses.filter((expense) => {
+        const settled = expenseSettlementById.get(expense.id) === true;
+        return (
+          (categoryFilter === "all" ||
+            expense.category === categoryFilter) &&
+          (payerFilter === "all" ||
+            getExpensePayerId(expense) === payerFilter) &&
+          (settlementFilter === "all" ||
+            (settlementFilter === "settled" ? settled : !settled))
+        );
+      }),
+    [
+      categoryFilter,
+      expenseSettlementById,
+      group.expenses,
+      payerFilter,
+      settlementFilter,
+    ],
+  );
+  const expenseSections = useMemo(() => {
+    if (expenseSort === "highest" || expenseSort === "lowest") {
+      const direction = expenseSort === "highest" ? -1 : 1;
+      return [
+        {
+          key: expenseSort,
+          date: undefined,
+          expenses: [...filteredExpenses].sort(
+            (a, b) =>
+              direction * (a.amount - b.amount) ||
+              b.date.localeCompare(a.date),
+          ),
+        },
+      ];
+    }
+    const dates =
+      expenseSort === "newest" ? sortedDates : [...sortedDates].reverse();
+    const visibleIds = new Set(filteredExpenses.map((expense) => expense.id));
+    return dates.flatMap((date) => {
+      const expenses = expensesByDate[date].filter((expense) =>
+        visibleIds.has(expense.id),
+      );
+      return expenses.length > 0 ? [{ key: date, date, expenses }] : [];
+    });
+  }, [
+    expenseSort,
+    expensesByDate,
+    filteredExpenses,
+    sortedDates,
+  ]);
+  const activeExpenseFilterCount = [
+    categoryFilter !== "all",
+    payerFilter !== "all",
+    settlementFilter !== "all",
+  ].filter(Boolean).length;
+  const amountSorted =
+    expenseSort === "highest" || expenseSort === "lowest";
+
+  function clearExpenseFilters() {
+    setCategoryFilter("all");
+    setPayerFilter("all");
+    setSettlementFilter("all");
+  }
 
   return (
       <div className="flex-1 overflow-y-auto">
         {tab === "expenses" && (
           <div className="p-4 space-y-6">
+            {group.expenses.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpenseFiltersOpen((current) => !current)
+                    }
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium ${
+                      expenseFiltersOpen || activeExpenseFilterCount > 0
+                        ? "border-primary bg-accent text-primary"
+                        : "border-border bg-card text-foreground"
+                    }`}
+                  >
+                    <Filter size={15} />
+                    Filter
+                    {activeExpenseFilterCount > 0 && (
+                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                        {activeExpenseFilterCount}
+                      </span>
+                    )}
+                  </button>
+                  <label className="relative flex flex-1 items-center rounded-xl border border-border bg-card">
+                    <ArrowUpDown
+                      size={15}
+                      className="pointer-events-none absolute left-3 text-muted-foreground"
+                    />
+                    <select
+                      aria-label="Sort expenses"
+                      value={expenseSort}
+                      onChange={(event) =>
+                        setExpenseSort(event.target.value as ExpenseSort)
+                      }
+                      className="w-full appearance-none bg-transparent py-2.5 pl-9 pr-3 text-sm font-medium text-foreground outline-none"
+                    >
+                      <option value="newest">Newest first</option>
+                      <option value="oldest">Oldest first</option>
+                      <option value="highest">Highest amount</option>
+                      <option value="lowest">Lowest amount</option>
+                    </select>
+                  </label>
+                </div>
+
+                {expenseFiltersOpen && (
+                  <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Category
+                        <select
+                          value={categoryFilter}
+                          onChange={(event) =>
+                            setCategoryFilter(
+                              event.target.value as Category | "all",
+                            )
+                          }
+                          className="mt-1.5 w-full rounded-xl border border-border bg-input-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary"
+                        >
+                          <option value="all">All categories</option>
+                          {EXPENSE_CATEGORIES.map((category) => (
+                            <option key={category} value={category}>
+                              {category.charAt(0).toUpperCase() +
+                                category.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Paid by
+                        <select
+                          value={payerFilter}
+                          onChange={(event) =>
+                            setPayerFilter(event.target.value)
+                          }
+                          className="mt-1.5 w-full rounded-xl border border-border bg-input-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary"
+                        >
+                          <option value="all">Anyone</option>
+                          {expensePayers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {displayMemberName(member.id, member.name)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Status
+                      <select
+                        value={settlementFilter}
+                        onChange={(event) =>
+                          setSettlementFilter(
+                            event.target.value as SettlementFilter,
+                          )
+                        }
+                        className="mt-1.5 w-full rounded-xl border border-border bg-input-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary"
+                      >
+                        <option value="all">All expenses</option>
+                        <option value="unsettled">Unsettled</option>
+                        <option value="settled">Settled</option>
+                      </select>
+                    </label>
+                    <div className="flex items-center justify-between border-t border-border pt-3">
+                      <p className="text-xs text-muted-foreground">
+                        Showing {filteredExpenses.length} of{" "}
+                        {group.expenses.length}
+                      </p>
+                      {activeExpenseFilterCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={clearExpenseFilters}
+                          className="text-xs font-semibold text-primary"
+                        >
+                          Clear filters
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {group.expenses.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center mb-4">
@@ -118,22 +333,52 @@ export function GroupContent({
                   Tap + to add your first expense
                 </p>
               </div>
+            ) : filteredExpenses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                  <Filter size={22} className="text-muted-foreground" />
+                </div>
+                <p className="font-medium text-foreground">
+                  No matching expenses
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Try changing or clearing your filters.
+                </p>
+                <button
+                  type="button"
+                  onClick={clearExpenseFilters}
+                  className="mt-4 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+                >
+                  Clear filters
+                </button>
+              </div>
             ) : (
-              sortedDates.map((date) => (
-                <div key={date}>
-                  <p className="text-xs text-muted-foreground font-medium mb-2 px-1">
-                    {new Date(date + "T12:00:00").toLocaleDateString("en-US", {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </p>
+              expenseSections.map((section) => (
+                <div key={section.key}>
+                  {section.date ? (
+                    <p className="text-xs text-muted-foreground font-medium mb-2 px-1">
+                      {new Date(
+                        section.date + "T12:00:00",
+                      ).toLocaleDateString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </p>
+                  ) : (
+                    <p className="mb-2 px-1 text-xs font-medium text-muted-foreground">
+                      {expenseSort === "highest"
+                        ? "Highest amount first"
+                        : "Lowest amount first"}
+                    </p>
+                  )}
                   <div className="space-y-2">
-                    {expensesByDate[date].map((exp) => {
+                    {section.expenses.map((exp) => {
                       const payerId = getExpensePayerId(exp);
                       const payer = getMemberById(group, payerId);
                       const isCreator =
                         currentMember?.id === (exp.createdBy ?? exp.paidBy);
+                      const settled = isExpenseSettled(group, exp);
                       return (
                         <div
                           key={exp.id}
@@ -163,6 +408,13 @@ export function GroupContent({
                               {exp.splitType === "equal"
                                 ? "Split equally"
                                 : "Custom split"}
+                              {amountSorted &&
+                                ` · ${new Date(
+                                  exp.date + "T12:00:00",
+                                ).toLocaleDateString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                })}`}
                             </p>
                             {(exp.receipts?.length ?? 0) > 0 && (
                               <div className="flex flex-wrap gap-1.5 mt-2">
@@ -194,7 +446,12 @@ export function GroupContent({
                             <p className="text-sm font-semibold text-foreground">
                               {formatCurrency(exp.amount, group.currency)}
                             </p>
-                            {(isCreator || isAdmin) && (
+                            {settled && (
+                              <span className="mt-1.5 inline-flex -rotate-2 rounded-md border-2 border-green-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-green-700">
+                                Settled
+                              </span>
+                            )}
+                            {!settled && (isCreator || isAdmin) && (
                               <div className="flex gap-1 mt-1 justify-end">
                                 {isCreator && (
                                   <button
@@ -211,7 +468,7 @@ export function GroupContent({
                                     />
                                   </button>
                                 )}
-                                {(isCreator || isAdmin) && (
+                                {!settled && (isCreator || isAdmin) && (
                                   <button
                                     onClick={() => openDeleteExpense(exp)}
                                     className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
@@ -253,6 +510,8 @@ export function GroupContent({
                       name={b.memberName}
                       color={getMemberById(group, b.memberId)?.color ?? "var(--primary)"}
                       seed={getMemberById(group, b.memberId)?.avatarSeed}
+                      uid={getMemberById(group, b.memberId)?.uid}
+                      photoVersion={getMemberById(group, b.memberId)?.profileImageVersion}
                       className="w-10 h-10 rounded-full text-sm shrink-0"
                     />
                     <div className="flex-1">
@@ -389,7 +648,7 @@ export function GroupContent({
                           className="bg-card rounded-2xl border border-border p-4 space-y-3"
                         >
                           <div className="flex items-center gap-3">
-                            <UserAvatar name={fromMember?.name ?? "Unknown"} color={fromMember?.color ?? "var(--primary)"} seed={fromMember?.avatarSeed} className="w-10 h-10 rounded-full text-sm shrink-0" />
+                            <UserAvatar name={fromMember?.name ?? "Unknown"} color={fromMember?.color ?? "var(--primary)"} seed={fromMember?.avatarSeed} uid={fromMember?.uid} photoVersion={fromMember?.profileImageVersion} className="w-10 h-10 rounded-full text-sm shrink-0" />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-foreground">
                                 {isPayer ? (
@@ -611,7 +870,7 @@ export function GroupContent({
                     )}
                     <div className={`flex gap-2 ${isMine ? "justify-end" : "justify-start"}`}>
                     {!isMine && (
-                      <UserAvatar name={sender?.name ?? "Unknown"} color={sender?.color ?? "var(--primary)"} seed={sender?.avatarSeed} className="w-8 h-8 rounded-full text-xs shrink-0 mt-1" />
+                      <UserAvatar name={sender?.name ?? "Unknown"} color={sender?.color ?? "var(--primary)"} seed={sender?.avatarSeed} uid={sender?.uid} photoVersion={sender?.profileImageVersion} className="w-8 h-8 rounded-full text-xs shrink-0 mt-1" />
                     )}
                     <div
                       className={`max-w-[78%] rounded-2xl px-4 py-3 ${

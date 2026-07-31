@@ -55,6 +55,7 @@ export function CreateGroupModal({
           name: currentUser.name,
           color: currentUser.color,
           avatarSeed: currentUser.avatarSeed,
+          profileImageVersion: currentUser.profileImageVersion,
           joinedAt: createdAt,
         },
         ...pendingMembers,
@@ -228,7 +229,7 @@ export function CreateGroupModal({
               </label>
 
               <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border bg-muted/30">
-                <UserAvatar name={currentUser.name} color={currentUser.color} seed={currentUser.avatarSeed} className="w-10 h-10 rounded-full" />
+                <UserAvatar name={currentUser.name} color={currentUser.color} seed={currentUser.avatarSeed} uid={currentUser.id} photoVersion={currentUser.profileImageVersion} className="w-10 h-10 rounded-full" />
 
                 <div>
                   <p className="font-medium text-foreground">

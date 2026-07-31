@@ -103,6 +103,7 @@ export function GroupPayments({
   const [expandedPaymentIds, setExpandedPaymentIds] = useState<Set<string>>(
     new Set(),
   );
+  const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
 
   const memberId = currentMember?.id;
   const relevantPayments = useMemo(
@@ -116,6 +117,18 @@ export function GroupPayments({
         .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
     [group.payments, memberId],
   );
+  const activePayments = relevantPayments.filter(
+    (payment) => payment.status === "pending" || payment.status === "rejected",
+  );
+  const historicalPayments = relevantPayments.filter(
+    (payment) =>
+      payment.status === "confirmed" ||
+      payment.status === "cancelled" ||
+      payment.status === "reversed",
+  );
+  const visiblePayments = paymentHistoryOpen
+    ? [...activePayments, ...historicalPayments]
+    : activePayments;
   const expensePaymentOptions = useMemo(
     () =>
       memberId
@@ -147,10 +160,7 @@ export function GroupPayments({
     [chooseExpenses, draft, draftAmount, group, selectedExpenseIds],
   );
   const outstandingExpenseShares = useMemo(
-    () =>
-      draft
-        ? getOutstandingExpenseShares(group, draft.fromMemberId)
-        : [],
+    () => (draft ? getOutstandingExpenseShares(group, draft.fromMemberId) : []),
     [draft, group],
   );
   const draftRecipient = draft
@@ -421,8 +431,33 @@ export function GroupPayments({
     <>
       {relevantPayments.length > 0 && (
         <section className="space-y-3">
-          <p className="text-sm text-muted-foreground">Payment activity</p>
-          {relevantPayments.map((payment) => {
+          {activePayments.length > 0 && (
+            <p className="text-sm text-muted-foreground">Payment activity</p>
+          )}
+          {historicalPayments.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setPaymentHistoryOpen((current) => !current)}
+              className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3 text-left"
+              aria-expanded={paymentHistoryOpen}
+            >
+              <span>
+                <span className="block text-sm font-medium text-foreground">
+                  Payment history
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {historicalPayments.length} completed{" "}
+                  {historicalPayments.length === 1 ? "record" : "records"}
+                </span>
+              </span>
+              {paymentHistoryOpen ? (
+                <ChevronUp size={17} className="text-muted-foreground" />
+              ) : (
+                <ChevronDown size={17} className="text-muted-foreground" />
+              )}
+            </button>
+          )}
+          {visiblePayments.map((payment) => {
             const fromMember = getMemberById(group, payment.fromMemberId);
             const toMember = getMemberById(group, payment.toMemberId);
             const isSender = payment.fromMemberId === memberId;
@@ -444,12 +479,14 @@ export function GroupPayments({
                     name={fromMember?.name ?? "Unknown"}
                     color={fromMember?.color ?? "var(--primary)"}
                     seed={fromMember?.avatarSeed}
+                    uid={fromMember?.uid}
+                    photoVersion={fromMember?.profileImageVersion}
                     className="w-10 h-10 rounded-full shrink-0"
                   />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">
-                      {isSender ? "You" : fromMember?.name ?? "Unknown"} paid{" "}
-                      {isRecipient ? "you" : toMember?.name ?? "Unknown"}
+                      {isSender ? "You" : (fromMember?.name ?? "Unknown")} paid{" "}
+                      {isRecipient ? "you" : (toMember?.name ?? "Unknown")}
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {payment.method}
@@ -505,10 +542,7 @@ export function GroupPayments({
                     <button
                       type="button"
                       onClick={() =>
-                        viewPaymentImage(
-                          payment.proofImageId!,
-                          "Payment proof",
-                        )
+                        viewPaymentImage(payment.proofImageId!, "Payment proof")
                       }
                       className="inline-flex items-center gap-1.5 text-xs font-medium text-primary"
                     >
@@ -599,6 +633,8 @@ export function GroupPayments({
                   name={option.recipient.name}
                   color={option.recipient.color}
                   seed={option.recipient.avatarSeed}
+                  uid={option.recipient.uid}
+                  photoVersion={option.recipient.profileImageVersion}
                   className="h-10 w-10 shrink-0 rounded-full"
                 />
                 <div className="min-w-0 flex-1">
@@ -628,7 +664,7 @@ export function GroupPayments({
       )}
 
       {settlements.length > 0 && (
-        <section className="space-y-3">
+        <section className="space-y-3 mt-2">
           <div>
             <p className="text-sm font-medium text-foreground">
               Pay the balance instead
@@ -669,6 +705,8 @@ export function GroupPayments({
                     name={settlement.fromName}
                     color={fromMember?.color ?? "var(--primary)"}
                     seed={fromMember?.avatarSeed}
+                    uid={fromMember?.uid}
+                    photoVersion={fromMember?.profileImageVersion}
                     className="w-10 h-10 rounded-full shrink-0"
                   />
                   <div className="flex-1 min-w-0">
@@ -736,7 +774,10 @@ export function GroupPayments({
         </section>
       )}
 
-      <Dialog.Root open={!!draft} onOpenChange={(open) => !open && closeDraft()}>
+      <Dialog.Root
+        open={!!draft}
+        onOpenChange={(open) => !open && closeDraft()}
+      >
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
           <Dialog.Content className="fixed inset-x-0 bottom-0 z-[60] max-h-[92vh] overflow-y-auto rounded-t-3xl bg-card p-5 shadow-2xl">
@@ -795,7 +836,8 @@ export function GroupPayments({
                           type="button"
                           onClick={() =>
                             viewPaymentImage(
-                              draftRecipient.paymentInstructions!.qrCodeImageId!,
+                              draftRecipient.paymentInstructions!
+                                .qrCodeImageId!,
                               "Payment QR",
                             )
                           }
@@ -841,9 +883,7 @@ export function GroupPayments({
                           }
                           className="rounded-full bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground"
                         >
-                          {portion === 1
-                            ? "Full amount"
-                            : `${portion * 100}%`}
+                          {portion === 1 ? "Full amount" : `${portion * 100}%`}
                         </button>
                       ))}
                     </div>
@@ -898,17 +938,17 @@ export function GroupPayments({
                     </div>
                     {draft.flow !== "expense" &&
                       outstandingExpenseShares.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setChooseExpenses((current) => !current);
-                          setSelectedExpenseIds(new Set());
-                          setPaymentError("");
-                        }}
-                        className="text-xs font-medium text-primary"
-                      >
-                        {chooseExpenses ? "Use automatic" : "Choose expenses"}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setChooseExpenses((current) => !current);
+                            setSelectedExpenseIds(new Set());
+                            setPaymentError("");
+                          }}
+                          className="text-xs font-medium text-primary"
+                        >
+                          {chooseExpenses ? "Use automatic" : "Choose expenses"}
+                        </button>
                       )}
                   </div>
                   {chooseExpenses && draft.flow !== "expense" && (

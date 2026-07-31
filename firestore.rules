@@ -16,6 +16,7 @@ service cloud.firestore {
           'name',
           'color',
           'avatarSeed',
+          'profileImageVersion',
           'notificationReadAt',
           'notificationPreferences'
         ])
@@ -27,6 +28,9 @@ service cloud.firestore {
         && (!request.resource.data.keys().hasAny(['avatarSeed'])
           || (request.resource.data.avatarSeed is string
             && request.resource.data.avatarSeed.size() <= 100))
+        && (!request.resource.data.keys().hasAny(['profileImageVersion'])
+          || (request.resource.data.profileImageVersion is string
+            && request.resource.data.profileImageVersion.size() <= 150))
         && (!request.resource.data.keys().hasAny(['notificationReadAt'])
           || request.resource.data.notificationReadAt is string)
         && (!request.resource.data.keys().hasAny(['notificationPreferences'])
@@ -142,6 +146,23 @@ service cloud.firestore {
         && (memberUpdateKeepsSecurityFields() || adminUpdate() || joinByInviteLink());
 
       allow delete: if false;
+    }
+
+    match /profileImages/{userId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update: if isSelf(userId)
+        && request.resource.data.keys().hasOnly([
+          'dataUrl',
+          'ownerUid',
+          'updatedAt'
+        ])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.dataUrl is string
+        && request.resource.data.dataUrl.size() < 40000
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedAt.size() <= 150;
+      allow delete: if isSelf(userId);
     }
 
     match /groups/{groupId}/paymentImages/{imageId} {
