@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { Group } from "./types";
 import { UserAvatar } from "./UserAvatar";
+import { buildInviteMessage } from "./inviteMessage";
 
 interface Props {
   group: Group;
@@ -43,6 +44,7 @@ export function InviteModal({
   const [showSharePreview, setShowSharePreview] = useState(false);
   const [shareMessage, setShareMessage] = useState("");
   const [shareError, setShareError] = useState("");
+  const [includeInviteBalances, setIncludeInviteBalances] = useState(true);
   const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({});
   const ownerId = group.adminId ?? group.members[0]?.id;
   const isOwner = (member: Group["members"][number]) =>
@@ -82,6 +84,7 @@ export function InviteModal({
     setShowSharePreview(false);
     setShareMessage("");
     setShareError("");
+    setIncludeInviteBalances(true);
     onClose();
   }
 
@@ -109,16 +112,23 @@ export function InviteModal({
     return `${window.location.origin}${window.location.pathname}?${params}`;
   }
 
-  function preparePendingInvites() {
-    const message = pendingMembers
+  function pendingInvitesMessage(includeBalance: boolean) {
+    return pendingMembers
       .filter((member) => member.claimCode)
       .map(
         (member) =>
-          `${member.name} click here: ${personalJoinUrl(member.id, member.claimCode!)}`,
+          buildInviteMessage({
+            group,
+            member,
+            joinUrl: personalJoinUrl(member.id, member.claimCode!),
+            includeBalance,
+          }),
       )
-      .join("\n");
+      .join("\n\n──────────\n\n");
+  }
 
-    setShareMessage(message);
+  function preparePendingInvites() {
+    setShareMessage(pendingInvitesMessage(includeInviteBalances));
     setShareError("");
     setShowSharePreview(true);
   }
@@ -452,6 +462,28 @@ export function InviteModal({
                             <Share2 size={15} />
                             Preview & share all invites
                           </button>
+                          <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2.5">
+                            <span>
+                              <span className="block text-xs font-medium text-foreground">
+                                Include current balances
+                              </span>
+                              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                                Shows what each pending member needs to settle or receive.
+                              </span>
+                            </span>
+                            <input
+                              type="checkbox"
+                              checked={includeInviteBalances}
+                              onChange={(event) => {
+                                const checked = event.target.checked;
+                                setIncludeInviteBalances(checked);
+                                if (showSharePreview) {
+                                  setShareMessage(pendingInvitesMessage(checked));
+                                }
+                              }}
+                              className="h-4 w-4 accent-primary"
+                            />
+                          </label>
                         </div>
 
                         {showSharePreview && (
