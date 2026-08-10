@@ -176,6 +176,7 @@ export interface Group {
   id: string;
   name: string;
   avatarSeed?: string;
+  groupImageVersion?: string;
   adminId?: string;
   adminIds?: string[];
   members: Member[];

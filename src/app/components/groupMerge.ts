@@ -102,6 +102,10 @@ export function mergeGroupChanges(
       base.avatarSeed !== changed.avatarSeed
         ? changed.avatarSeed
         : latest.avatarSeed,
+    groupImageVersion:
+      base.groupImageVersion !== changed.groupImageVersion
+        ? changed.groupImageVersion
+        : latest.groupImageVersion,
     currency:
       base.currency !== changed.currency ? changed.currency : latest.currency,
     adminId: base.adminId !== changed.adminId ? changed.adminId : latest.adminId,

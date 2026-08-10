@@ -165,6 +165,33 @@ service cloud.firestore {
       allow delete: if isSelf(userId);
     }
 
+    match /groups/{groupId}/groupImages/{imageId} {
+      function parentGroup() {
+        return get(/databases/$(database)/documents/groups/$(groupId));
+      }
+
+      function isGroupImageMember() {
+        return signedIn()
+          && parentGroup().data.memberIds.hasAny([request.auth.uid])
+          && isNotDeleted(parentGroup().data);
+      }
+
+      allow read: if imageId == 'avatar' && isGroupImageMember();
+      allow create, update: if imageId == 'avatar'
+        && isGroupImageMember()
+        && request.resource.data.keys().hasOnly([
+          'dataUrl',
+          'uploaderUid',
+          'updatedAt'
+        ])
+        && request.resource.data.uploaderUid == request.auth.uid
+        && request.resource.data.dataUrl is string
+        && request.resource.data.dataUrl.size() < 40000
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedAt.size() <= 150;
+      allow delete: if imageId == 'avatar' && isGroupImageMember();
+    }
+
     match /groups/{groupId}/paymentImages/{imageId} {
       function parentGroup() {
         return get(/databases/$(database)/documents/groups/$(groupId));

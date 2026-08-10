@@ -25,7 +25,7 @@ async function loadImage(file: File): Promise<HTMLImageElement> {
   }
 }
 
-async function makeTinySquare(file: File): Promise<string> {
+export async function compressAvatarImage(file: File): Promise<string> {
   if (!file.type.startsWith("image/")) {
     throw new Error("Choose a photo from your device.");
   }
@@ -65,7 +65,7 @@ async function makeTinySquare(file: File): Promise<string> {
 }
 
 export async function saveProfileImage(uid: string, file: File): Promise<string> {
-  const dataUrl = await makeTinySquare(file);
+  const dataUrl = await compressAvatarImage(file);
   const updatedAt = `${new Date().toISOString()}-${crypto.randomUUID()}`;
   await finishFirestoreWrite(
     setDoc(doc(db, "profileImages", uid), {
@@ -88,8 +88,10 @@ export async function loadProfileImage(
 
   const request = getDoc(doc(db, "profileImages", uid))
     .then((snapshot) => {
-      const dataUrl = snapshot.data()?.dataUrl;
-      return typeof dataUrl === "string" ? dataUrl : undefined;
+      const data = snapshot.data();
+      return data?.updatedAt === version && typeof data.dataUrl === "string"
+        ? data.dataUrl
+        : undefined;
     })
     .catch(() => undefined);
   imageCache.set(cacheKey, request);

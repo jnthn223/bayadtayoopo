@@ -199,6 +199,8 @@ export function HomeScreen({
                     <GroupAvatar
                       name={group.name}
                       seed={group.avatarSeed}
+                      groupId={group.id}
+                      photoVersion={group.groupImageVersion}
                       className="w-12 h-12 rounded-2xl text-lg shrink-0"
                     />
                     <div className="flex-1 min-w-0">

@@ -7,6 +7,8 @@ import {
   Send,
   Upload,
   Shuffle,
+  Camera,
+  ImageOff,
   X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -23,6 +25,10 @@ import {
   loadPaymentImage,
   savePaymentImage,
 } from "../../lib/paymentImageService";
+import {
+  deleteGroupImage,
+  saveGroupImage,
+} from "../../lib/groupImageService";
 import {
   archiveGroupMember,
   computeBalances,
@@ -90,6 +96,11 @@ export function GroupScreen({
   const [groupAvatarSeedInput, setGroupAvatarSeedInput] = useState(
     group.avatarSeed,
   );
+  const [groupImageVersionInput, setGroupImageVersionInput] = useState(
+    group.groupImageVersion,
+  );
+  const [groupPhotoSaving, setGroupPhotoSaving] = useState(false);
+  const [groupPhotoError, setGroupPhotoError] = useState("");
   const [groupEditError, setGroupEditError] = useState("");
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -725,6 +736,8 @@ export function GroupScreen({
     setGroupNameInput(group.name);
     setGroupCurrencyInput(group.currency);
     setGroupAvatarSeedInput(group.avatarSeed);
+    setGroupImageVersionInput(group.groupImageVersion);
+    setGroupPhotoError("");
     setGroupEditError("");
     setEditGroupOpen(true);
   }
@@ -741,9 +754,48 @@ export function GroupScreen({
       name,
       currency: groupCurrencyInput,
       avatarSeed: groupAvatarSeedInput,
+      groupImageVersion: groupImageVersionInput,
     });
     setEditGroupOpen(false);
     setGroupEditError("");
+  }
+
+  async function handleGroupPhotoSelected(file?: File) {
+    if (!file || groupPhotoSaving || !isAdmin) return;
+    setGroupPhotoSaving(true);
+    setGroupPhotoError("");
+    try {
+      const groupImageVersion = await saveGroupImage(
+        group.id,
+        currentUser.id,
+        file,
+      );
+      setGroupImageVersionInput(groupImageVersion);
+      await onUpdate({ ...group, groupImageVersion });
+    } catch (error) {
+      setGroupPhotoError(
+        error instanceof Error ? error.message : "Unable to save that group photo.",
+      );
+    } finally {
+      setGroupPhotoSaving(false);
+    }
+  }
+
+  async function handleRemoveGroupPhoto() {
+    if (!groupImageVersionInput || groupPhotoSaving || !isAdmin) return;
+    setGroupPhotoSaving(true);
+    setGroupPhotoError("");
+    try {
+      await deleteGroupImage(group.id);
+      setGroupImageVersionInput("");
+      await onUpdate({ ...group, groupImageVersion: "" });
+    } catch (error) {
+      setGroupPhotoError(
+        error instanceof Error ? error.message : "Unable to remove the group photo.",
+      );
+    } finally {
+      setGroupPhotoSaving(false);
+    }
   }
 
   function handleDeleteGroup() {
@@ -991,16 +1043,58 @@ export function GroupScreen({
                 <GroupAvatar
                   name={groupNameInput || group.name}
                   seed={groupAvatarSeedInput}
+                  groupId={group.id}
+                  photoVersion={groupImageVersionInput}
                   className="w-20 h-20 rounded-2xl shadow-md"
                 />
-                <button
-                  type="button"
-                  onClick={() => setGroupAvatarSeedInput(crypto.randomUUID())}
-                  className="inline-flex items-center gap-2 mt-3 px-3 py-2 rounded-xl bg-accent text-accent-foreground text-xs font-semibold active:scale-95 transition-all"
-                >
-                  <Shuffle size={14} />
-                  Randomize group image
-                </button>
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-all active:scale-95">
+                    <Camera size={14} />
+                    {groupPhotoSaving
+                      ? "Saving…"
+                      : groupImageVersionInput
+                        ? "Replace photo"
+                        : "Upload photo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      disabled={groupPhotoSaving}
+                      onChange={(event) => {
+                        void handleGroupPhotoSelected(event.target.files?.[0]);
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {groupImageVersionInput ? (
+                    <button
+                      type="button"
+                      disabled={groupPhotoSaving}
+                      onClick={() => void handleRemoveGroupPhoto()}
+                      className="inline-flex items-center gap-2 rounded-xl bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground transition-all active:scale-95 disabled:opacity-60"
+                    >
+                      <ImageOff size={14} />
+                      Use generated image
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setGroupAvatarSeedInput(crypto.randomUUID())}
+                      className="inline-flex items-center gap-2 rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground transition-all active:scale-95"
+                    >
+                      <Shuffle size={14} />
+                      Randomize image
+                    </button>
+                  )}
+                </div>
+                <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                  Group photos use the same lightweight 128px compression.
+                </p>
+                {groupPhotoError && (
+                  <p className="mt-1 text-center text-xs text-destructive">
+                    {groupPhotoError}
+                  </p>
+                )}
               </div>
 
               <div>

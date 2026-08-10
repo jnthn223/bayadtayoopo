@@ -135,6 +135,8 @@ export function GroupHeader({
           <GroupAvatar
             name={group.name}
             seed={group.avatarSeed}
+            groupId={group.id}
+            photoVersion={group.groupImageVersion}
             className="w-12 h-12 rounded-2xl shrink-0"
           />
           <div className="min-w-0">
