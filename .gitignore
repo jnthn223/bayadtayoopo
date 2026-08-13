@@ -17,6 +17,7 @@ node_modules/*
 /build
 /dist
 /.firebase
+**/.wrangler/
 
 # misc
 .DS_Store

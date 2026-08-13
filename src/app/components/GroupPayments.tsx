@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Clock3,
   Paperclip,
   RotateCcw,
   X,
@@ -78,6 +79,48 @@ function paymentStatusClass(status: GroupPayment["status"]) {
     case "cancelled":
       return "bg-muted text-muted-foreground";
   }
+}
+
+function paymentActivityTimestamp(payment: GroupPayment): {
+  label: string;
+  value: string;
+} {
+  switch (payment.status) {
+    case "confirmed":
+      return {
+        label: "Confirmed",
+        value: payment.reviewedAt ?? payment.submittedAt,
+      };
+    case "rejected":
+      return {
+        label: "Reviewed",
+        value: payment.reviewedAt ?? payment.submittedAt,
+      };
+    case "cancelled":
+      return {
+        label: "Cancelled",
+        value: payment.cancelledAt ?? payment.submittedAt,
+      };
+    case "reversed":
+      return {
+        label: "Reversed",
+        value: payment.reversedAt ?? payment.reviewedAt ?? payment.submittedAt,
+      };
+    case "pending":
+      return { label: "Submitted", value: payment.submittedAt };
+  }
+}
+
+function formatPaymentDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
 }
 
 export function GroupPayments({
@@ -463,6 +506,7 @@ export function GroupPayments({
             const isSender = payment.fromMemberId === memberId;
             const isRecipient = payment.toMemberId === memberId;
             const allocationsOpen = expandedPaymentIds.has(payment.id);
+            const activityTimestamp = paymentActivityTimestamp(payment);
 
             return (
               <article
@@ -494,6 +538,14 @@ export function GroupPayments({
                         ? ` · Ref ${payment.referenceNumber}`
                         : ""}
                     </p>
+                    <time
+                      dateTime={activityTimestamp.value}
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+                    >
+                      <Clock3 size={11} aria-hidden="true" />
+                      {activityTimestamp.label} ·{" "}
+                      {formatPaymentDateTime(activityTimestamp.value)}
+                    </time>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-semibold text-foreground">
