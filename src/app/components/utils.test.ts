@@ -8,9 +8,11 @@ import {
   computeBalances,
   computeProjectedBalances,
   computeSettlements,
+  createBalanceOffset,
   formatCurrency,
   getCurrencySymbol,
   getMemberById,
+  getOutstandingExpenseShares,
   getTotalExpenses,
   getUnsettledPaymentSummary,
   isExpenseSettled,
@@ -63,6 +65,83 @@ const group: Group = {
 };
 
 describe("expense business logic", () => {
+  it("offsets reciprocal expense shares without double-changing the net balance", () => {
+    const reciprocal: Group = {
+      ...group,
+      members: group.members.slice(0, 2),
+      expenses: [
+        {
+          id: "a-paid-for-b",
+          description: "Trip booking",
+          amount: 2000,
+          paidBy: "alice",
+          splitType: "custom",
+          category: "trip",
+          date: "2026-01-01",
+          splits: [
+            { memberId: "alice", amount: 0 },
+            { memberId: "bob", amount: 2000 },
+          ],
+        },
+        {
+          id: "b-paid-for-a",
+          description: "Airport transfer",
+          amount: 500,
+          paidBy: "bob",
+          splitType: "custom",
+          category: "transport",
+          date: "2026-01-02",
+          splits: [
+            { memberId: "alice", amount: 500 },
+            { memberId: "bob", amount: 0 },
+          ],
+        },
+      ],
+      payments: [],
+      balanceOffsets: [],
+    };
+
+    expect(computeBalances(reciprocal).map((item) => item.net)).toEqual([
+      1500,
+      -1500,
+    ]);
+    const requested = createBalanceOffset(
+      reciprocal,
+      "alice",
+      "bob",
+      500,
+      "2026-01-03T00:00:00.000Z",
+      "b-paid-for-a",
+    );
+    expect(requested).toMatchObject({
+      amount: 500,
+      debitAllocations: [{ expenseId: "b-paid-for-a", amount: 500 }],
+      creditAllocations: [{ expenseId: "a-paid-for-b", amount: 500 }],
+      status: "pending",
+    });
+
+    const pending = { ...reciprocal, balanceOffsets: [requested!] };
+    expect(getOutstandingExpenseShares(pending, "alice")).toEqual([]);
+    expect(getOutstandingExpenseShares(pending, "bob")).toEqual([
+      {
+        expenseId: "a-paid-for-b",
+        expenseDescription: "Trip booking",
+        amount: 1500,
+      },
+    ]);
+
+    const confirmed = {
+      ...pending,
+      balanceOffsets: [{ ...requested!, status: "confirmed" as const }],
+    };
+    expect(computeBalances(confirmed).map((item) => item.net)).toEqual([
+      1500,
+      -1500,
+    ]);
+    expect(isExpenseSettled(confirmed, confirmed.expenses[1])).toBe(true);
+    expect(isExpenseSettled(confirmed, confirmed.expenses[0])).toBe(false);
+  });
+
   it("redistributes the remaining custom amount across non-fixed members", () => {
     expect(
       allocateCustomShares(

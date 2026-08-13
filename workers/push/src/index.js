@@ -321,6 +321,83 @@ export function validateAndBuild(group, event, actorUid) {
     };
   }
 
+  if (event.type.startsWith("balance_offset_")) {
+    const offset = (group.balanceOffsets ?? []).find(
+      (item) => item.id === event.entityId,
+    );
+    if (!offset) throw new Error("Balance offset event does not match the saved group");
+    const requester = getMember(group, offset.requesterMemberId);
+    const counterparty = getMember(group, offset.counterpartyMemberId);
+    const amount = formatCurrency(offset.amount, group.currency);
+    const offsetUrl = notificationUrl(group.id, "settle", {
+      payment: offset.id,
+    });
+    if (
+      event.type === "balance_offset_requested" &&
+      actorMatches(actor, offset.requestedBy) &&
+      exactTime(offset.requestedAt)
+    ) {
+      return {
+        recipients:
+          counterparty?.uid && counterparty.uid !== actorUid
+            ? [counterparty]
+            : [],
+        preference: "payments",
+        title: "Balance offset needs approval",
+        body: `${requester?.name ?? actor.name} wants to offset ${amount}`,
+        url: offsetUrl,
+      };
+    }
+    if (
+      event.type === "balance_offset_confirmed" &&
+      offset.status === "confirmed" &&
+      actorMatches(actor, offset.reviewedBy) &&
+      exactTime(offset.reviewedAt)
+    ) {
+      return {
+        recipients:
+          requester?.uid && requester.uid !== actorUid ? [requester] : [],
+        preference: "payments",
+        title: "Balance offset approved",
+        body: `${counterparty?.name ?? actor.name} approved your ${amount} offset`,
+        url: offsetUrl,
+      };
+    }
+    if (
+      event.type === "balance_offset_rejected" &&
+      offset.status === "rejected" &&
+      actorMatches(actor, offset.reviewedBy) &&
+      exactTime(offset.reviewedAt)
+    ) {
+      return {
+        recipients:
+          requester?.uid && requester.uid !== actorUid ? [requester] : [],
+        preference: "payments",
+        title: "Balance offset rejected",
+        body: offset.rejectionReason ?? `${counterparty?.name ?? actor.name} rejected the offset`,
+        url: offsetUrl,
+      };
+    }
+    if (
+      event.type === "balance_offset_cancelled" &&
+      offset.status === "cancelled" &&
+      actorMatches(actor, offset.cancelledBy) &&
+      exactTime(offset.cancelledAt)
+    ) {
+      return {
+        recipients:
+          counterparty?.uid && counterparty.uid !== actorUid
+            ? [counterparty]
+            : [],
+        preference: "payments",
+        title: "Balance offset cancelled",
+        body: `${requester?.name ?? actor.name} cancelled the ${amount} offset`,
+        url: offsetUrl,
+      };
+    }
+    throw new Error("Balance offset event does not match the saved group");
+  }
+
   const payment = (group.payments ?? []).find(
     (item) => item.id === event.entityId,
   );

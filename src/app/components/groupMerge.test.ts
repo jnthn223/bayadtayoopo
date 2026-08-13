@@ -144,6 +144,33 @@ describe("group merge business logic", () => {
     expect(merged.payments).toEqual([confirmed, concurrent]);
   });
 
+  it("merges balance offset additions and approvals by offset ID", () => {
+    const pending = {
+      id: "offset-1",
+      requesterMemberId: "alice",
+      counterpartyMemberId: "bob",
+      amount: 10,
+      debitAllocations: [],
+      creditAllocations: [],
+      status: "pending" as const,
+      requestedAt: timestamp(1),
+      requestedBy: "alice",
+    };
+    const confirmed = {
+      ...pending,
+      status: "confirmed" as const,
+      reviewedAt: timestamp(2),
+      reviewedBy: "bob",
+    };
+    const concurrent = { ...pending, id: "offset-2" };
+    const merged = mergeGroupChanges(
+      group({ balanceOffsets: [pending] }),
+      group({ balanceOffsets: [confirmed] }),
+      group({ balanceOffsets: [pending, concurrent] }),
+    );
+    expect(merged.balanceOffsets).toEqual([confirmed, concurrent]);
+  });
+
   it("caps chat and deleted expense history to the latest records", () => {
     const compacted = compactGroupHistory(
       group({

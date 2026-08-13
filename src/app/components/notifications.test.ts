@@ -132,4 +132,31 @@ describe("Spark notification derivation", () => {
       ),
     ).toContain("payment_confirmed");
   });
+
+  it("notifies both sides of a balance offset approval flow", () => {
+    const withOffset: Group = {
+      ...group,
+      balanceOffsets: [
+        {
+          id: "offset-1",
+          requesterMemberId: "bob",
+          counterpartyMemberId: "alice",
+          amount: 25,
+          debitAllocations: [],
+          creditAllocations: [],
+          status: "confirmed",
+          requestedAt: "2026-07-05T10:00:00.000Z",
+          requestedBy: "bob",
+          reviewedAt: "2026-07-05T11:00:00.000Z",
+          reviewedBy: "alice",
+        },
+      ],
+    };
+    expect(
+      deriveNotifications([withOffset], "alice-uid").map((item) => item.type),
+    ).toContain("balance_offset_requested");
+    expect(
+      deriveNotifications([withOffset], "bob-uid").map((item) => item.type),
+    ).toContain("balance_offset_confirmed");
+  });
 });

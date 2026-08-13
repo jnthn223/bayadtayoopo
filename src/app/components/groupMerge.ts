@@ -120,6 +120,11 @@ export function mergeGroupChanges(
     ),
     expenses: mergeById(base.expenses, changed.expenses, latest.expenses),
     payments: mergeById(base.payments, changed.payments, latest.payments),
+    balanceOffsets: mergeById(
+      base.balanceOffsets,
+      changed.balanceOffsets,
+      latest.balanceOffsets,
+    ),
     deletedExpenses: mergeAppendOnly(
       base.deletedExpenses,
       changed.deletedExpenses,

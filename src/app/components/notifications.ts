@@ -145,6 +145,76 @@ export function deriveNotifications(
         }
       }
 
+      for (const offset of group.balanceOffsets ?? []) {
+        const requester = getMemberById(group, offset.requesterMemberId);
+        const counterparty = getMemberById(group, offset.counterpartyMemberId);
+        const amount = formatCurrency(offset.amount, group.currency);
+        if (
+          offset.counterpartyMemberId === currentMemberId &&
+          offset.requestedBy !== currentMemberId
+        ) {
+          add({
+            id: `${group.id}:offset:${offset.id}:requested:${offset.requestedAt}`,
+            type: "balance_offset_requested",
+            title: "Balance offset needs approval",
+            body: `${requester?.name ?? "Someone"} wants to settle ${amount} using your mutual balance`,
+            at: offset.requestedAt,
+            actorId: offset.requestedBy,
+            destination: { tab: "settle", paymentId: offset.id },
+          });
+        }
+        if (
+          offset.status === "confirmed" &&
+          offset.requesterMemberId === currentMemberId &&
+          offset.reviewedAt &&
+          offset.reviewedBy !== currentMemberId
+        ) {
+          add({
+            id: `${group.id}:offset:${offset.id}:confirmed:${offset.reviewedAt}`,
+            type: "balance_offset_confirmed",
+            title: "Balance offset approved",
+            body: `${counterparty?.name ?? "The other member"} approved your ${amount} offset`,
+            at: offset.reviewedAt,
+            actorId: offset.reviewedBy,
+            destination: { tab: "settle", paymentId: offset.id },
+          });
+        }
+        if (
+          offset.status === "rejected" &&
+          offset.requesterMemberId === currentMemberId &&
+          offset.reviewedAt &&
+          offset.reviewedBy !== currentMemberId
+        ) {
+          add({
+            id: `${group.id}:offset:${offset.id}:rejected:${offset.reviewedAt}`,
+            type: "balance_offset_rejected",
+            title: "Balance offset rejected",
+            body:
+              offset.rejectionReason ??
+              `${counterparty?.name ?? "The other member"} rejected the ${amount} offset`,
+            at: offset.reviewedAt,
+            actorId: offset.reviewedBy,
+            destination: { tab: "settle", paymentId: offset.id },
+          });
+        }
+        if (
+          offset.status === "cancelled" &&
+          offset.counterpartyMemberId === currentMemberId &&
+          offset.cancelledAt &&
+          offset.cancelledBy !== currentMemberId
+        ) {
+          add({
+            id: `${group.id}:offset:${offset.id}:cancelled:${offset.cancelledAt}`,
+            type: "balance_offset_cancelled",
+            title: "Balance offset cancelled",
+            body: `${requester?.name ?? "The requester"} cancelled the ${amount} offset`,
+            at: offset.cancelledAt,
+            actorId: offset.cancelledBy,
+            destination: { tab: "settle", paymentId: offset.id },
+          });
+        }
+      }
+
       for (const expense of group.expenses) {
         for (const split of expense.splits) {
           if (

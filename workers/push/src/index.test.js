@@ -54,4 +54,32 @@ describe("push worker event authorization", () => {
       ),
     ).toThrow("does not match");
   });
+
+  it("sends a balance offset request only to its counterparty", () => {
+    const withOffset = {
+      ...group,
+      balanceOffsets: [
+        {
+          id: "offset",
+          requesterMemberId: "alice-member",
+          counterpartyMemberId: "bob-member",
+          amount: 500,
+          status: "pending",
+          requestedAt: "2026-07-28T01:00:00.000Z",
+          requestedBy: "alice-member",
+        },
+      ],
+    };
+    const notification = validateAndBuild(
+      withOffset,
+      {
+        type: "balance_offset_requested",
+        entityId: "offset",
+        occurredAt: "2026-07-28T01:00:00.000Z",
+      },
+      "alice",
+    );
+    expect(notification.recipients.map((member) => member.uid)).toEqual(["bob"]);
+    expect(notification.title).toContain("approval");
+  });
 });

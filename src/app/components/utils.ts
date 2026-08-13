@@ -6,6 +6,7 @@ import type {
   Expense,
   Split,
   PaymentAllocation,
+  BalanceOffset,
 } from "./types";
 
 export const MEMBER_COLORS = [
@@ -65,6 +66,28 @@ export function isExpenseSettled(group: Group, expense: Expense): boolean {
       (confirmedAllocationsByMember.get(payment.fromMemberId) ?? 0) +
         allocatedCents,
     );
+  }
+  for (const offset of group.balanceOffsets ?? []) {
+    if (offset.status !== "confirmed") continue;
+    const sides = [
+      [offset.requesterMemberId, offset.debitAllocations],
+      [offset.counterpartyMemberId, offset.creditAllocations],
+    ] as const;
+    for (const [memberId, allocations] of sides) {
+      const allocatedCents = allocations.reduce(
+        (sum, allocation) =>
+          allocation.expenseId === expense.id
+            ? sum + Math.round(allocation.amount * 100)
+            : sum,
+        0,
+      );
+      if (allocatedCents > 0) {
+        confirmedAllocationsByMember.set(
+          memberId,
+          (confirmedAllocationsByMember.get(memberId) ?? 0) + allocatedCents,
+        );
+      }
+    }
   }
 
   return expense.splits.every((split) => {
@@ -216,6 +239,23 @@ export function getOutstandingExpenseShares(
       );
     }
   }
+  for (const offset of group.balanceOffsets ?? []) {
+    if (!["pending", "confirmed"].includes(offset.status)) continue;
+    const allocations =
+      offset.requesterMemberId === fromMemberId
+        ? offset.debitAllocations
+        : offset.counterpartyMemberId === fromMemberId
+          ? offset.creditAllocations
+          : [];
+    for (const allocation of allocations) {
+      if (!allocation.expenseId) continue;
+      alreadyAllocatedCents.set(
+        allocation.expenseId,
+        (alreadyAllocatedCents.get(allocation.expenseId) ?? 0) +
+          Math.round(allocation.amount * 100),
+      );
+    }
+  }
 
   const expenses = [...group.expenses].sort(
     (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
@@ -249,6 +289,110 @@ export function getOutstandingExpenseShares(
         ]
       : [];
   });
+}
+
+function directOutstandingShares(
+  group: Group,
+  debtorMemberId: string,
+  creditorMemberId: string,
+): PaymentAllocation[] {
+  return getOutstandingExpenseShares(group, debtorMemberId).filter(
+    (share) => {
+      const expense = group.expenses.find((item) => item.id === share.expenseId);
+      return expense && getExpensePayerId(expense) === creditorMemberId;
+    },
+  );
+}
+
+function allocateFromShares(
+  shares: PaymentAllocation[],
+  amount: number,
+): PaymentAllocation[] {
+  let remainingCents = Math.max(0, Math.round(amount * 100));
+  const allocations: PaymentAllocation[] = [];
+  for (const share of shares) {
+    if (remainingCents <= 0) break;
+    const cents = Math.min(remainingCents, Math.round(share.amount * 100));
+    if (cents > 0) allocations.push({ ...share, amount: cents / 100 });
+    remainingCents -= cents;
+  }
+  return allocations;
+}
+
+export interface BalanceOffsetPreview {
+  amount: number;
+  debitAllocations: PaymentAllocation[];
+  creditAllocations: PaymentAllocation[];
+  availableCredit: number;
+  remainingCredit: number;
+}
+
+export function buildBalanceOffsetPreview(
+  group: Group,
+  requesterMemberId: string,
+  counterpartyMemberId: string,
+  requestedAmount: number,
+  debitExpenseId?: string,
+): BalanceOffsetPreview | undefined {
+  const debitShares = directOutstandingShares(
+    group,
+    requesterMemberId,
+    counterpartyMemberId,
+  ).filter((share) => !debitExpenseId || share.expenseId === debitExpenseId);
+  const creditShares = directOutstandingShares(
+    group,
+    counterpartyMemberId,
+    requesterMemberId,
+  );
+  const debitTotal = debitShares.reduce((sum, share) => sum + share.amount, 0);
+  const availableCredit = creditShares.reduce(
+    (sum, share) => sum + share.amount,
+    0,
+  );
+  const amount =
+    Math.min(
+      Math.round(Math.max(0, requestedAmount) * 100),
+      Math.round(debitTotal * 100),
+      Math.round(availableCredit * 100),
+    ) / 100;
+  if (amount <= 0.005) return undefined;
+
+  return {
+    amount,
+    debitAllocations: allocateFromShares(debitShares, amount),
+    creditAllocations: allocateFromShares(creditShares, amount),
+    availableCredit,
+    remainingCredit: Math.max(0, availableCredit - amount),
+  };
+}
+
+export function createBalanceOffset(
+  group: Group,
+  requesterMemberId: string,
+  counterpartyMemberId: string,
+  amount: number,
+  requestedAt: string,
+  debitExpenseId?: string,
+): BalanceOffset | undefined {
+  const preview = buildBalanceOffsetPreview(
+    group,
+    requesterMemberId,
+    counterpartyMemberId,
+    amount,
+    debitExpenseId,
+  );
+  if (!preview) return undefined;
+  return {
+    id: generateId(),
+    requesterMemberId,
+    counterpartyMemberId,
+    amount: preview.amount,
+    debitAllocations: preview.debitAllocations,
+    creditAllocations: preview.creditAllocations,
+    status: "pending",
+    requestedAt,
+    requestedBy: requesterMemberId,
+  };
 }
 
 export function allocatePaymentToExpenses(

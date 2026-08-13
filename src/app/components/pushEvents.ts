@@ -105,5 +105,35 @@ export function collectPushEvents(
     }
   }
 
+  const oldOffsets = new Map(
+    (before.balanceOffsets ?? []).map((offset) => [offset.id, offset]),
+  );
+  for (const offset of after.balanceOffsets ?? []) {
+    const previous = oldOffsets.get(offset.id);
+    if (!previous && actorIds.has(offset.requestedBy)) {
+      add("balance_offset_requested", offset.id, offset.requestedAt);
+    }
+    if (!previous || previous.status === offset.status) continue;
+    if (
+      offset.status === "confirmed" &&
+      offset.reviewedBy &&
+      actorIds.has(offset.reviewedBy)
+    ) {
+      add("balance_offset_confirmed", offset.id, offset.reviewedAt);
+    } else if (
+      offset.status === "rejected" &&
+      offset.reviewedBy &&
+      actorIds.has(offset.reviewedBy)
+    ) {
+      add("balance_offset_rejected", offset.id, offset.reviewedAt);
+    } else if (
+      offset.status === "cancelled" &&
+      offset.cancelledBy &&
+      actorIds.has(offset.cancelledBy)
+    ) {
+      add("balance_offset_cancelled", offset.id, offset.cancelledAt);
+    }
+  }
+
   return events;
 }

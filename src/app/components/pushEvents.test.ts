@@ -81,4 +81,40 @@ describe("push event collection", () => {
       "payment_confirmed",
     );
   });
+
+  it("collects balance offset request and approval transitions", () => {
+    const pending: Group = {
+      ...base,
+      balanceOffsets: [
+        {
+          id: "offset",
+          requesterMemberId: "alice-member",
+          counterpartyMemberId: "bob-member",
+          amount: 50,
+          debitAllocations: [],
+          creditAllocations: [],
+          status: "pending",
+          requestedAt: "2026-07-02T01:00:00.000Z",
+          requestedBy: "alice-member",
+        },
+      ],
+    };
+    const confirmed: Group = {
+      ...pending,
+      balanceOffsets: [
+        {
+          ...pending.balanceOffsets![0],
+          status: "confirmed",
+          reviewedAt: "2026-07-02T02:00:00.000Z",
+          reviewedBy: "bob-member",
+        },
+      ],
+    };
+    expect(collectPushEvents(base, pending, "alice")[0]?.type).toBe(
+      "balance_offset_requested",
+    );
+    expect(collectPushEvents(pending, confirmed, "bob")[0]?.type).toBe(
+      "balance_offset_confirmed",
+    );
+  });
 });

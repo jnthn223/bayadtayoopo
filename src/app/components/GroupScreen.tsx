@@ -78,15 +78,29 @@ export function GroupScreen({
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const chatReadKey = `bayadtayoopo:chat-read:${currentUser.id}:${group.id}`;
   const groupTourKey = `bayadtayoopo:group-tour:${currentUser.id}:${group.id}`;
+  const messages = [...(group.messages ?? [])].sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt),
+  );
+  const currentMember = group.members.find(
+    (member) => member.id === currentUser.id || member.uid === currentUser.id,
+  );
+  const initialChatReadAt = localStorage.getItem(chatReadKey) ?? "";
   const [tab, setTab] = useState<Tab>(destination?.tab ?? "expenses");
   const [groupTourStep, setGroupTourStep] = useState<number | null>(null);
   const [lastChatReadAt, setLastChatReadAt] = useState(
-    () => localStorage.getItem(chatReadKey) ?? "",
+    initialChatReadAt,
   );
-  const [chatRevealMessageId, setChatRevealMessageId] = useState<string | null>(
-    null,
-  );
+  const [chatRevealMessageId, setChatRevealMessageId] = useState<string | null>(() => {
+    if (destination?.tab !== "chat") return null;
+    if (destination.messageId) return destination.messageId;
+    return messages.find(
+      (message) =>
+        message.memberId !== currentMember?.id &&
+        (!initialChatReadAt || message.createdAt > initialChatReadAt),
+    )?.id ?? null;
+  });
   const firstUnreadMessageRef = useRef<HTMLDivElement | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -148,12 +162,6 @@ export function GroupScreen({
   );
   const settlements = computeSettlements(computeProjectedBalances(group));
   const total = getTotalExpenses(group);
-  const messages = [...(group.messages ?? [])].sort((a, b) =>
-    a.createdAt.localeCompare(b.createdAt),
-  );
-  const currentMember = group.members.find(
-    (m) => m.id === currentUser.id || m.uid === currentUser.id,
-  );
   const adminId = group.adminId ?? group.members[0]?.id;
   const isOwner = !!currentMember &&
     (currentMember.id === adminId || currentMember.uid === adminId);
@@ -296,12 +304,19 @@ export function GroupScreen({
   }, [groupTourKey]);
 
   useEffect(() => {
-    if (tab !== "chat" || !chatRevealMessageId) return;
+    if (tab !== "chat") return;
     const frame = window.requestAnimationFrame(() => {
-      firstUnreadMessageRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+      if (chatRevealMessageId) {
+        firstUnreadMessageRef.current?.scrollIntoView({
+          behavior: "auto",
+          block: "start",
+        });
+      } else {
+        chatEndRef.current?.scrollIntoView({
+          behavior: "auto",
+          block: "end",
+        });
+      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, [tab, chatRevealMessageId]);
@@ -922,6 +937,7 @@ export function GroupScreen({
         messages={messages}
         chatRevealMessageId={chatRevealMessageId}
         firstUnreadMessageRef={firstUnreadMessageRef}
+        chatEndRef={chatEndRef}
         displayMemberName={displayMemberName}
         setEditExpense={setEditExpense}
         setAddOpen={setAddOpen}

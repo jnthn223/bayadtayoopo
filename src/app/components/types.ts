@@ -73,6 +73,31 @@ export interface GroupPayment {
   reversalReason?: string;
 }
 
+export type BalanceOffsetStatus =
+  | "pending"
+  | "confirmed"
+  | "rejected"
+  | "cancelled";
+
+export interface BalanceOffset {
+  id: string;
+  requesterMemberId: string;
+  counterpartyMemberId: string;
+  amount: number;
+  /** Expenses the requester owes the counterparty. */
+  debitAllocations: PaymentAllocation[];
+  /** Reciprocal expenses the counterparty owes the requester. */
+  creditAllocations: PaymentAllocation[];
+  status: BalanceOffsetStatus;
+  requestedAt: string;
+  requestedBy: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  rejectionReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+}
+
 export interface Split {
   memberId: string;
   amount: number;
@@ -147,6 +172,10 @@ export type NotificationType =
   | "payment_rejected"
   | "payment_cancelled"
   | "payment_reversed"
+  | "balance_offset_requested"
+  | "balance_offset_confirmed"
+  | "balance_offset_rejected"
+  | "balance_offset_cancelled"
   | "expense_created"
   | "expense_updated"
   | "expense_deleted"
@@ -184,6 +213,7 @@ export interface Group {
   formerMembers?: Member[];
   expenses: Expense[];
   payments?: GroupPayment[];
+  balanceOffsets?: BalanceOffset[];
   deletedExpenses?: DeletedExpense[];
   messages?: ChatMessage[];
   createdAt: string;

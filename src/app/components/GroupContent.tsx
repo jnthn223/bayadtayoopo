@@ -57,6 +57,7 @@ interface Props {
   messages: ChatMessage[];
   chatRevealMessageId: string | null;
   firstUnreadMessageRef: RefObject<HTMLDivElement | null>;
+  chatEndRef: RefObject<HTMLDivElement | null>;
   displayMemberName: (memberId: string, fallback?: string) => string;
   setEditExpense: Dispatch<SetStateAction<Expense | null>>;
   setAddOpen: Dispatch<SetStateAction<boolean>>;
@@ -91,6 +92,7 @@ export function GroupContent({
   messages,
   chatRevealMessageId,
   firstUnreadMessageRef,
+  chatEndRef,
   displayMemberName,
   setEditExpense,
   setAddOpen,
@@ -846,11 +848,12 @@ export function GroupContent({
                 </p>
               </div>
             ) : (
-              messages.map((message) => {
-                const sender = getMemberById(group, message.memberId);
-                const isMine = currentMember?.id === message.memberId;
-                const isFirstUnread = message.id === chatRevealMessageId;
-                return (
+              <>
+                {messages.map((message) => {
+                  const sender = getMemberById(group, message.memberId);
+                  const isMine = currentMember?.id === message.memberId;
+                  const isFirstUnread = message.id === chatRevealMessageId;
+                  return (
                   <div
                     key={message.id}
                     id={`message-${message.id}`}
@@ -916,8 +919,10 @@ export function GroupContent({
                     </div>
                     </div>
                   </div>
-                );
-              })
+                  );
+                })}
+                <div ref={chatEndRef} aria-hidden="true" />
+              </>
             )}
           </div>
         )}
