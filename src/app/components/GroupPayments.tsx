@@ -214,9 +214,16 @@ export function GroupPayments({
         .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)),
     [group.balanceOffsets, memberId],
   );
-  const visiblePayments = paymentHistoryOpen
-    ? [...activePayments, ...historicalPayments]
-    : activePayments;
+  const activeOffsets = relevantOffsets.filter(
+    (offset) => offset.status === "pending" || offset.status === "rejected",
+  );
+  const historicalOffsets = relevantOffsets.filter(
+    (offset) => offset.status === "confirmed" || offset.status === "cancelled",
+  );
+  const visibleOffsets = activeOffsets;
+  const visiblePayments = activePayments;
+  const settlementHistoryCount =
+    historicalPayments.length + historicalOffsets.length;
   const expensePaymentOptions = useMemo(
     () =>
       memberId
@@ -652,10 +659,162 @@ export function GroupPayments({
 
   return (
     <div className="space-y-7 pb-2">
-      {relevantOffsets.length > 0 && (
+      {settlementHistoryCount > 0 && (
+        <section className="overflow-hidden rounded-2xl border border-border bg-card">
+          <button
+            type="button"
+            onClick={() => setPaymentHistoryOpen((current) => !current)}
+            className="flex w-full items-center justify-between px-4 py-4 text-left"
+            aria-expanded={paymentHistoryOpen}
+          >
+            <span>
+              <span className="block text-sm font-medium text-foreground">
+                Settlement history
+              </span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                {settlementHistoryCount} completed or closed{" "}
+                {settlementHistoryCount === 1 ? "record" : "records"}
+              </span>
+            </span>
+            {paymentHistoryOpen ? (
+              <ChevronUp size={17} className="text-muted-foreground" />
+            ) : (
+              <ChevronDown size={17} className="text-muted-foreground" />
+            )}
+          </button>
+
+          {paymentHistoryOpen && (
+            <div className="space-y-5 border-t border-border bg-muted/20 p-4">
+              {historicalOffsets.length > 0 && (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Balance offsets
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      No money was transferred
+                    </p>
+                  </div>
+                  {historicalOffsets.map((offset) => {
+                    const requester = getMemberById(group, offset.requesterMemberId);
+                    const counterparty = getMemberById(group, offset.counterpartyMemberId);
+                    const offsetOpen = expandedPaymentIds.has(offset.id);
+                    const timestamp = offsetTimestamp(offset);
+                    return (
+                      <article
+                        key={offset.id}
+                        id={`payment-${offset.id}`}
+                        className="space-y-3 rounded-xl border border-border bg-card p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground">
+                              Balance offset {offset.status === "confirmed" ? "approved" : "cancelled"}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {requester?.name ?? "A member"} and {counterparty?.name ?? "a member"}
+                            </p>
+                            <time className="mt-1 block text-[11px] text-muted-foreground">
+                              {timestamp.label} · {formatPaymentDateTime(timestamp.value)}
+                            </time>
+                          </div>
+                          <p className="shrink-0 text-sm font-semibold text-foreground">
+                            {formatCurrency(offset.amount, group.currency)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleAllocations(offset.id)}
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-primary"
+                        >
+                          {offsetOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                          See what this offset covered
+                        </button>
+                        {offsetOpen && (
+                          <div className="space-y-3 rounded-xl bg-muted/50 p-3">
+                            <AllocationList allocations={offset.debitAllocations} currency={group.currency} />
+                            <div className="border-t border-border pt-3">
+                              <AllocationList allocations={offset.creditAllocations} currency={group.currency} />
+                            </div>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+
+              {historicalPayments.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Payments
+                  </p>
+                  {historicalPayments.map((payment) => {
+                    const fromMember = getMemberById(group, payment.fromMemberId);
+                    const toMember = getMemberById(group, payment.toMemberId);
+                    const isRecipient = payment.toMemberId === memberId;
+                    const allocationsOpen = expandedPaymentIds.has(payment.id);
+                    const timestamp = paymentActivityTimestamp(payment);
+                    return (
+                      <article
+                        key={payment.id}
+                        id={`payment-${payment.id}`}
+                        className="space-y-3 rounded-xl border border-border bg-card p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground">
+                              {fromMember?.name ?? "A member"} paid {isRecipient ? "you" : toMember?.name ?? "a member"}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">{payment.method}</p>
+                            <time className="mt-1 block text-[11px] text-muted-foreground">
+                              {timestamp.label} · {formatPaymentDateTime(timestamp.value)}
+                            </time>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-sm font-semibold text-foreground">
+                              {formatCurrency(payment.amount, group.currency)}
+                            </p>
+                            <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${paymentStatusClass(payment.status)}`}>
+                              {paymentStatusLabel(payment, memberId)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                          <button type="button" onClick={() => toggleAllocations(payment.id)} className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
+                            {allocationsOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                            See what this payment covered
+                          </button>
+                          {payment.proofImageId && (
+                            <button type="button" onClick={() => viewPaymentImage(payment.proofImageId!, "Payment proof")} className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
+                              <Paperclip size={13} /> View proof
+                            </button>
+                          )}
+                        </div>
+                        {allocationsOpen && <AllocationList allocations={payment.allocations} currency={group.currency} />}
+                        {payment.status === "confirmed" && isRecipient && (
+                          <button type="button" onClick={() => reversePayment(payment)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-muted py-2.5 text-sm font-medium text-muted-foreground">
+                            <RotateCcw size={14} /> Reverse payment
+                          </button>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {visibleOffsets.length > 0 && (
         <section className="space-y-4">
-          <p className="text-sm font-medium text-foreground">Balance offset activity</p>
-          {relevantOffsets.map((offset) => {
+          {activeOffsets.length > 0 && (
+            <p className="text-sm font-medium text-foreground">
+              Balance offset requests
+            </p>
+          )}
+          {visibleOffsets.map((offset) => {
             const requester = getMemberById(group, offset.requesterMemberId);
             const counterparty = getMemberById(
               group,
@@ -790,33 +949,10 @@ export function GroupPayments({
         </section>
       )}
 
-      {relevantPayments.length > 0 && (
+      {visiblePayments.length > 0 && (
         <section className="space-y-4">
           {activePayments.length > 0 && (
             <p className="text-sm font-medium text-foreground">Payment activity</p>
-          )}
-          {historicalPayments.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setPaymentHistoryOpen((current) => !current)}
-              className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3 text-left"
-              aria-expanded={paymentHistoryOpen}
-            >
-              <span>
-                <span className="block text-sm font-medium text-foreground">
-                  Payment history
-                </span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  {historicalPayments.length} completed{" "}
-                  {historicalPayments.length === 1 ? "record" : "records"}
-                </span>
-              </span>
-              {paymentHistoryOpen ? (
-                <ChevronUp size={17} className="text-muted-foreground" />
-              ) : (
-                <ChevronDown size={17} className="text-muted-foreground" />
-              )}
-            </button>
           )}
           {visiblePayments.map((payment) => {
             const fromMember = getMemberById(group, payment.fromMemberId);

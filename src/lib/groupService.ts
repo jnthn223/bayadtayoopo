@@ -162,13 +162,18 @@ export async function loadUserGroups(uid: string): Promise<Group[]> {
   const groupIds = await getUserGroupIds(uid);
   if (groupIds.length === 0) return [];
 
+  // A deleted group can remain in another member's user document. Firestore
+  // correctly rejects that group's read, but it must not prevent the user's
+  // other groups from loading.
   const snapshots = await Promise.all(
-    groupIds.map((id) => getDoc(doc(db, "groups", id))),
+    groupIds.map((id) =>
+      getDoc(doc(db, "groups", id)).catch(() => null),
+    ),
   );
 
   return snapshots
     .map((snapshot) =>
-      snapshot.exists() && !snapshot.data().deleted
+      snapshot?.exists() && !snapshot.data().deleted
         ? unpackGroup(snapshot.data())
         : null,
     )
