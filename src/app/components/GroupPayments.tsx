@@ -233,6 +233,12 @@ export function GroupPayments({
         : [],
     [group, memberId],
   );
+  const balancesYouOwe = settlements.filter(
+    (settlement) => settlement.from === memberId,
+  );
+  const balancesOwedToYou = settlements.filter(
+    (settlement) => settlement.to === memberId,
+  );
 
   const draftAmount = Math.round((parseFloat(amountInput) || 0) * 100) / 100;
   const draftAllocations = useMemo(
@@ -645,10 +651,10 @@ export function GroupPayments({
   }
 
   return (
-    <>
+    <div className="space-y-7 pb-2">
       {relevantOffsets.length > 0 && (
-        <section className="space-y-3">
-          <p className="text-sm text-muted-foreground">Balance offset activity</p>
+        <section className="space-y-4">
+          <p className="text-sm font-medium text-foreground">Balance offset activity</p>
           {relevantOffsets.map((offset) => {
             const requester = getMemberById(group, offset.requesterMemberId);
             const counterparty = getMemberById(
@@ -785,9 +791,9 @@ export function GroupPayments({
       )}
 
       {relevantPayments.length > 0 && (
-        <section className="space-y-3">
+        <section className="space-y-4">
           {activePayments.length > 0 && (
-            <p className="text-sm text-muted-foreground">Payment activity</p>
+            <p className="text-sm font-medium text-foreground">Payment activity</p>
           )}
           {historicalPayments.length > 0 && (
             <button
@@ -978,12 +984,12 @@ export function GroupPayments({
       )}
 
       {expensePaymentOptions.length > 0 && (
-        <section className="space-y-3">
+        <section className="space-y-4">
           <div>
             <p className="text-base font-semibold text-foreground">
               What would you like to pay?
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
               Choose one expense now, or make one payment toward everything you owe below.
             </p>
           </div>
@@ -991,7 +997,7 @@ export function GroupPayments({
             <p className="text-sm font-medium text-foreground">
               Pay a specific expense
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
               Pick an expense and pay its exact unpaid amount.
             </p>
           </div>
@@ -1062,17 +1068,33 @@ export function GroupPayments({
         </section>
       )}
 
-      {settlements.length > 0 && (
-        <section className="space-y-3 mt-2">
+      {[
+        {
+          id: "owed-by-you",
+          title: "Pay toward your balance",
+          description:
+            "Pay everything you owe this person, or enter a smaller amount.",
+          items: balancesYouOwe,
+        },
+        {
+          id: "owed-to-you",
+          title: "Money owed to you",
+          description:
+            "These balances are unpaid. Record a payment only after you receive the money.",
+          items: balancesOwedToYou,
+        },
+      ].map((section) =>
+        section.items.length > 0 ? (
+        <section key={section.id} className="space-y-4">
           <div>
             <p className="text-sm font-medium text-foreground">
-              Make one payment
+              {section.title}
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Pay everything you owe, or enter a smaller amount. We’ll show which expenses it covers.
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {section.description}
             </p>
           </div>
-          {settlements.map((settlement) => {
+          {section.items.map((settlement) => {
             const fromMember = getMemberById(group, settlement.from);
             const toMember = getMemberById(group, settlement.to);
             const isSender = settlement.from === memberId;
@@ -1161,7 +1183,7 @@ export function GroupPayments({
                 </div>
 
                 {isSender && (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <button
                       type="button"
                       onClick={() => openPayment(settlement)}
@@ -1184,13 +1206,14 @@ export function GroupPayments({
                     onClick={() => openPayment(settlement, true)}
                     className="w-full rounded-xl border border-green-600 bg-green-50 py-2.5 text-sm font-semibold text-green-700"
                   >
-                    I already received money
+                    Record money I received
                   </button>
                 )}
               </article>
             );
           })}
         </section>
+        ) : null,
       )}
 
       <Dialog.Root
@@ -1361,7 +1384,9 @@ export function GroupPayments({
 
                 <div>
                   <label className="mb-1.5 block text-sm text-muted-foreground">
-                    Amount
+                    {draft.confirmImmediately
+                      ? "Amount you received"
+                      : "Amount you paid"}
                   </label>
                   <input
                     type="number"
@@ -1402,7 +1427,9 @@ export function GroupPayments({
 
                 <div>
                   <label className="mb-1.5 block text-sm text-muted-foreground">
-                    Payment method
+                    {draft.confirmImmediately
+                      ? "How they paid you"
+                      : "How you paid"}
                   </label>
                   <input
                     value={method}
@@ -1421,7 +1448,11 @@ export function GroupPayments({
                 <textarea
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
-                  placeholder="Note (optional)"
+                  placeholder={
+                    draft.confirmImmediately
+                      ? "Note about the payment received (optional)"
+                      : "Note to the recipient (optional)"
+                  }
                   className="min-h-20 w-full resize-none rounded-xl border border-border bg-input-background px-4 py-3 text-sm outline-none focus:border-primary"
                 />
                 <label className="block cursor-pointer rounded-xl border border-dashed border-border p-3 text-sm text-muted-foreground">
@@ -1440,7 +1471,9 @@ export function GroupPayments({
                   <div className="mb-2 flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-foreground">
-                        What this payment covers
+                        {draft.confirmImmediately
+                          ? "What this received payment settles"
+                          : "What this payment covers"}
                       </p>
                       <span className="text-xs text-muted-foreground">
                         {chooseExpenses
@@ -1514,7 +1547,9 @@ export function GroupPayments({
                   />
                   <div className="mt-3 flex justify-between border-t border-border pt-3 text-xs">
                     <span className="text-muted-foreground">
-                      Remaining after this payment
+                      {draft.confirmImmediately
+                        ? "Balance still owed to you"
+                        : "You’ll still owe"}
                     </span>
                     <span className="font-semibold text-foreground">
                       {formatCurrency(
@@ -1548,7 +1583,7 @@ export function GroupPayments({
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-    </>
+    </div>
   );
 }
 

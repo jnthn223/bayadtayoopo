@@ -575,11 +575,11 @@ export function GroupContent({
         )}
 
         {tab === "settle" && (
-          <div className="p-4 space-y-3">
+          <div className="space-y-6 px-4 py-5 sm:p-6">
             {currentMember && (
               <button
                 onClick={openPaymentDetails}
-                className="w-full text-left bg-accent rounded-2xl border border-border p-4"
+                className="w-full rounded-2xl border border-border bg-accent p-5 text-left"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -616,10 +616,15 @@ export function GroupContent({
             ) : (
               <>
                 {paymentItems.length > 0 && (
-                  <>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Expense repayments
-                    </p>
+                  <section className="space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        Expense repayments
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        Review payments connected to individual expenses.
+                      </p>
+                    </div>
                     {paymentItems.map(({ expense, split }) => {
                       const fromMember = getMemberById(group, split.memberId);
                       const payerId = getExpensePayerId(expense);
@@ -812,10 +817,10 @@ export function GroupContent({
                         </div>
                       );
                     })}
-                  </>
+                  </section>
                 )}
 
-                <div className={paymentItems.length > 0 ? "pt-3" : ""}>
+                <div>
                   <GroupPayments
                     group={group}
                     currentMember={currentMember}
