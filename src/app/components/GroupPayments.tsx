@@ -174,6 +174,9 @@ export function GroupPayments({
     new Set(),
   );
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
+  const [reversalDraft, setReversalDraft] = useState<GroupPayment | null>(null);
+  const [reversalReason, setReversalReason] = useState("");
+  const [reversalError, setReversalError] = useState("");
   const [offsetDraft, setOffsetDraft] = useState<{
     counterparty: Member;
     expenseId: string;
@@ -529,18 +532,33 @@ export function GroupPayments({
   }
 
   function reversePayment(payment: GroupPayment) {
-    if (!currentMember || payment.toMemberId !== currentMember.id) return;
-    const reversalReason = window
-      .prompt("Why are you reversing this confirmed payment?")
-      ?.trim();
-    if (!reversalReason) return;
-    updatePayment(payment.id, (item) => ({
+    if (
+      !currentMember ||
+      payment.toMemberId !== currentMember.id ||
+      payment.status !== "confirmed"
+    ) return;
+    setReversalDraft(payment);
+    setReversalReason("");
+    setReversalError("");
+  }
+
+  function confirmPaymentReversal() {
+    if (!currentMember || !reversalDraft) return;
+    const reason = reversalReason.trim();
+    if (!reason) {
+      setReversalError("Enter a reason for undoing this confirmation.");
+      return;
+    }
+    updatePayment(reversalDraft.id, (item) => ({
       ...item,
       status: "reversed",
       reversedAt: new Date().toISOString(),
       reversedBy: currentMember.id,
-      reversalReason,
+      reversalReason: reason,
     }));
+    setReversalDraft(null);
+    setReversalReason("");
+    setReversalError("");
   }
 
   async function savePayment() {
@@ -794,7 +812,7 @@ export function GroupPayments({
                         {allocationsOpen && <AllocationList allocations={payment.allocations} currency={group.currency} />}
                         {payment.status === "confirmed" && isRecipient && (
                           <button type="button" onClick={() => reversePayment(payment)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-muted py-2.5 text-sm font-medium text-muted-foreground">
-                            <RotateCcw size={14} /> Reverse payment
+                            <RotateCcw size={14} /> Undo confirmation
                           </button>
                         )}
                       </article>
@@ -1110,7 +1128,7 @@ export function GroupPayments({
                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-muted py-2.5 text-sm font-medium text-muted-foreground"
                   >
                     <RotateCcw size={14} />
-                    Reverse payment
+                    Undo confirmation
                   </button>
                 )}
               </article>
@@ -1435,6 +1453,110 @@ export function GroupPayments({
                 >
                   {saving ? "Requesting…" : `Request approval from ${offsetDraft.counterparty.name}`}
                 </button>
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={!!reversalDraft}
+        onOpenChange={(open) => {
+          if (open) return;
+          setReversalDraft(null);
+          setReversalReason("");
+          setReversalError("");
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-[60] max-h-[92vh] overflow-y-auto rounded-t-3xl bg-card p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">
+                  Undo payment confirmation?
+                </Dialog.Title>
+                <Dialog.Description className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  This restores the unpaid balance. It does not send or return any money.
+                </Dialog.Description>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReversalDraft(null)}
+                className="rounded-full p-2 hover:bg-muted"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {reversalDraft && (
+              <div className="mt-5 space-y-4">
+                <div className="rounded-2xl border border-border bg-muted/30 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        {getMemberById(group, reversalDraft.fromMemberId)?.name ?? "A member"} paid you
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {reversalDraft.method}
+                        {reversalDraft.referenceNumber
+                          ? ` · Ref ${reversalDraft.referenceNumber}`
+                          : ""}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-base font-semibold text-foreground">
+                      {formatCurrency(reversalDraft.amount, group.currency)}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="payment-reversal-reason"
+                    className="mb-1.5 block text-sm font-medium text-foreground"
+                  >
+                    Reason for undoing
+                  </label>
+                  <textarea
+                    id="payment-reversal-reason"
+                    value={reversalReason}
+                    onChange={(event) => {
+                      setReversalReason(event.target.value);
+                      setReversalError("");
+                    }}
+                    placeholder="For example: Confirmed the wrong payment"
+                    rows={3}
+                    autoFocus
+                    className="w-full resize-none rounded-xl border border-border bg-input-background px-4 py-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  />
+                  {reversalError && (
+                    <p className="mt-1.5 text-xs text-destructive">
+                      {reversalError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-xl bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+                  The payment stays in Settlement history with this reason, the date, and who undid it.
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReversalDraft(null)}
+                    className="rounded-xl bg-muted py-3 text-sm font-medium text-muted-foreground"
+                  >
+                    Keep confirmed
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmPaymentReversal}
+                    className="rounded-xl bg-destructive py-3 text-sm font-semibold text-white"
+                  >
+                    Undo confirmation
+                  </button>
+                </div>
               </div>
             )}
           </Dialog.Content>
