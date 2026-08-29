@@ -46,7 +46,11 @@ export function parseChatMentions(
   text: string,
   members: Member[],
 ): ChatTextPart[] {
-  const names = [...new Set(members.map((member) => member.name.trim()).filter(Boolean))]
+  if (typeof text !== "string") return [{ text: "", memberIds: [] }];
+  const safeMembers = Array.isArray(members)
+    ? members.filter((member) => typeof member?.name === "string")
+    : [];
+  const names = [...new Set(safeMembers.map((member) => member.name.trim()).filter(Boolean))]
     .sort((a, b) => b.length - a.length);
   if (names.length === 0) return [{ text, memberIds: [] }];
 
@@ -68,7 +72,7 @@ export function parseChatMentions(
     const mentionedName = token.slice(1).toLocaleLowerCase();
     parts.push({
       text: token,
-      memberIds: members
+      memberIds: safeMembers
         .filter(
           (member) => member.name.trim().toLocaleLowerCase() === mentionedName,
         )

@@ -171,6 +171,24 @@ describe("group merge business logic", () => {
     expect(merged.balanceOffsets).toEqual([confirmed, concurrent]);
   });
 
+  it("persists rewritten chat member references during a member merge", () => {
+    const original = message("message-1", 1);
+    const reassigned = {
+      ...original,
+      memberId: "bob",
+      mentionedMemberIds: ["bob"],
+    };
+    const concurrent = message("message-2", 2);
+
+    const merged = mergeGroupChanges(
+      group({ messages: [original] }),
+      group({ messages: [reassigned] }),
+      group({ messages: [original, concurrent] }),
+    );
+
+    expect(merged.messages).toEqual([reassigned, concurrent]);
+  });
+
   it("caps chat and deleted expense history to the latest records", () => {
     const compacted = compactGroupHistory(
       group({

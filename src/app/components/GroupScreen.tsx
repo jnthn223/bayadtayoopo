@@ -84,9 +84,16 @@ export function GroupScreen({
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const chatReadKey = `bayadtayoopo:chat-read:${currentUser.id}:${group.id}`;
   const groupTourKey = `bayadtayoopo:group-tour:${currentUser.id}:${group.id}`;
-  const messages = [...(group.messages ?? [])].sort((a, b) =>
-    a.createdAt.localeCompare(b.createdAt),
-  );
+  const messages = (Array.isArray(group.messages) ? group.messages : [])
+    .filter(
+      (message) =>
+        !!message &&
+        typeof message.id === "string" &&
+        typeof message.memberId === "string" &&
+        typeof message.text === "string" &&
+        typeof message.createdAt === "string",
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const currentMember = group.members.find(
     (member) => member.id === currentUser.id || member.uid === currentUser.id,
   );

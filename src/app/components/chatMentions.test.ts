@@ -35,4 +35,10 @@ describe("chat mentions", () => {
   it("does not treat an email address as a mention", () => {
     expect(getMentionedMemberIds("Email me@Andria.com", members)).toEqual([]);
   });
+
+  it("does not crash on malformed legacy message text", () => {
+    expect(parseChatMentions(undefined as unknown as string, members)).toEqual([
+      { text: "", memberIds: [] },
+    ]);
+  });
 });

@@ -140,11 +140,12 @@ export function mergeGroupChanges(
       latest.deletedExpenses,
       (item) => `${item.expenseId}:${item.deletedAt}`,
     ),
-    messages: mergeAppendOnly(
+    // Member merges rewrite sender and mention references on existing messages,
+    // so chat history cannot be treated as append-only here.
+    messages: mergeById(
       base.messages,
       changed.messages,
       latest.messages,
-      (item) => item.id,
     ),
   });
 }

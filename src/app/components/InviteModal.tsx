@@ -412,22 +412,9 @@ export function InviteModal({
                     <div className="rounded-xl border border-border bg-card p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-sm font-semibold text-foreground">
-                              Trust member self-claims
-                            </p>
-                            <details className="relative">
-                              <summary
-                                className="cursor-pointer list-none rounded-full text-muted-foreground hover:text-primary"
-                                aria-label="What does trust member self-claims mean?"
-                              >
-                                <HelpCircle size={15} />
-                              </summary>
-                              <div className="absolute right-0 top-6 z-20 w-64 rounded-xl border border-border bg-card p-3 text-[11px] font-normal leading-relaxed text-muted-foreground shadow-xl">
-                                When a general-link visitor has a similar name, the app suggests a pending profile. Nothing happens automatically. If enabled, the visitor may explicitly claim it without separate admin review. Their login is attached to that pending member; the app does not create two members and merge them.
-                              </div>
-                            </details>
-                          </div>
+                          <p className="text-sm font-semibold text-foreground">
+                            Trust member self-claims
+                          </p>
                           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                             {group.autoApproveSimilarNameClaims
                               ? "A member’s explicit “This is me” claim is trusted."
@@ -444,6 +431,15 @@ export function InviteModal({
                           aria-label="Trust member self-claims"
                         />
                       </div>
+                      <details className="mt-3 rounded-lg bg-muted/50 px-3 py-2.5">
+                        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-primary">
+                          <HelpCircle size={15} />
+                          What does this mean?
+                        </summary>
+                        <p className="mt-2 text-xs font-normal leading-relaxed text-muted-foreground">
+                          When a general-link visitor has a similar name, the app suggests a pending profile. Nothing happens automatically. If enabled, the visitor may explicitly claim it without separate admin review. Their login is attached directly to that pending member; the app does not create two members and merge them.
+                        </p>
+                      </details>
                     </div>
 
                     {pendingClaimRequests.length > 0 && (
