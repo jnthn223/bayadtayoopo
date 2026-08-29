@@ -11,6 +11,7 @@ import {
   MessageCircle,
   QrCode,
   Receipt,
+  Share2,
   Trash2,
   X,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import type { GroupTab } from "./GroupHeader";
 import { UserAvatar } from "./UserAvatar";
 import { GroupPayments } from "./GroupPayments";
 import { parseChatMentions } from "./chatMentions";
+import { buildBalanceShareMessage } from "./balanceShareMessage";
 import {
   canDirectlyConfirmSplit,
   CATEGORY_ICONS,
@@ -111,6 +113,51 @@ export function GroupContent({
   const [settlementFilter, setSettlementFilter] =
     useState<SettlementFilter>("all");
   const [expenseSort, setExpenseSort] = useState<ExpenseSort>("newest");
+  const [balanceShareStatus, setBalanceShareStatus] = useState<{
+    memberId: string;
+    message: string;
+  } | null>(null);
+
+  async function shareMemberBalance(balance: Balance) {
+    const member = getMemberById(group, balance.memberId);
+    if (!member) return;
+
+    const params = new URLSearchParams({ openGroup: group.id });
+    const groupUrl = `${window.location.origin}${window.location.pathname}?${params}`;
+    const message = buildBalanceShareMessage({
+      group,
+      member,
+      balance: balance.net,
+      senderName: currentMember?.name,
+      groupUrl,
+    });
+
+    setBalanceShareStatus(null);
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${group.name} balance update`,
+          text: message,
+        });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(message);
+      setBalanceShareStatus({
+        memberId: balance.memberId,
+        message: "Balance message copied",
+      });
+    } catch {
+      setBalanceShareStatus({
+        memberId: balance.memberId,
+        message: "Unable to share or copy the message",
+      });
+    }
+  }
   const hasRelevantGroupPayments = (group.payments ?? []).some(
     (payment) =>
       payment.fromMemberId === currentMember?.id ||
@@ -529,18 +576,43 @@ export function GroupContent({
                             : "unpaid share"}
                       </p>
                     </div>
-                    <div
-                      className={`text-sm font-semibold ${
-                        Math.abs(b.net) < 0.01
-                          ? "text-muted-foreground"
-                          : b.net > 0
-                            ? "text-green-600"
-                            : "text-destructive"
-                      }`}
-                    >
-                      {Math.abs(b.net) < 0.01
-                        ? "Settled"
-                        : formatCurrency(Math.abs(b.net), group.currency)}
+                    <div className="flex flex-col items-end gap-2">
+                      <div
+                        className={`text-sm font-semibold ${
+                          Math.abs(b.net) < 0.01
+                            ? "text-muted-foreground"
+                            : b.net > 0
+                              ? "text-green-600"
+                              : "text-destructive"
+                        }`}
+                      >
+                        {Math.abs(b.net) < 0.01
+                          ? "Settled"
+                          : formatCurrency(Math.abs(b.net), group.currency)}
+                      </div>
+                      {b.memberId !== currentMember?.id && Math.abs(b.net) >= 0.01 && (
+                        <button
+                          type="button"
+                          onClick={() => void shareMemberBalance(b)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/15 active:scale-[0.98]"
+                          aria-label={`Share ${b.memberName}'s balance update`}
+                        >
+                          <Share2 size={12} aria-hidden="true" />
+                          {b.net < 0 ? "Send reminder" : "Share update"}
+                        </button>
+                      )}
+                      {balanceShareStatus?.memberId === b.memberId && (
+                        <p
+                          className={`max-w-32 text-right text-[10px] ${
+                            balanceShareStatus.message.startsWith("Unable")
+                              ? "text-destructive"
+                              : "text-muted-foreground"
+                          }`}
+                          role="status"
+                        >
+                          {balanceShareStatus.message}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}
