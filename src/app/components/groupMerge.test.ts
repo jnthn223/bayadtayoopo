@@ -177,6 +177,7 @@ describe("group merge business logic", () => {
       ...original,
       memberId: "bob",
       mentionedMemberIds: ["bob"],
+      replyToMessageId: "message-earlier",
     };
     const concurrent = message("message-2", 2);
 
@@ -187,6 +188,7 @@ describe("group merge business logic", () => {
     );
 
     expect(merged.messages).toEqual([reassigned, concurrent]);
+    expect(merged.messages?.[0].replyToMessageId).toBe("message-earlier");
   });
 
   it("caps chat and deleted expense history to the latest records", () => {

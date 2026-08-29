@@ -248,6 +248,7 @@ export interface ChatMessage {
   id: string;
   memberId: string;
   text: string;
+  replyToMessageId?: string;
   mentionedMemberIds?: string[];
   createdAt: string;
 }

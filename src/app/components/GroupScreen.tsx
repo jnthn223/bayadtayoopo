@@ -84,7 +84,7 @@ export function GroupScreen({
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const chatReadKey = `bayadtayoopo:chat-read:${currentUser.id}:${group.id}`;
   const groupTourKey = `bayadtayoopo:group-tour:${currentUser.id}:${group.id}`;
-  const messages = (Array.isArray(group.messages) ? group.messages : [])
+  const messages = [...(Array.isArray(group.messages) ? group.messages : [])]
     .filter(
       (message) =>
         !!message &&
@@ -136,6 +136,9 @@ export function GroupScreen({
   const [deleteReasonError, setDeleteReasonError] = useState("");
   const [messageText, setMessageText] = useState("");
   const [messageCursor, setMessageCursor] = useState(0);
+  const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(
+    null,
+  );
   const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
@@ -306,6 +309,7 @@ export function GroupScreen({
 
   useEffect(() => {
     setLastChatReadAt(localStorage.getItem(chatReadKey) ?? "");
+    setReplyingToMessageId(null);
   }, [chatReadKey]);
 
   useEffect(() => {
@@ -689,6 +693,7 @@ export function GroupScreen({
           id: generateId(),
           memberId: currentMember.id,
           text,
+          replyToMessageId: replyingToMessageId ?? undefined,
           mentionedMemberIds: getMentionedMemberIds(text, group.members),
           createdAt: new Date().toISOString(),
         },
@@ -696,6 +701,12 @@ export function GroupScreen({
     });
     setMessageText("");
     setMessageCursor(0);
+    setReplyingToMessageId(null);
+  }
+
+  function replyToMessage(messageId: string) {
+    setReplyingToMessageId(messageId);
+    window.requestAnimationFrame(() => messageTextareaRef.current?.focus());
   }
 
   function selectChatMention(member: (typeof group.members)[number]) {
@@ -1073,6 +1084,7 @@ export function GroupScreen({
         openPaymentSubmission={openPaymentSubmission}
         reviewPayment={reviewPayment}
         setCreatorPaidConfirmation={setCreatorPaidConfirmation}
+        onReplyToMessage={replyToMessage}
       />
       {/* FAB */}
       {tab === "chat" ? (
@@ -1105,6 +1117,34 @@ export function GroupScreen({
               ))}
             </div>
           )}
+          {replyingToMessageId && (() => {
+            const original = messages.find(
+              (message) => message.id === replyingToMessageId,
+            );
+            const originalSender = original
+              ? getMemberById(group, original.memberId)
+              : undefined;
+            return (
+              <div className="mb-3 flex items-start gap-3 rounded-xl border-l-4 border-primary bg-muted/50 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-primary">
+                    Replying to {originalSender?.name ?? "a message"}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {original?.text ?? "Original message unavailable"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplyingToMessageId(null)}
+                  className="rounded-full p-1 text-muted-foreground hover:bg-muted"
+                  aria-label="Cancel reply"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            );
+          })()}
           <div className="flex items-end gap-2">
             <textarea
               ref={messageTextareaRef}

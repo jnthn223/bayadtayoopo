@@ -12,6 +12,7 @@ import {
   MessageCircle,
   QrCode,
   Receipt,
+  Reply,
   Share2,
   Trash2,
   X,
@@ -79,6 +80,7 @@ interface Props {
   setCreatorPaidConfirmation: Dispatch<
     SetStateAction<{ expense: Expense; split: Split } | null>
   >;
+  onReplyToMessage: (messageId: string) => void;
 }
 
 export function GroupContent({
@@ -108,6 +110,7 @@ export function GroupContent({
   openPaymentSubmission,
   reviewPayment,
   setCreatorPaidConfirmation,
+  onReplyToMessage,
 }: Props) {
   const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<Category | "all">("all");
@@ -954,6 +957,14 @@ export function GroupContent({
               <>
                 {messages.map((message) => {
                   const sender = getMemberById(group, message.memberId);
+                  const repliedMessage = message.replyToMessageId
+                    ? messages.find(
+                      (candidate) => candidate.id === message.replyToMessageId,
+                    )
+                    : undefined;
+                  const repliedSender = repliedMessage
+                    ? getMemberById(group, repliedMessage.memberId)
+                    : undefined;
                   const isMine = currentMember?.id === message.memberId;
                   const isFirstUnread = message.id === chatRevealMessageId;
                   const mentionsCurrentUser = !!currentMember &&
@@ -1019,11 +1030,56 @@ export function GroupContent({
                             },
                           )}
                         </p>
+                        <button
+                          type="button"
+                          onClick={() => onReplyToMessage(message.id)}
+                          className={`ml-auto rounded-full p-1 transition-colors ${
+                            isMine
+                              ? "text-primary-foreground/70 hover:bg-white/15"
+                              : "text-muted-foreground hover:bg-muted"
+                          }`}
+                          title="Reply"
+                          aria-label={`Reply to ${sender?.name ?? "message"}`}
+                        >
+                          <Reply size={13} />
+                        </button>
                       </div>
                       {mentionsCurrentUser && !isMine && (
                         <span className="mb-2 inline-flex rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-primary">
                           Mentioned you
                         </span>
+                      )}
+                      {message.replyToMessageId && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            document
+                              .getElementById(`message-${message.replyToMessageId}`)
+                              ?.scrollIntoView({ behavior: "smooth", block: "center" })
+                          }
+                          className={`mb-2 block w-full rounded-lg border-l-2 px-2.5 py-2 text-left ${
+                            isMine
+                              ? "border-white/70 bg-white/10"
+                              : "border-primary bg-muted/60"
+                          }`}
+                        >
+                          <span
+                            className={`block text-[10px] font-semibold ${
+                              isMine ? "text-primary-foreground/90" : "text-primary"
+                            }`}
+                          >
+                            {repliedSender?.name ?? "Original message"}
+                          </span>
+                          <span
+                            className={`mt-0.5 block truncate text-xs ${
+                              isMine
+                                ? "text-primary-foreground/75"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            {repliedMessage?.text ?? "Message no longer available"}
+                          </span>
+                        </button>
                       )}
                       <p className="whitespace-pre-wrap break-words text-sm">
                         {parseChatMentions(message.text, group.members).map(
