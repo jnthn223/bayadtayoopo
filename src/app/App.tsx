@@ -198,19 +198,11 @@ export default function App() {
           const newSession = saveSession(user);
           setSession(newSession);
 
-          // Check for pending group join encoded in continueUrl
-          const joinId = localStorage.getItem("pendingJoinGroupId");
-
           if (!user.displayName) {
             setAuthState("needs_profile");
           } else {
             setCurrentUser(sessionToCurrentUser(newSession));
             setAuthState("authenticated");
-
-            if (joinId) {
-              await handleJoinGroup(joinId, user);
-              clearPendingJoin();
-            }
           }
 
           // Clean magic-link params from URL
@@ -257,10 +249,11 @@ export default function App() {
     const joinId =
       params.get("joinGroupId") ?? localStorage.getItem("pendingJoinGroupId");
     if (joinId) {
-      handleJoinGroup(joinId, session).finally(() => {
+      void handleJoinGroup(joinId, session).then((joined) => {
+        if (!joined) return;
         clearPendingJoin();
+        window.history.replaceState({}, "", window.location.pathname);
       });
-      window.history.replaceState({}, "", window.location.pathname);
     }
 
     fetchGroups(session.uid);
@@ -404,13 +397,12 @@ export default function App() {
   async function handleJoinGroup(
     groupId: string,
     user: AuthUser,
-  ) {
-    const newSession = saveSession(user);
-    const cu = sessionToCurrentUser(newSession);
-    const savedProfile = await loadOrCreateUserProfile(user.uid).catch(() => ({}));
-    const colorIndex = user.uid.charCodeAt(0) % MEMBER_COLORS.length;
-
+  ): Promise<boolean> {
     try {
+      const newSession = saveSession(user);
+      const cu = sessionToCurrentUser(newSession);
+      const savedProfile = await loadOrCreateUserProfile(user.uid);
+      const colorIndex = user.uid.charCodeAt(0) % MEMBER_COLORS.length;
       const joined = await joinGroup(
         groupId,
         user.uid,
@@ -445,14 +437,17 @@ export default function App() {
         setSelectedGroup(joined);
         setScreen("group");
         showBanner(`Joined "${joined.name}"!`);
+        return true;
       } else {
         showBanner("Unable to find that group invite", "error");
+        return false;
       }
     } catch (err) {
       showBanner(
         err instanceof Error ? err.message : "Unable to join group",
         "error",
       );
+      return false;
     }
   }
 
@@ -461,7 +456,6 @@ export default function App() {
     const newSession = saveSession(user);
     setSession(newSession);
 
-    const joinId = localStorage.getItem("pendingJoinGroupId");
     if (!user.displayName) {
       setAuthState("needs_profile");
       return;
@@ -469,11 +463,6 @@ export default function App() {
 
     setCurrentUser(sessionToCurrentUser(newSession));
     setAuthState("authenticated");
-
-    if (joinId) {
-      await handleJoinGroup(joinId, user);
-      clearPendingJoin();
-    }
   }
 
   async function handleGoogleSignIn(): Promise<AuthUser> {
@@ -489,12 +478,6 @@ export default function App() {
     setSession(updatedSession);
     setCurrentUser(sessionToCurrentUser(updatedSession));
     setAuthState("authenticated");
-
-    const joinId = localStorage.getItem("pendingJoinGroupId");
-    if (joinId) {
-      await handleJoinGroup(joinId, updatedSession);
-      clearPendingJoin();
-    }
   }
 
   async function handleLogout() {
