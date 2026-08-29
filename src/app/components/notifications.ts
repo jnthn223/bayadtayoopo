@@ -338,10 +338,15 @@ export function deriveNotifications(
       for (const message of group.messages ?? []) {
         if (message.memberId === currentMemberId) continue;
         const sender = getMemberById(group, message.memberId);
+        const mentionedYou = (message.mentionedMemberIds ?? []).some(
+          (id) => id === currentMember.id || id === currentMember.uid,
+        );
         add({
           id: `${group.id}:message:${message.id}`,
           type: "chat_message",
-          title: `${sender?.name ?? "Someone"} in ${group.name}`,
+          title: mentionedYou
+            ? `${sender?.name ?? "Someone"} mentioned you`
+            : `${sender?.name ?? "Someone"} in ${group.name}`,
           body: message.text,
           at: message.createdAt,
           actorId: message.memberId,

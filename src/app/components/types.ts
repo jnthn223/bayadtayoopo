@@ -233,6 +233,7 @@ export interface ChatMessage {
   id: string;
   memberId: string;
   text: string;
+  mentionedMemberIds?: string[];
   createdAt: string;
 }
 

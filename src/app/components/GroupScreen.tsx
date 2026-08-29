@@ -50,6 +50,12 @@ import { getGroupTourTarget, GroupTour } from "./GroupTour";
 import { GroupHeader } from "./GroupHeader";
 import type { GroupTab } from "./GroupHeader";
 import { GroupContent } from "./GroupContent";
+import { UserAvatar } from "./UserAvatar";
+import {
+  findMentionRange,
+  getMentionedMemberIds,
+  insertMention,
+} from "./chatMentions";
 import {
   exportExpensesCsv,
   exportExpensesTemplateCsv,
@@ -122,6 +128,8 @@ export function GroupScreen({
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteReasonError, setDeleteReasonError] = useState("");
   const [messageText, setMessageText] = useState("");
+  const [messageCursor, setMessageCursor] = useState(0);
+  const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [csvImportCount, setCsvImportCount] = useState<number | null>(null);
@@ -239,6 +247,29 @@ export function GroupScreen({
       message.memberId !== currentMember?.id &&
       (!lastChatReadAt || message.createdAt > lastChatReadAt),
   ).length;
+  const detectedMentionRange = findMentionRange(messageText, messageCursor);
+  const activeMentionRange =
+    detectedMentionRange?.query.endsWith(" ") &&
+    group.members.some(
+      (member) =>
+        member.name.toLocaleLowerCase() ===
+        detectedMentionRange.query.trim().toLocaleLowerCase(),
+    )
+      ? null
+      : detectedMentionRange;
+  const mentionSuggestions = activeMentionRange
+    ? group.members
+        .filter(
+          (member) =>
+            !!member.uid &&
+            member.id !== currentMember?.id &&
+            member.uid !== currentMember?.uid &&
+            member.name
+              .toLocaleLowerCase()
+              .includes(activeMentionRange.query.trim().toLocaleLowerCase()),
+        )
+        .slice(0, 5)
+    : [];
 
   function markChatRead() {
     const latestMessageAt = messages.at(-1)?.createdAt ?? "";
@@ -648,11 +679,25 @@ export function GroupScreen({
           id: generateId(),
           memberId: currentMember.id,
           text,
+          mentionedMemberIds: getMentionedMemberIds(text, group.members),
           createdAt: new Date().toISOString(),
         },
       ],
     });
     setMessageText("");
+    setMessageCursor(0);
+  }
+
+  function selectChatMention(member: (typeof group.members)[number]) {
+    if (!activeMentionRange) return;
+    const inserted = insertMention(messageText, activeMentionRange, member.name);
+    setMessageText(inserted.text);
+    setMessageCursor(inserted.cursor);
+    window.requestAnimationFrame(() => {
+      const textarea = messageTextareaRef.current;
+      textarea?.focus();
+      textarea?.setSelectionRange(inserted.cursor, inserted.cursor);
+    });
   }
 
   function handleAddPendingMember(name: string): string | undefined {
@@ -951,18 +996,60 @@ export function GroupScreen({
       />
       {/* FAB */}
       {tab === "chat" ? (
-        <div className="p-4 border-t border-border bg-card">
+        <div className="relative border-t border-border bg-card p-4">
+          {mentionSuggestions.length > 0 && (
+            <div className="absolute inset-x-4 bottom-full z-20 mb-2 overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+              <p className="border-b border-border px-3 py-2 text-[11px] font-medium text-muted-foreground">
+                Mention a member
+              </p>
+              {mentionSuggestions.map((member) => (
+                <button
+                  key={member.id}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectChatMention(member)}
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-muted"
+                >
+                  <UserAvatar
+                    name={member.name}
+                    color={member.color}
+                    seed={member.avatarSeed}
+                    uid={member.uid}
+                    photoVersion={member.profileImageVersion}
+                    className="h-8 w-8 shrink-0 rounded-full text-xs"
+                  />
+                  <span className="truncate text-sm font-medium text-foreground">
+                    {member.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <textarea
+              ref={messageTextareaRef}
               value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
+              onChange={(event) => {
+                setMessageText(event.target.value);
+                setMessageCursor(event.target.selectionStart);
+              }}
+              onClick={(event) =>
+                setMessageCursor(event.currentTarget.selectionStart)
+              }
+              onKeyUp={(event) =>
+                setMessageCursor(event.currentTarget.selectionStart)
+              }
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  handleSendMessage();
+                  if (mentionSuggestions[0]) {
+                    selectChatMention(mentionSuggestions[0]);
+                  } else {
+                    handleSendMessage();
+                  }
                 }
               }}
-              placeholder="Message the group"
+              placeholder="Message the group · @ to mention"
               rows={1}
               className="flex-1 max-h-28 min-h-12 px-4 py-3 rounded-2xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all resize-none text-sm"
             />

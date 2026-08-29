@@ -55,7 +55,8 @@ const group: Group = {
     {
       id: "message-1",
       memberId: "alice",
-      text: "Please check the receipt",
+      text: "@Bob please check the receipt",
+      mentionedMemberIds: ["bob"],
       createdAt: "2026-07-03T10:00:00.000Z",
     },
   ],
@@ -73,6 +74,7 @@ describe("Spark notification derivation", () => {
       "chat_message",
       "expense_created",
     ]);
+    expect(forBob[0].title).toBe("Alice mentioned you");
   });
 
   it("respects category and per-group chat preferences", () => {

@@ -28,6 +28,7 @@ import { EXPENSE_CATEGORIES } from "./types";
 import type { GroupTab } from "./GroupHeader";
 import { UserAvatar } from "./UserAvatar";
 import { GroupPayments } from "./GroupPayments";
+import { parseChatMentions } from "./chatMentions";
 import {
   canDirectlyConfirmSplit,
   CATEGORY_ICONS,
@@ -858,6 +859,10 @@ export function GroupContent({
                   const sender = getMemberById(group, message.memberId);
                   const isMine = currentMember?.id === message.memberId;
                   const isFirstUnread = message.id === chatRevealMessageId;
+                  const mentionsCurrentUser = !!currentMember &&
+                    (message.mentionedMemberIds ?? []).some(
+                      (id) => id === currentMember.id || id === currentMember.uid,
+                    );
                   return (
                   <div
                     key={message.id}
@@ -918,8 +923,29 @@ export function GroupContent({
                           )}
                         </p>
                       </div>
-                      <p className="text-sm whitespace-pre-wrap break-words">
-                        {message.text}
+                      {mentionsCurrentUser && !isMine && (
+                        <span className="mb-2 inline-flex rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-primary">
+                          Mentioned you
+                        </span>
+                      )}
+                      <p className="whitespace-pre-wrap break-words text-sm">
+                        {parseChatMentions(message.text, group.members).map(
+                          (part, index) =>
+                            part.memberIds.length > 0 ? (
+                              <span
+                                key={`${part.text}-${index}`}
+                                className={`rounded px-1 py-0.5 font-semibold ${
+                                  isMine
+                                    ? "bg-white/20 text-white"
+                                    : "bg-accent text-primary"
+                                }`}
+                              >
+                                {part.text}
+                              </span>
+                            ) : (
+                              <span key={`${part.text}-${index}`}>{part.text}</span>
+                            ),
+                        )}
                       </p>
                     </div>
                     </div>

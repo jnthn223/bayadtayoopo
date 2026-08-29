@@ -55,6 +55,30 @@ describe("push worker event authorization", () => {
     ).toThrow("does not match");
   });
 
+  it("targets only mentioned members for a mentioned chat message", () => {
+    const mentionedGroup = {
+      ...group,
+      messages: [
+        {
+          ...group.messages[0],
+          text: "@Bob please check this",
+          mentionedMemberIds: ["bob-member"],
+        },
+      ],
+    };
+    const notification = validateAndBuild(
+      mentionedGroup,
+      {
+        type: "chat_message",
+        entityId: "message",
+        occurredAt: "2026-07-28T01:00:00.000Z",
+      },
+      "alice",
+    );
+    expect(notification.recipients.map((member) => member.uid)).toEqual(["bob"]);
+    expect(notification.title).toContain("mentioned you");
+  });
+
   it("sends a balance offset request only to its counterparty", () => {
     const withOffset = {
       ...group,

@@ -235,10 +235,20 @@ export function validateAndBuild(group, event, actorUid) {
     ) {
       throw new Error("Chat event does not match the saved group");
     }
+    const mentionedMemberIds = new Set(message.mentionedMemberIds ?? []);
+    const recipients = mentionedMemberIds.size > 0
+      ? allOthers.filter(
+          (member) =>
+            mentionedMemberIds.has(member.id) ||
+            mentionedMemberIds.has(member.uid),
+        )
+      : allOthers;
     return {
-      recipients: allOthers,
+      recipients,
       preference: "chat",
-      title: `${actor.name} in ${group.name}`,
+      title: mentionedMemberIds.size > 0
+        ? `${actor.name} mentioned you in ${group.name}`
+        : `${actor.name} in ${group.name}`,
       body: message.text,
       url: notificationUrl(group.id, "chat", { message: message.id }),
     };
