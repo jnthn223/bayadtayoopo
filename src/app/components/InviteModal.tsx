@@ -12,6 +12,7 @@ import {
 import type { Group } from "./types";
 import { UserAvatar } from "./UserAvatar";
 import { buildInviteMessage } from "./inviteMessage";
+import { ensureRequiredShareLinks } from "./requiredShareLinks";
 
 interface Props {
   group: Group;
@@ -134,17 +135,32 @@ export function InviteModal({
   }
 
   async function sharePendingInvites() {
+    const requiredLinks = pendingMembers
+      .filter((member) => member.claimCode)
+      .map((member) => ({
+        label: `${member.name}'s personal invite`,
+        url: personalJoinUrl(member.id, member.claimCode!),
+      }));
+    const finalizedMessage = ensureRequiredShareLinks(
+      shareMessage,
+      requiredLinks,
+    );
+    setShareMessage(finalizedMessage);
+
     if (!navigator.share) {
-      setShareError(
-        "Native sharing is not available in this browser. Open BayadTayoOpo on a supported mobile browser to share this message.",
-      );
+      try {
+        await navigator.clipboard.writeText(finalizedMessage);
+        setShareError("Native sharing is unavailable, so the message was copied instead.");
+      } catch {
+        setShareError("Native sharing is unavailable. Select and copy the message above.");
+      }
       return;
     }
 
     try {
       await navigator.share({
         title: `Join ${group.name} on BayadTayoOpo`,
-        text: shareMessage,
+        text: finalizedMessage,
       });
       setShareError("");
     } catch (error) {
@@ -493,20 +509,23 @@ export function InviteModal({
                                 Message preview
                               </p>
                               <p className="text-xs text-muted-foreground mt-1">
-                                This exact message will be sent to the app you
-                                choose.
+                                Customize the wording before choosing an app.
+                                Each personal invite link remains protected.
                               </p>
                             </div>
                             <textarea
                               value={shareMessage}
-                              readOnly
+                              onChange={(event) => setShareMessage(event.target.value)}
                               rows={Math.min(
                                 Math.max(pendingMembers.length * 2, 4),
                                 10,
                               )}
-                              className="w-full resize-none rounded-xl border border-border bg-input-background p-3 text-xs leading-relaxed text-foreground outline-none"
+                              className="w-full resize-y rounded-xl border border-border bg-input-background p-3 text-xs leading-relaxed text-foreground outline-none focus:border-primary"
                               aria-label="Pending member invite message preview"
                             />
+                            <p className="rounded-lg bg-primary/5 px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+                              Required: {pendingMembers.filter((member) => member.claimCode).length} personal invite link(s) will always be included when shared.
+                            </p>
                             {shareError && (
                               <p
                                 className="text-xs text-destructive"

@@ -63,6 +63,18 @@ describe("invite messages", () => {
     expect(message).not.toContain("please don’t forward");
   });
 
+  it("optionally includes every active member balance in a general invite", () => {
+    const message = buildInviteMessage({
+      group,
+      joinUrl: "https://example.com/general",
+      includeAllBalances: true,
+    });
+
+    expect(message).toContain("Current member balances:");
+    expect(message).toContain("• Alice: ₱500.00 to receive");
+    expect(message).toContain("• Bob: ₱500.00 to settle");
+  });
+
   it("can omit the balance from a personal invite", () => {
     const message = buildInviteMessage({
       group,

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowUpDown,
   Check,
@@ -31,6 +32,7 @@ import { UserAvatar } from "./UserAvatar";
 import { GroupPayments } from "./GroupPayments";
 import { parseChatMentions } from "./chatMentions";
 import { buildBalanceShareMessage } from "./balanceShareMessage";
+import { ensureRequiredShareLinks } from "./requiredShareLinks";
 import {
   canDirectlyConfirmSplit,
   CATEGORY_ICONS,
@@ -117,20 +119,40 @@ export function GroupContent({
     memberId: string;
     message: string;
   } | null>(null);
+  const [balanceShareDraft, setBalanceShareDraft] = useState<{
+    balance: Balance;
+    message: string;
+    groupUrl: string;
+  } | null>(null);
 
-  async function shareMemberBalance(balance: Balance) {
+  function prepareMemberBalanceShare(balance: Balance) {
     const member = getMemberById(group, balance.memberId);
     if (!member) return;
-
     const params = new URLSearchParams({ openGroup: group.id });
     const groupUrl = `${window.location.origin}${window.location.pathname}?${params}`;
-    const message = buildBalanceShareMessage({
-      group,
-      member,
-      balance: balance.net,
-      senderName: currentMember?.name,
+    setBalanceShareDraft({
+      balance,
       groupUrl,
+      message: buildBalanceShareMessage({
+        group,
+        member,
+        balance: balance.net,
+        senderName: currentMember?.name,
+        groupUrl,
+      }),
     });
+    setBalanceShareStatus(null);
+  }
+
+  async function shareMemberBalance() {
+    if (!balanceShareDraft) return;
+    const { balance, groupUrl } = balanceShareDraft;
+    const member = getMemberById(group, balance.memberId);
+    if (!member) return;
+    const message = ensureRequiredShareLinks(balanceShareDraft.message, [
+      { label: "Open the group", url: groupUrl },
+    ]);
+    setBalanceShareDraft((current) => current ? { ...current, message } : current);
 
     setBalanceShareStatus(null);
     if (navigator.share) {
@@ -139,6 +161,7 @@ export function GroupContent({
           title: `${group.name} balance update`,
           text: message,
         });
+        setBalanceShareDraft(null);
         return;
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -151,6 +174,7 @@ export function GroupContent({
         memberId: balance.memberId,
         message: "Balance message copied",
       });
+      setBalanceShareDraft(null);
     } catch {
       setBalanceShareStatus({
         memberId: balance.memberId,
@@ -248,6 +272,7 @@ export function GroupContent({
   }
 
   return (
+    <>
       <div className="flex-1 overflow-y-auto">
         {tab === "expenses" && (
           <div className="p-4 space-y-6">
@@ -593,7 +618,7 @@ export function GroupContent({
                       {b.memberId !== currentMember?.id && Math.abs(b.net) >= 0.01 && (
                         <button
                           type="button"
-                          onClick={() => void shareMemberBalance(b)}
+                          onClick={() => prepareMemberBalanceShare(b)}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/15 active:scale-[0.98]"
                           aria-label={`Share ${b.memberName}'s balance update`}
                         >
@@ -1030,6 +1055,62 @@ export function GroupContent({
           </div>
         )}
       </div>
+
+      <Dialog.Root
+        open={!!balanceShareDraft}
+        onOpenChange={(open) => !open && setBalanceShareDraft(null)}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[90vh] overflow-y-auto rounded-t-3xl bg-card p-6 pb-10 shadow-2xl">
+            <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-border" />
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">
+                  Customize balance message
+                </Dialog.Title>
+                <Dialog.Description className="mt-1 text-xs text-muted-foreground">
+                  Add your own note before sharing it through another app.
+                </Dialog.Description>
+              </div>
+              <Dialog.Close className="rounded-full p-2 hover:bg-muted">
+                <X size={18} className="text-muted-foreground" />
+              </Dialog.Close>
+            </div>
+            <textarea
+              value={balanceShareDraft?.message ?? ""}
+              onChange={(event) =>
+                setBalanceShareDraft((current) =>
+                  current ? { ...current, message: event.target.value } : current,
+                )
+              }
+              rows={10}
+              className="w-full resize-y rounded-2xl border border-border bg-input-background p-4 text-xs leading-relaxed text-foreground outline-none focus:border-primary"
+              aria-label="Customize balance reminder"
+            />
+            <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+              <p className="text-[11px] font-semibold text-primary">
+                Required group link
+              </p>
+              <p className="mt-1 break-all text-[10px] text-muted-foreground">
+                {balanceShareDraft?.groupUrl}
+              </p>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                This link is always included, even if it is removed above.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void shareMemberBalance()}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground active:scale-[0.98]"
+            >
+              <Share2 size={16} />
+              Share message
+            </button>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </>
 
   );
 }

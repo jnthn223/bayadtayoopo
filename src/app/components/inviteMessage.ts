@@ -30,12 +30,14 @@ export function buildInviteMessage({
   joinUrl,
   member,
   includeBalance = true,
+  includeAllBalances = false,
   includeQrNote = false,
 }: {
   group: Group;
   joinUrl: string;
   member?: Member;
   includeBalance?: boolean;
+  includeAllBalances?: boolean;
   includeQrNote?: boolean;
 }): string {
   const lines = [
@@ -76,6 +78,27 @@ export function buildInviteMessage({
       lines.push(
         `${linkedExpenseCount} expense${linkedExpenseCount === 1 ? " is" : "s are"} already linked to your name.`,
       );
+    }
+  }
+
+  if (!member && includeAllBalances) {
+    const activeMemberIds = new Set(group.members.map((item) => item.id));
+    const balances = computeProjectedBalances(group).filter((balance) =>
+      activeMemberIds.has(balance.memberId),
+    );
+    lines.push("", "Current member balances:");
+    for (const balance of balances) {
+      if (balance.net < -0.005) {
+        lines.push(
+          `• ${balance.memberName}: ${formatCurrency(Math.abs(balance.net), group.currency)} to settle`,
+        );
+      } else if (balance.net > 0.005) {
+        lines.push(
+          `• ${balance.memberName}: ${formatCurrency(balance.net, group.currency)} to receive`,
+        );
+      } else {
+        lines.push(`• ${balance.memberName}: Settled`);
+      }
     }
   }
 

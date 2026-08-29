@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { QRCodeSVG } from "qrcode.react";
 import { X, Copy, Check, Share2 } from "lucide-react";
 import type { Group } from "./types";
 import { buildInviteMessage } from "./inviteMessage";
+import { ensureRequiredShareLinks } from "./requiredShareLinks";
 
 interface Props {
   group: Group;
@@ -17,7 +18,9 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
   const [copyStatus, setCopyStatus] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [includeBalance, setIncludeBalance] = useState(true);
+  const [includeAllBalances, setIncludeAllBalances] = useState(false);
   const [shareError, setShareError] = useState("");
+  const [customMessage, setCustomMessage] = useState("");
   const pendingMembers = group.members.filter(
     (member) => !member.uid && member.claimCode,
   );
@@ -36,13 +39,29 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
     joinUrl,
     member: selectedMember,
     includeBalance,
+    includeAllBalances: !selectedMember && includeAllBalances,
   });
+  const requiredInviteLink = {
+    label: selectedMember ? "Claim your personal invite" : "Join the group",
+    url: joinUrl,
+  };
+  const finalizedInviteMessage = (includeQrNote = false) =>
+    ensureRequiredShareLinks(
+      `${customMessage.trim()}${includeQrNote ? "\n\nOr scan the attached QR code." : ""}`,
+      [requiredInviteLink],
+    );
+
+  useEffect(() => {
+    if (open) setCustomMessage(inviteMessage);
+  }, [includeAllBalances, includeBalance, inviteMessage, open, selectedMemberId]);
 
   function handleClose() {
     setCopyStatus("");
     setSelectedMemberId("");
     setIncludeBalance(true);
+    setIncludeAllBalances(false);
     setShareError("");
+    setCustomMessage("");
     onClose();
   }
 
@@ -103,13 +122,7 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
     try {
       const qrFile = await createQrFile();
       if (qrFile && navigator.clipboard?.write && "ClipboardItem" in window) {
-        const richMessage = buildInviteMessage({
-          group,
-          joinUrl,
-          member: selectedMember,
-          includeBalance,
-          includeQrNote: true,
-        });
+        const richMessage = finalizedInviteMessage(true);
         await navigator.clipboard.write([
           new ClipboardItem({
             "text/plain": new Blob([richMessage], { type: "text/plain" }),
@@ -118,13 +131,13 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
         ]);
         setCopyStatus("Invite + QR copied!");
       } else {
-        await navigator.clipboard.writeText(inviteMessage);
+        await navigator.clipboard.writeText(finalizedInviteMessage());
         setCopyStatus("Invite copied!");
       }
       setTimeout(() => setCopyStatus(""), 2400);
     } catch {
       try {
-        await navigator.clipboard.writeText(inviteMessage);
+        await navigator.clipboard.writeText(finalizedInviteMessage());
         setCopyStatus("Invite copied!");
         setTimeout(() => setCopyStatus(""), 2400);
       } catch {
@@ -144,13 +157,7 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
       const canShareQr = !!qrFile && !!navigator.canShare?.({ files: [qrFile] });
       await navigator.share({
         title: `Join ${group.name} on BayadTayoOpo`,
-        text: buildInviteMessage({
-          group,
-          joinUrl,
-          member: selectedMember,
-          includeBalance,
-          includeQrNote: canShareQr,
-        }),
+        text: finalizedInviteMessage(canShareQr),
         ...(canShareQr ? { files: [qrFile] } : {}),
       });
       setShareError("");
@@ -217,6 +224,25 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
               </label>
             )}
 
+            {!selectedMember && (
+              <label className="flex w-full items-center justify-between gap-4 rounded-xl border border-border bg-muted/30 px-4 py-3">
+                <span>
+                  <span className="block text-sm font-medium text-foreground">
+                    Include all member balances
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                    Adds each member’s current amount to settle or receive. Leave this off when sharing publicly.
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={includeAllBalances}
+                  onChange={(event) => setIncludeAllBalances(event.target.checked)}
+                  className="h-4 w-4 shrink-0 accent-primary"
+                />
+              </label>
+            )}
+
             <div ref={qrContainerRef} className="p-4 bg-white rounded-2xl shadow-sm border border-border">
               <QRCodeSVG value={joinUrl} size={220} level="M" />
             </div>
@@ -237,9 +263,24 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Invite message
               </p>
-              <p className="max-h-44 overflow-y-auto whitespace-pre-line text-xs leading-relaxed text-foreground">
-                {inviteMessage}
-              </p>
+              <textarea
+                value={customMessage}
+                onChange={(event) => setCustomMessage(event.target.value)}
+                rows={8}
+                className="w-full resize-y rounded-xl border border-border bg-input-background p-3 text-xs leading-relaxed text-foreground outline-none focus:border-primary"
+                aria-label="Customize invite message"
+              />
+              <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+                <p className="text-[11px] font-semibold text-primary">
+                  Required invitation link
+                </p>
+                <p className="mt-1 break-all text-[10px] leading-relaxed text-muted-foreground">
+                  {joinUrl}
+                </p>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  This link is always included, even if it is removed above.
+                </p>
+              </div>
             </div>
 
             {shareError && (
