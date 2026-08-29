@@ -7,6 +7,7 @@ import {
   Trash2,
   Share2,
   MessageSquareText,
+  HelpCircle,
   ShieldCheck,
 } from "lucide-react";
 import type { Group } from "./types";
@@ -23,6 +24,11 @@ interface Props {
   onAddPending?: (name: string) => string | undefined;
   onMergePending?: (pendingId: string, joinedId: string) => void;
   onMergeMember?: (sourceId: string, destinationId: string) => string | undefined;
+  onSetAutoApproveClaims?: (enabled: boolean) => string | undefined;
+  onReviewClaimRequest?: (
+    requestId: string,
+    approve: boolean,
+  ) => string | undefined;
   onDeletePending?: (memberId: string) => string | undefined;
   onRemoveMember?: (memberId: string) => string | undefined;
   onSetMemberAdmin?: (
@@ -40,6 +46,8 @@ export function InviteModal({
   onAddPending,
   onMergePending,
   onMergeMember,
+  onSetAutoApproveClaims,
+  onReviewClaimRequest,
   onDeletePending,
   onRemoveMember,
   onSetMemberAdmin,
@@ -64,6 +72,9 @@ export function InviteModal({
   );
   const joinedMembers = group.members.filter(
     (member) => !!member.uid || isOwner(member),
+  );
+  const pendingClaimRequests = (group.memberClaimRequests ?? []).filter(
+    (request) => request.status === "pending",
   );
   const memberIsAdmin = (member: Group["members"][number]) =>
     isOwner(member) ||
@@ -119,6 +130,26 @@ export function InviteModal({
     setAccountMergeSource("");
     setAccountMergeDestination("");
     setAccountMergeOpen(false);
+  }
+
+  function setAutoApproveClaims(enabled: boolean) {
+    if (enabled && !window.confirm(
+      "Enable automatic similar-name claims? A visitor who confirms a suggested name will immediately inherit that pending member’s expenses and balance without admin review.",
+    )) return;
+    const error = onSetAutoApproveClaims?.(enabled);
+    if (error) setPendingError(error);
+    else setPendingError("");
+  }
+
+  function reviewClaimRequest(requestId: string, approve: boolean) {
+    const request = pendingClaimRequests.find((item) => item.id === requestId);
+    if (!request) return;
+    if (approve && !window.confirm(
+      `Connect ${request.requestingMemberName} to the pending record “${request.pendingMemberName}”? Existing expenses and balances will move to their joined account.`,
+    )) return;
+    const error = onReviewClaimRequest?.(requestId, approve);
+    if (error) setPendingError(error);
+    else setPendingError("");
   }
 
   function addPendingMember() {
@@ -378,6 +409,90 @@ export function InviteModal({
                         );
                       })}
                     </div>
+                    <div className="rounded-xl border border-border bg-card p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-semibold text-foreground">
+                              Trust member self-claims
+                            </p>
+                            <details className="relative">
+                              <summary
+                                className="cursor-pointer list-none rounded-full text-muted-foreground hover:text-primary"
+                                aria-label="What does trust member self-claims mean?"
+                              >
+                                <HelpCircle size={15} />
+                              </summary>
+                              <div className="absolute right-0 top-6 z-20 w-64 rounded-xl border border-border bg-card p-3 text-[11px] font-normal leading-relaxed text-muted-foreground shadow-xl">
+                                When a general-link visitor has a similar name, the app suggests a pending profile. Nothing happens automatically. If enabled, the visitor may explicitly claim it without separate admin review. Their login is attached to that pending member; the app does not create two members and merge them.
+                              </div>
+                            </details>
+                          </div>
+                          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                            {group.autoApproveSimilarNameClaims
+                              ? "A member’s explicit “This is me” claim is trusted."
+                              : "Admins review each connection request before records move."}
+                          </p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={!!group.autoApproveSimilarNameClaims}
+                          onChange={(event) =>
+                            setAutoApproveClaims(event.target.checked)
+                          }
+                          className="h-5 w-5 shrink-0 accent-primary"
+                          aria-label="Trust member self-claims"
+                        />
+                      </div>
+                    </div>
+
+                    {pendingClaimRequests.length > 0 && (
+                      <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3">
+                        <div>
+                          <p className="text-sm font-semibold text-amber-950">
+                            Member connection requests
+                          </p>
+                          <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                            Review possible matches from people who used the general invite.
+                          </p>
+                        </div>
+                        {pendingClaimRequests.map((request) => (
+                          <div
+                            key={request.id}
+                            className="rounded-xl border border-amber-200 bg-card p-3"
+                          >
+                            <p className="text-sm text-foreground">
+                              <span className="font-semibold">
+                                {request.requestingMemberName}
+                              </span>{" "}
+                              says they may be{" "}
+                              <span className="font-semibold">
+                                {request.pendingMemberName}
+                              </span>
+                            </p>
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              Requested {new Date(request.requestedAt).toLocaleString()}
+                            </p>
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => reviewClaimRequest(request.id, true)}
+                                className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
+                              >
+                                Approve & connect
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => reviewClaimRequest(request.id, false)}
+                                className="rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground"
+                              >
+                                Not a match
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {joinedMembers.length > 1 && (
                       <div className="overflow-hidden rounded-xl border border-border bg-card">
                         <button

@@ -248,6 +248,7 @@ export async function joinGroup(
   profileImageVersion?: string,
   claimMemberId?: string,
   claimCode?: string,
+  requestedPendingMemberId?: string,
 ): Promise<Group | null> {
   const snapshot = await getDoc(doc(db, "groups", groupId));
   if (!snapshot.exists() || snapshot.data().deleted) return null;
@@ -283,16 +284,53 @@ export async function joinGroup(
       );
     } else {
       const joinedAt = new Date().toISOString();
-      const newMember: Member = {
-        id: generateId(),
-        uid,
-        name: memberName,
-        color: memberColor,
-        avatarSeed,
-        profileImageVersion,
-        joinedAt,
-      };
-      group.members = [...group.members, newMember];
+      const requestedPendingMember = requestedPendingMemberId
+        ? group.members.find(
+          (member) => member.id === requestedPendingMemberId && !member.uid,
+        )
+        : undefined;
+      if (requestedPendingMember && group.autoApproveSimilarNameClaims) {
+        group.members = group.members.map((member) =>
+          member.id === requestedPendingMember.id
+            ? {
+                ...member,
+                uid,
+                name: memberName,
+                color: memberColor,
+                avatarSeed,
+                profileImageVersion,
+                claimCode: undefined,
+                claimedFromPlaceholder: true,
+                joinedAt,
+              }
+            : member,
+        );
+      } else {
+        const newMember: Member = {
+          id: generateId(),
+          uid,
+          name: memberName,
+          color: memberColor,
+          avatarSeed,
+          profileImageVersion,
+          joinedAt,
+        };
+        group.members = [...group.members, newMember];
+        if (requestedPendingMember) {
+          group.memberClaimRequests = [
+            ...(group.memberClaimRequests ?? []),
+            {
+              id: generateId(),
+              pendingMemberId: requestedPendingMember.id,
+              requestingMemberId: newMember.id,
+              pendingMemberName: requestedPendingMember.name,
+              requestingMemberName: newMember.name,
+              status: "pending",
+              requestedAt: joinedAt,
+            },
+          ];
+        }
+      }
     }
     await finishFirestoreWrite(
       setDoc(doc(db, "groups", group.id), packGroup(group)),

@@ -29,6 +29,7 @@ interface Props {
   tourTarget: GroupTourTarget | null;
   unreadChatCount: number;
   outstandingMemberCount: number;
+  memberRequestCount: number;
   isAdmin: boolean;
   isOwner: boolean;
   onBack: () => void;
@@ -56,6 +57,7 @@ export function GroupHeader({
   tourTarget,
   unreadChatCount,
   outstandingMemberCount,
+  memberRequestCount,
   isAdmin,
   isOwner,
   onBack,
@@ -84,6 +86,7 @@ export function GroupHeader({
               active={tourTarget === "members"}
               label={isAdmin ? "Manage members" : "View members"}
               onClick={onManageMembers}
+              badge={isAdmin ? memberRequestCount : 0}
             >
               <Users size={19} />
             </HeaderAction>
@@ -221,11 +224,13 @@ function HeaderAction({
   label,
   onClick,
   children,
+  badge = 0,
 }: {
   active: boolean;
   label: string;
   onClick: () => void;
   children: ReactNode;
+  badge?: number;
 }) {
   return (
     <button
@@ -238,7 +243,14 @@ function HeaderAction({
       title={label}
       aria-label={label}
     >
-      {children}
+      <span className="relative block">
+        {children}
+        {badge > 0 && (
+          <span className="absolute -right-2.5 -top-2.5 min-w-4 rounded-full bg-destructive px-1 text-center text-[9px] font-bold leading-4 text-white shadow-sm">
+            {badge > 9 ? "9+" : badge}
+          </span>
+        )}
+      </span>
     </button>
   );
 }

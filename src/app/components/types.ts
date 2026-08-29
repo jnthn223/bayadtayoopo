@@ -98,6 +98,18 @@ export interface BalanceOffset {
   cancelledBy?: string;
 }
 
+export interface MemberClaimRequest {
+  id: string;
+  pendingMemberId: string;
+  requestingMemberId: string;
+  pendingMemberName: string;
+  requestingMemberName: string;
+  status: "pending" | "confirmed" | "rejected";
+  requestedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
 export interface Split {
   memberId: string;
   amount: number;
@@ -208,12 +220,15 @@ export interface Group {
   groupImageVersion?: string;
   adminId?: string;
   adminIds?: string[];
+  /** Allows a visitor to claim a similar-name pending member after confirming. */
+  autoApproveSimilarNameClaims?: boolean;
   members: Member[];
   /** Members removed from the active roster, retained for historical records. */
   formerMembers?: Member[];
   expenses: Expense[];
   payments?: GroupPayment[];
   balanceOffsets?: BalanceOffset[];
+  memberClaimRequests?: MemberClaimRequest[];
   deletedExpenses?: DeletedExpense[];
   messages?: ChatMessage[];
   createdAt: string;

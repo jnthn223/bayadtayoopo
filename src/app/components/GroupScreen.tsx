@@ -242,6 +242,9 @@ export function GroupScreen({
       });
   }
   const outstandingMemberCount = relevantPaymentMemberIds.size;
+  const memberRequestCount = (group.memberClaimRequests ?? []).filter(
+    (request) => request.status === "pending",
+  ).length;
   const unreadChatCount = messages.filter(
     (message) =>
       message.memberId !== currentMember?.id &&
@@ -755,6 +758,51 @@ export function GroupScreen({
     return undefined;
   }
 
+  function handleSetAutoApproveClaims(enabled: boolean): string | undefined {
+    if (!isAdmin) return "Only a group admin can change claim approval";
+    onUpdate({ ...group, autoApproveSimilarNameClaims: enabled });
+    return undefined;
+  }
+
+  function handleReviewClaimRequest(
+    requestId: string,
+    approve: boolean,
+  ): string | undefined {
+    if (!isAdmin || !currentMember) {
+      return "Only a group admin can review connection requests";
+    }
+    const request = (group.memberClaimRequests ?? []).find(
+      (item) => item.id === requestId && item.status === "pending",
+    );
+    if (!request) return "This connection request is no longer available";
+    const pendingMember = group.members.find(
+      (member) => member.id === request.pendingMemberId && !member.uid,
+    );
+    const requestingMember = group.members.find(
+      (member) => member.id === request.requestingMemberId && !!member.uid,
+    );
+    if (!pendingMember || !requestingMember) {
+      return "One of these member records is no longer available";
+    }
+
+    const reviewedAt = new Date().toISOString();
+    const reviewedRequests = (group.memberClaimRequests ?? []).map((item) =>
+      item.id === request.id
+        ? {
+            ...item,
+            status: approve ? "confirmed" as const : "rejected" as const,
+            reviewedAt,
+            reviewedBy: currentMember.id,
+          }
+        : item,
+    );
+    const updatedGroup = approve
+      ? mergeGroupMember(group, pendingMember.id, requestingMember.id)
+      : group;
+    onUpdate({ ...updatedGroup, memberClaimRequests: reviewedRequests });
+    return undefined;
+  }
+
   function handleDeletePendingMember(memberId: string): string | undefined {
     if (!isAdmin) return "Only the group admin can remove pending members";
     const isUsed =
@@ -973,6 +1021,7 @@ export function GroupScreen({
         tourTarget={activeGroupTourTarget}
         unreadChatCount={unreadChatCount}
         outstandingMemberCount={outstandingMemberCount}
+        memberRequestCount={memberRequestCount}
         isAdmin={isAdmin}
         isOwner={isOwner}
         onBack={onBack}
@@ -1635,6 +1684,8 @@ export function GroupScreen({
         onAddPending={handleAddPendingMember}
         onMergePending={handleMergePendingMember}
         onMergeMember={handleMergeJoinedMember}
+        onSetAutoApproveClaims={handleSetAutoApproveClaims}
+        onReviewClaimRequest={handleReviewClaimRequest}
         onDeletePending={handleDeletePendingMember}
         onRemoveMember={handleRemoveMember}
         onSetMemberAdmin={handleSetMemberAdmin}

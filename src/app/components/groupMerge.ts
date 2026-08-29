@@ -112,6 +112,10 @@ export function mergeGroupChanges(
     adminIds: !sameValue(base.adminIds, changed.adminIds)
       ? changed.adminIds
       : latest.adminIds,
+    autoApproveSimilarNameClaims:
+      base.autoApproveSimilarNameClaims !== changed.autoApproveSimilarNameClaims
+        ? changed.autoApproveSimilarNameClaims
+        : latest.autoApproveSimilarNameClaims,
     members: mergeById(base.members, changed.members, latest.members),
     formerMembers: mergeById(
       base.formerMembers,
@@ -124,6 +128,11 @@ export function mergeGroupChanges(
       base.balanceOffsets,
       changed.balanceOffsets,
       latest.balanceOffsets,
+    ),
+    memberClaimRequests: mergeById(
+      base.memberClaimRequests,
+      changed.memberClaimRequests,
+      latest.memberClaimRequests,
     ),
     deletedExpenses: mergeAppendOnly(
       base.deletedExpenses,

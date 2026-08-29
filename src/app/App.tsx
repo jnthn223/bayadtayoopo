@@ -4,6 +4,7 @@ import type {
   Group,
   CurrentUser,
   NotificationDestination,
+  Member,
 } from "./components/types";
 import {
   isMagicLink,
@@ -42,6 +43,8 @@ import {
 } from "./components/LoginScreen";
 import { ProfileScreen } from "./components/ProfileScreen";
 import { SystemAlertsPrompt } from "./components/SystemAlertsPrompt";
+import { SimilarMemberPrompt } from "./components/SimilarMemberPrompt";
+import { findSimilarPendingMember } from "./components/memberNameMatch";
 import { shouldShowSystemAlertsPrompt } from "./components/systemAlertsPromptRules";
 import { BrandMark, BrandWordmark } from "./components/Brand";
 import { auth } from "../lib/firebase";
@@ -113,6 +116,12 @@ export default function App() {
   const [splashMinimumElapsed, setSplashMinimumElapsed] = useState(false);
   const [waitingUpdate, setWaitingUpdate] = useState<ServiceWorker | null>(null);
   const [restartingForUpdate, setRestartingForUpdate] = useState(false);
+  const [similarMemberJoin, setSimilarMemberJoin] = useState<{
+    groupId: string;
+    user: AuthUser;
+    group: Group;
+    member: Member;
+  } | null>(null);
   const [systemAlertsPromptOpen, setSystemAlertsPromptOpen] = useState(false);
   const [systemAlertsPromptSaving, setSystemAlertsPromptSaving] =
     useState(false);
@@ -397,21 +406,45 @@ export default function App() {
   async function handleJoinGroup(
     groupId: string,
     user: AuthUser,
+    skipNameMatch = false,
+    requestedPendingMemberId?: string,
   ): Promise<boolean> {
     try {
       const newSession = saveSession(user);
       const cu = sessionToCurrentUser(newSession);
       const savedProfile = await loadOrCreateUserProfile(user.uid);
       const colorIndex = user.uid.charCodeAt(0) % MEMBER_COLORS.length;
+      const memberName = savedProfile.name ?? cu.name;
+      const personalClaimMemberId =
+        localStorage.getItem("pendingClaimMemberId") ?? undefined;
+      if (!skipNameMatch && !personalClaimMemberId) {
+        const preview = await fetchGroup(groupId);
+        const alreadyJoined = preview?.members.some(
+          (member) => member.uid === user.uid || member.id === user.uid,
+        );
+        const similarMember = preview && !alreadyJoined
+          ? findSimilarPendingMember(preview, memberName)
+          : undefined;
+        if (preview && similarMember) {
+          setSimilarMemberJoin({
+            groupId,
+            user,
+            group: preview,
+            member: similarMember,
+          });
+          return false;
+        }
+      }
       const joined = await joinGroup(
         groupId,
         user.uid,
-        cu.name,
+        memberName,
         savedProfile.color ?? MEMBER_COLORS[colorIndex],
         savedProfile.avatarSeed,
         savedProfile.profileImageVersion,
-        localStorage.getItem("pendingClaimMemberId") ?? undefined,
+        personalClaimMemberId,
         localStorage.getItem("pendingClaimCode") ?? undefined,
+        requestedPendingMemberId,
       );
       if (joined) {
         const joinedMember = joined.members.find(
@@ -448,6 +481,29 @@ export default function App() {
         "error",
       );
       return false;
+    }
+  }
+
+  async function continueSimilarMemberJoin(requestClaim: boolean) {
+    const pending = similarMemberJoin;
+    if (!pending) return;
+    setSimilarMemberJoin(null);
+    const joined = await handleJoinGroup(
+      pending.groupId,
+      pending.user,
+      true,
+      requestClaim ? pending.member.id : undefined,
+    );
+    if (joined) {
+      clearPendingJoin();
+      window.history.replaceState({}, "", window.location.pathname);
+      if (requestClaim) {
+        showBanner(
+          pending.group.autoApproveSimilarNameClaims
+            ? "Joined the group and connected to your existing expenses"
+            : "Joined the group — your connection request was sent to an admin",
+        );
+      }
     }
   }
 
@@ -947,6 +1003,22 @@ export default function App() {
               {restartingForUpdate ? "Restarting…" : "Restart"}
             </button>
           </div>
+        )}
+
+        {similarMemberJoin && (
+          <SimilarMemberPrompt
+            open
+            group={similarMemberJoin.group}
+            member={similarMemberJoin.member}
+            autoApprove={!!similarMemberJoin.group.autoApproveSimilarNameClaims}
+            onRequestClaim={() => void continueSimilarMemberJoin(true)}
+            onJoinAsNew={() => void continueSimilarMemberJoin(false)}
+            onCancel={() => {
+              setSimilarMemberJoin(null);
+              clearPendingJoin();
+              window.history.replaceState({}, "", window.location.pathname);
+            }}
+          />
         )}
 
         <SystemAlertsPrompt
