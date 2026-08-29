@@ -184,26 +184,72 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
 
           <div className="flex flex-col items-center gap-6">
             {isAdmin && pendingMembers.length > 0 && (
-              <div className="w-full">
-                <label className="block text-sm text-muted-foreground mb-1.5">
-                  Invite link for
-                </label>
-                <select
-                  value={selectedMemberId}
-                  onChange={(event) => {
-                    setSelectedMemberId(event.target.value);
-                    setCopyStatus("");
-                    setShareError("");
-                  }}
-                  className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-foreground text-sm outline-none focus:border-primary"
-                >
-                  <option value="">Anyone — general group invite</option>
-                  {pendingMembers.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name} — personal claim invite
-                    </option>
-                  ))}
-                </select>
+              <div className="w-full space-y-3">
+                <div>
+                  <p className="mb-1.5 text-sm text-muted-foreground">
+                    Invitation type
+                  </p>
+                  <div className="grid grid-cols-2 rounded-xl border border-border bg-muted/40 p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedMemberId("");
+                        setCopyStatus("");
+                        setShareError("");
+                      }}
+                      className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
+                        !selectedMember
+                          ? "bg-card text-primary shadow-sm"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      General invite
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedMemberId(
+                          selectedMemberId || pendingMembers[0]?.id || "",
+                        );
+                        setCopyStatus("");
+                        setShareError("");
+                      }}
+                      className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
+                        selectedMember
+                          ? "bg-card text-primary shadow-sm"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      Personal invite
+                    </button>
+                  </div>
+                </div>
+
+                {selectedMember && (
+                  <div>
+                    <label className="mb-1.5 block text-sm text-muted-foreground">
+                      Personal invite for
+                    </label>
+                    <select
+                      value={selectedMemberId}
+                      onChange={(event) => {
+                        setSelectedMemberId(event.target.value);
+                        setCopyStatus("");
+                        setShareError("");
+                      }}
+                      className="w-full rounded-xl border border-border bg-input-background px-4 py-3 text-sm text-foreground outline-none focus:border-primary"
+                    >
+                      {pendingMembers.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.name} — claim existing expenses
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                      Creates a private link and QR code for this pending member only.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
