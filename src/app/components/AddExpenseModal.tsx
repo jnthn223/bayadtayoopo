@@ -5,6 +5,7 @@ import { EXPENSE_CATEGORIES } from "./types";
 import type { CurrentUser, Group, Expense, SplitType, Category } from "./types";
 import { allocateCustomShares, generateId, CATEGORY_ICONS, getCurrencySymbol, getExpensePayerId } from "./utils";
 import { UserAvatar } from "./UserAvatar";
+import { ImagePasteControl } from "./ImagePasteControl";
 
 interface Props {
   group: Group;
@@ -547,6 +548,18 @@ export function AddExpenseModal({
                   }}
                 />
               </label>
+              <ImagePasteControl
+                enabled={open}
+                disabled={saving || receiptFiles.length >= 5}
+                label="Paste receipt"
+                onImages={(files) => {
+                  setReceiptFiles((current) => [...current, ...files].slice(0, 5));
+                  setErrors((current) => ({ ...current, receipts: "" }));
+                }}
+                onError={(message) =>
+                  setErrors((current) => ({ ...current, receipts: message }))
+                }
+              />
               {(editExpense?.receipts?.length ?? 0) > 0 && (
                 <p className="mt-2 text-xs text-muted-foreground">
                   {editExpense!.receipts!.length} saved receipt

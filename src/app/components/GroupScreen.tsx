@@ -20,6 +20,7 @@ import type {
   Split,
 } from "./types";
 import { GroupAvatar } from "./GroupAvatar";
+import { ImagePasteControl } from "./ImagePasteControl";
 import {
   deletePaymentImage,
   loadPaymentImage,
@@ -1663,6 +1664,18 @@ export function GroupScreen({
                 Payment proof (optional)
                 <input type="file" accept="image/*" className="block mt-2 text-xs" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} />
               </label>
+              <ImagePasteControl
+                enabled={!!submitPayment}
+                disabled={paymentSaving}
+                label="Paste payment proof"
+                onImages={(files) => setProofFile(files[0] ?? null)}
+                onError={setPaymentActionError}
+              />
+              {proofFile && (
+                <p className="text-xs text-muted-foreground">
+                  Attached: {proofFile.name}
+                </p>
+              )}
               {paymentActionError && <p className="text-xs text-destructive">{paymentActionError}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3 mt-5">

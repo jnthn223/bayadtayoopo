@@ -32,6 +32,7 @@ import {
   savePaymentImage,
 } from "../../lib/paymentImageService";
 import { UserAvatar } from "./UserAvatar";
+import { ImagePasteControl } from "./ImagePasteControl";
 
 interface Props {
   group: Group;
@@ -1724,6 +1725,18 @@ export function GroupPayments({
                     }
                   />
                 </label>
+                <ImagePasteControl
+                  enabled={!!draft}
+                  disabled={saving}
+                  label="Paste payment proof"
+                  onImages={(files) => setProofFile(files[0] ?? null)}
+                  onError={setPaymentError}
+                />
+                {proofFile && (
+                  <p className="text-xs text-muted-foreground">
+                    Attached: {proofFile.name}
+                  </p>
+                )}
 
                 <div className="rounded-2xl border border-border bg-muted/30 p-3">
                   <div className="mb-2 flex items-center justify-between">
