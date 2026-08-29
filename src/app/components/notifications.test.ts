@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Group } from "./types";
+import type { AppNotification, Group } from "./types";
 import {
   deriveNotifications,
   isNotificationUnread,
@@ -108,6 +108,23 @@ describe("Spark notification derivation", () => {
       systemNotifications: false,
       mutedChatGroupIds: [],
     });
+  });
+
+  it("deep-links member activity to Manage Members", () => {
+    const notification: AppNotification = {
+      id: "member-joined",
+      type: "member_joined",
+      groupId: "trip",
+      groupName: "Beach Trip",
+      title: "Member joined",
+      body: "Bob joined Beach Trip",
+      at: "2026-07-03T10:00:00.000Z",
+      destination: { tab: "expenses", manageMembers: true },
+    };
+
+    expect(notificationUrl(notification)).toBe(
+      "/?openGroup=trip&tab=expenses&members=1",
+    );
   });
 
   it("keeps the submitted event after its payment is confirmed", () => {

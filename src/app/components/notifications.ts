@@ -379,7 +379,7 @@ export function deriveNotifications(
             body: `${member.name} joined ${group.name}`,
             at: member.joinedAt,
             actorId: member.id,
-            destination: { tab: "expenses" },
+            destination: { tab: "expenses", manageMembers: true },
           });
         }
       }
@@ -416,6 +416,9 @@ export function notificationUrl(notification: AppNotification): string {
   }
   if (notification.destination.messageId) {
     params.set("message", notification.destination.messageId);
+  }
+  if (notification.destination.manageMembers) {
+    params.set("members", "1");
   }
   return `/?${params.toString()}`;
 }

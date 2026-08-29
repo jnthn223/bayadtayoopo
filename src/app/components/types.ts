@@ -199,6 +199,7 @@ export interface NotificationDestination {
   expenseId?: string;
   paymentId?: string;
   messageId?: string;
+  manageMembers?: boolean;
 }
 
 export interface AppNotification {

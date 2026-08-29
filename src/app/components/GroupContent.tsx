@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
@@ -127,6 +127,13 @@ export function GroupContent({
     message: string;
     groupUrl: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (!focusedExpenseId) return;
+    setCategoryFilter("all");
+    setPayerFilter("all");
+    setSettlementFilter("all");
+  }, [focusedExpenseId]);
 
   function prepareMemberBalanceShare(balance: Balance) {
     const member = getMemberById(group, balance.memberId);

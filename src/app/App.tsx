@@ -109,6 +109,7 @@ export default function App() {
   const [banner, setBanner] = useState<{
     text: string;
     type: "success" | "error";
+    notification?: AppNotification;
   } | null>(null);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [profileLoaded, setProfileLoaded] = useState(false);
@@ -133,6 +134,7 @@ export default function App() {
   const handledDeepLinkRef = useRef("");
   const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   const notificationStreamReadyRef = useRef(false);
+  const bannerTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -152,9 +154,27 @@ export default function App() {
   }, []);
 
   // ── Banner helper ───────────────────────────────────────────────────────
-  function showBanner(text: string, type: "success" | "error" = "success") {
-    setBanner({ text, type });
-    setTimeout(() => setBanner(null), 3500);
+  function dismissBanner() {
+    if (bannerTimerRef.current !== null) {
+      window.clearTimeout(bannerTimerRef.current);
+      bannerTimerRef.current = null;
+    }
+    setBanner(null);
+  }
+
+  function showBanner(
+    text: string,
+    type: "success" | "error" = "success",
+    notification?: AppNotification,
+  ) {
+    if (bannerTimerRef.current !== null) {
+      window.clearTimeout(bannerTimerRef.current);
+    }
+    setBanner({ text, type, notification });
+    bannerTimerRef.current = window.setTimeout(
+      () => setBanner(null),
+      notification ? 6000 : 3500,
+    );
   }
 
   // ── Auth bootstrap ──────────────────────────────────────────────────────
@@ -857,7 +877,7 @@ export default function App() {
     if (!latest) return;
 
     if (document.visibilityState === "visible") {
-      showBanner(`${latest.title} · ${latest.body}`);
+      showBanner(`${latest.title} · ${latest.body}`, "success", latest);
       return;
     }
     if (
@@ -919,6 +939,7 @@ export default function App() {
       (candidate) => candidate.id === notification.groupId,
     );
     if (!group) return;
+    dismissBanner();
     saveNotificationReadAt(notification.at);
     setSelectedGroup(group);
     setNotificationDestination(notification.destination);
@@ -949,6 +970,7 @@ export default function App() {
       expenseId: params.get("expense") ?? undefined,
       paymentId: params.get("payment") ?? undefined,
       messageId: params.get("message") ?? undefined,
+      manageMembers: params.get("members") === "1",
     });
     setScreen("group");
     window.history.replaceState({}, "", window.location.pathname);
@@ -965,7 +987,7 @@ export default function App() {
         {/* Banner */}
         {banner && (
           <div
-            className={`absolute top-0 left-0 right-0 z-50 flex items-center justify-center py-3 px-4 text-sm font-medium text-white transition-all ${
+            className={`absolute top-0 left-0 right-0 z-50 flex items-center gap-3 px-4 py-3 text-sm font-medium text-white shadow-lg transition-all ${
               banner.type === "error" ? "bg-destructive" : ""
             }`}
             style={
@@ -974,8 +996,32 @@ export default function App() {
                 : undefined
             }
           >
-            {banner.type === "success" ? "🎉 " : "⚠️ "}
-            {banner.text}
+            {banner.notification ? (
+              <button
+                type="button"
+                onClick={() => openNotification(banner.notification!)}
+                className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                aria-label={`Open notification: ${banner.notification.title}`}
+              >
+                <span aria-hidden="true">🔔</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">
+                    {banner.notification.title}
+                  </span>
+                  <span className="block truncate text-xs text-white/85">
+                    {banner.notification.body}
+                  </span>
+                </span>
+                <span className="shrink-0 rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold">
+                  View
+                </span>
+              </button>
+            ) : (
+              <span className="flex-1 text-center">
+                {banner.type === "success" ? "🎉 " : "⚠️ "}
+                {banner.text}
+              </span>
+            )}
           </div>
         )}
 

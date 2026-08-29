@@ -316,6 +316,9 @@ export function GroupScreen({
   useEffect(() => {
     if (!destination) return;
     setTab(destination.tab);
+    if (destination.manageMembers) {
+      setInviteOpen(true);
+    }
     if (destination.messageId) {
       setChatRevealMessageId(destination.messageId);
     }
@@ -340,6 +343,7 @@ export function GroupScreen({
     destination?.expenseId,
     destination?.paymentId,
     destination?.messageId,
+    destination?.manageMembers,
   ]);
 
   useEffect(() => {

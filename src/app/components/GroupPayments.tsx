@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   Check,
@@ -224,10 +224,18 @@ export function GroupPayments({
   const historicalOffsets = relevantOffsets.filter(
     (offset) => offset.status === "confirmed" || offset.status === "cancelled",
   );
+  const focusedPaymentIsHistorical = !!focusedPaymentId &&
+    [...historicalPayments, ...historicalOffsets].some(
+      (item) => item.id === focusedPaymentId,
+    );
   const visibleOffsets = activeOffsets;
   const visiblePayments = activePayments;
   const settlementHistoryCount =
     historicalPayments.length + historicalOffsets.length;
+
+  useEffect(() => {
+    if (focusedPaymentIsHistorical) setPaymentHistoryOpen(true);
+  }, [focusedPaymentIsHistorical]);
   const expensePaymentOptions = useMemo(
     () =>
       memberId
