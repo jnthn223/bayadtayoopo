@@ -139,7 +139,12 @@ service cloud.firestore {
         && request.resource.data.adminUid == request.auth.uid
         && request.resource.data.deleted == false;
 
-      allow get: if isGroupMember() || (signedIn() && isNotDeleted(resource.data));
+      // Former members may read a soft-deleted group once so the client can
+      // remove its stale ID from their own user document. Deleted groups remain
+      // unavailable to everyone else.
+      allow get: if (signedIn()
+        && (resource.data.memberIds.hasAny([request.auth.uid])
+          || isNotDeleted(resource.data)));
       allow list: if isGroupMember();
 
       allow update: if validGroupDoc(request.resource.data)

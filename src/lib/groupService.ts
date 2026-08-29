@@ -22,7 +22,19 @@ import { normalizeNotificationPreferences } from "../app/components/notification
 
 async function getUserGroupIds(uid: string): Promise<string[]> {
   const snapshot = await getDoc(doc(db, "users", uid));
-  return (snapshot.data()?.groupIds as string[] | undefined) ?? [];
+  const groupIds = snapshot.data()?.groupIds;
+  if (Array.isArray(groupIds)) {
+    return [...new Set(groupIds.filter((id): id is string => typeof id === "string"))];
+  }
+
+  // Firestore rules require every user document to have this array. Repair
+  // accounts whose document was deleted or manually recreated without it.
+  // The empty array transform is atomic, so it cannot overwrite a group ID
+  // being added by a concurrent invite/join flow.
+  await finishFirestoreWrite(
+    setDoc(doc(db, "users", uid), { groupIds: arrayUnion() }, { merge: true }),
+  );
+  return [];
 }
 
 async function getUserDocument(
@@ -54,14 +66,18 @@ export async function loadOrCreateUserProfile(uid: string): Promise<UserProfile>
       ? user.notificationReadAt
       : now;
 
-  if (
-    typeof user.avatarSeed !== "string" ||
-    typeof user.notificationReadAt !== "string"
-  ) {
+  const profileRepairs: Record<string, unknown> = {};
+  if (!Array.isArray(user.groupIds)) profileRepairs.groupIds = arrayUnion();
+  if (typeof user.avatarSeed !== "string") profileRepairs.avatarSeed = avatarSeed;
+  if (typeof user.notificationReadAt !== "string") {
+    profileRepairs.notificationReadAt = notificationReadAt;
+  }
+
+  if (Object.keys(profileRepairs).length > 0) {
     await finishFirestoreWrite(
       setDoc(
         doc(db, "users", uid),
-        { avatarSeed, notificationReadAt },
+        profileRepairs,
         { merge: true },
       ),
     );
@@ -166,13 +182,41 @@ export async function loadUserGroups(uid: string): Promise<Group[]> {
   // correctly rejects that group's read, but it must not prevent the user's
   // other groups from loading.
   const snapshots = await Promise.all(
-    groupIds.map((id) =>
-      getDoc(doc(db, "groups", id)).catch(() => null),
-    ),
+    groupIds.map(async (id) => {
+      try {
+        return { id, snapshot: await getDoc(doc(db, "groups", id)) };
+      } catch {
+        // Continue loading the account even when a single reference is stale.
+        return { id, snapshot: null };
+      }
+    }),
   );
 
+  const staleGroupIds = snapshots.flatMap(({ id, snapshot }) => {
+    // Do not remove a reference after a transient network/cache failure.
+    if (!snapshot) return [];
+    if (!snapshot.exists() || snapshot.data().deleted) return [id];
+    const group = unpackGroup(snapshot.data());
+    return group?.members.some(
+      (member) => member.id === uid || member.uid === uid,
+    )
+      ? []
+      : [id];
+  });
+  if (staleGroupIds.length > 0) {
+    // A group is shared, but each user owns their own reference list. Clean up
+    // deleted/missing references as soon as that account next opens the app.
+    void finishFirestoreWrite(
+      setDoc(
+        doc(db, "users", uid),
+        { groupIds: arrayRemove(...staleGroupIds) },
+        { merge: true },
+      ),
+    ).catch((error) => console.warn("Unable to clean stale group references", error));
+  }
+
   return snapshots
-    .map((snapshot) =>
+    .map(({ snapshot }) =>
       snapshot?.exists() && !snapshot.data().deleted
         ? unpackGroup(snapshot.data())
         : null,
