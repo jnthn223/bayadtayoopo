@@ -731,6 +731,30 @@ export function GroupScreen({
     onUpdate(mergeGroupMember(group, pendingId, joinedId));
   }
 
+  function handleMergeJoinedMember(
+    sourceId: string,
+    destinationId: string,
+  ): string | undefined {
+    if (!isAdmin) return "Only a group admin can merge duplicate members";
+    if (sourceId === destinationId) return "Choose two different members";
+    const source = group.members.find((member) => member.id === sourceId);
+    const destination = group.members.find(
+      (member) => member.id === destinationId,
+    );
+    if (!source?.uid || !destination?.uid) {
+      return "Both records must belong to members who have joined";
+    }
+    if (source.id === currentMember?.id || source.uid === currentMember?.uid) {
+      return "You cannot merge your own active member record";
+    }
+    if (source.id === adminId || source.uid === adminId) {
+      return "The group owner record cannot be merged into another member";
+    }
+
+    onUpdate(mergeGroupMember(group, sourceId, destinationId));
+    return undefined;
+  }
+
   function handleDeletePendingMember(memberId: string): string | undefined {
     if (!isAdmin) return "Only the group admin can remove pending members";
     const isUsed =
@@ -1607,8 +1631,10 @@ export function GroupScreen({
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         isAdmin={isAdmin}
+        currentMemberId={currentMember?.id}
         onAddPending={handleAddPendingMember}
         onMergePending={handleMergePendingMember}
+        onMergeMember={handleMergeJoinedMember}
         onDeletePending={handleDeletePendingMember}
         onRemoveMember={handleRemoveMember}
         onSetMemberAdmin={handleSetMemberAdmin}

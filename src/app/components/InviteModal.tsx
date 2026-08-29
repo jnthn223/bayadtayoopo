@@ -19,8 +19,10 @@ interface Props {
   open: boolean;
   onClose: () => void;
   isAdmin?: boolean;
+  currentMemberId?: string;
   onAddPending?: (name: string) => string | undefined;
   onMergePending?: (pendingId: string, joinedId: string) => void;
+  onMergeMember?: (sourceId: string, destinationId: string) => string | undefined;
   onDeletePending?: (memberId: string) => string | undefined;
   onRemoveMember?: (memberId: string) => string | undefined;
   onSetMemberAdmin?: (
@@ -34,8 +36,10 @@ export function InviteModal({
   open,
   onClose,
   isAdmin,
+  currentMemberId,
   onAddPending,
   onMergePending,
+  onMergeMember,
   onDeletePending,
   onRemoveMember,
   onSetMemberAdmin,
@@ -47,6 +51,9 @@ export function InviteModal({
   const [shareError, setShareError] = useState("");
   const [includeInviteBalances, setIncludeInviteBalances] = useState(true);
   const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({});
+  const [accountMergeSource, setAccountMergeSource] = useState("");
+  const [accountMergeDestination, setAccountMergeDestination] = useState("");
+  const [accountMergeOpen, setAccountMergeOpen] = useState(false);
   const ownerId = group.adminId ?? group.members[0]?.id;
   const isOwner = (member: Group["members"][number]) =>
     member.id === ownerId || member.uid === ownerId;
@@ -86,7 +93,32 @@ export function InviteModal({
     setShareMessage("");
     setShareError("");
     setIncludeInviteBalances(true);
+    setAccountMergeSource("");
+    setAccountMergeDestination("");
+    setAccountMergeOpen(false);
     onClose();
+  }
+
+  function mergeJoinedMembers() {
+    if (!accountMergeSource || !accountMergeDestination) return;
+    const source = joinedMembers.find((member) => member.id === accountMergeSource);
+    const destination = joinedMembers.find(
+      (member) => member.id === accountMergeDestination,
+    );
+    if (!source || !destination) return;
+    if (!window.confirm(
+      `Merge ${source.name} into ${destination.name}? All of ${source.name}’s activity in this group will be reassigned to ${destination.name}. This cannot be undone.`,
+    )) return;
+
+    const error = onMergeMember?.(source.id, destination.id);
+    if (error) {
+      setPendingError(error);
+      return;
+    }
+    setPendingError("");
+    setAccountMergeSource("");
+    setAccountMergeDestination("");
+    setAccountMergeOpen(false);
   }
 
   function addPendingMember() {
@@ -346,6 +378,103 @@ export function InviteModal({
                         );
                       })}
                     </div>
+                    {joinedMembers.length > 1 && (
+                      <div className="overflow-hidden rounded-xl border border-border bg-card">
+                        <button
+                          type="button"
+                          onClick={() => setAccountMergeOpen((open) => !open)}
+                          className="flex w-full items-center justify-between gap-3 p-3 text-left"
+                          aria-expanded={accountMergeOpen}
+                        >
+                          <span className="flex min-w-0 items-start gap-2.5">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                              <Merge size={15} />
+                            </span>
+                            <span>
+                              <span className="block text-sm font-semibold text-foreground">
+                                Merge duplicate members
+                              </span>
+                              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                                Combine two joined records in this group
+                              </span>
+                            </span>
+                          </span>
+                          <span className="text-xs font-semibold text-primary">
+                            {accountMergeOpen ? "Close" : "Manage"}
+                          </span>
+                        </button>
+
+                        {accountMergeOpen && (
+                          <div className="space-y-3 border-t border-border bg-muted/20 p-3">
+                            <p className="text-xs leading-relaxed text-muted-foreground">
+                              Use this when one person accidentally joined twice. Expenses, payments, messages, and history move to the account you keep. Their login accounts are not combined.
+                            </p>
+                            <label className="block">
+                              <span className="mb-1.5 block text-xs font-medium text-foreground">
+                                Duplicate member to remove
+                              </span>
+                              <select
+                                value={accountMergeSource}
+                                onChange={(event) => {
+                                  const sourceId = event.target.value;
+                                  setAccountMergeSource(sourceId);
+                                  if (accountMergeDestination === sourceId) {
+                                    setAccountMergeDestination("");
+                                  }
+                                }}
+                                className="w-full rounded-xl border border-border bg-input-background px-3 py-2.5 text-sm text-foreground"
+                              >
+                                <option value="">Choose duplicate…</option>
+                                {joinedMembers
+                                  .filter(
+                                    (member) =>
+                                      !isOwner(member) &&
+                                      member.id !== currentMemberId,
+                                  )
+                                  .map((member) => (
+                                    <option key={member.id} value={member.id}>
+                                      {member.name}
+                                    </option>
+                                  ))}
+                              </select>
+                            </label>
+                            <label className="block">
+                              <span className="mb-1.5 block text-xs font-medium text-foreground">
+                                Keep this member
+                              </span>
+                              <select
+                                value={accountMergeDestination}
+                                onChange={(event) =>
+                                  setAccountMergeDestination(event.target.value)
+                                }
+                                className="w-full rounded-xl border border-border bg-input-background px-3 py-2.5 text-sm text-foreground"
+                              >
+                                <option value="">Choose account to keep…</option>
+                                {joinedMembers
+                                  .filter((member) => member.id !== accountMergeSource)
+                                  .map((member) => (
+                                    <option key={member.id} value={member.id}>
+                                      {member.name}{isOwner(member) ? " · Owner" : ""}
+                                    </option>
+                                  ))}
+                              </select>
+                            </label>
+                            <button
+                              type="button"
+                              disabled={!accountMergeSource || !accountMergeDestination}
+                              onClick={mergeJoinedMembers}
+                              className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-40"
+                            >
+                              <Merge size={15} />
+                              Merge member records
+                            </button>
+                            <p className="text-[10px] leading-relaxed text-destructive">
+                              This changes historical records and cannot be reversed. Verify both members carefully.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-semibold text-foreground">
                         Add now, let them join later

@@ -446,6 +446,57 @@ describe("expense business logic", () => {
       .toMatchObject({ memberName: "Bob", net: -10 });
   });
 
+  it("merges a duplicate joined member and rewrites account aliases in group history", () => {
+    const duplicateGroup: Group = {
+      ...group,
+      members: [
+        ...group.members,
+        {
+          id: "bob-duplicate",
+          uid: "bob-login-2",
+          name: "Bob 2",
+          color: "#444444",
+        },
+      ],
+      messages: [
+        {
+          id: "message-1",
+          memberId: "bob-duplicate",
+          text: "Hi @Bob",
+          mentionedMemberIds: ["bob-login-2"],
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      balanceOffsets: [
+        {
+          id: "offset-1",
+          requesterMemberId: "bob-duplicate",
+          counterpartyMemberId: "alice",
+          amount: 10,
+          debitAllocations: [],
+          creditAllocations: [],
+          status: "pending",
+          requestedAt: "2026-01-01T00:00:00.000Z",
+          requestedBy: "bob-login-2",
+        },
+      ],
+    };
+
+    const merged = mergeGroupMember(duplicateGroup, "bob-duplicate", "bob");
+
+    expect(
+      merged.members.some((member) => member.id === "bob-duplicate"),
+    ).toBe(false);
+    expect(merged.messages?.[0]).toMatchObject({
+      memberId: "bob",
+      mentionedMemberIds: ["bob"],
+    });
+    expect(merged.balanceOffsets?.[0]).toMatchObject({
+      requesterMemberId: "bob",
+      requestedBy: "bob",
+    });
+  });
+
   it("summarizes only the current member's unconfirmed repayments", () => {
     expect(getUnsettledPaymentSummary(group, "carol")).toEqual({
       count: 1,

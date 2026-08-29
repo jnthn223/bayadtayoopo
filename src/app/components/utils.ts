@@ -538,13 +538,22 @@ export function getUnsettledPaymentSummary(group: Group, userId: string) {
 
 export function mergeGroupMember(
   group: Group,
-  placeholderId: string,
-  joinedMemberId: string,
+  sourceMemberId: string,
+  destinationMemberId: string,
 ): Group {
-  if (placeholderId === joinedMemberId) return group;
+  if (sourceMemberId === destinationMemberId) return group;
+
+  const sourceMember = group.members.find(
+    (member) => member.id === sourceMemberId,
+  );
+  const sourceIdentifiers = new Set(
+    [sourceMemberId, sourceMember?.uid].filter(
+      (identifier): identifier is string => !!identifier,
+    ),
+  );
 
   const replace = (memberId: string) =>
-    memberId === placeholderId ? joinedMemberId : memberId;
+    sourceIdentifiers.has(memberId) ? destinationMemberId : memberId;
 
   return {
     ...group,
@@ -552,7 +561,7 @@ export function mergeGroupMember(
     adminIds: group.adminIds?.map(replace).filter(
       (memberId, index, values) => values.indexOf(memberId) === index,
     ),
-    members: group.members.filter((member) => member.id !== placeholderId),
+    members: group.members.filter((member) => member.id !== sourceMemberId),
     expenses: group.expenses.map((expense) => {
       const combined = new Map<string, Split>();
       for (const split of expense.splits) {
@@ -585,6 +594,9 @@ export function mergeGroupMember(
         createdBy: expense.createdBy ? replace(expense.createdBy) : undefined,
         splits: [...combined.values()].map((split) => ({
           ...split,
+          confirmedBy: split.confirmedBy
+            ? replace(split.confirmedBy)
+            : undefined,
           paymentSubmission: split.paymentSubmission
             ? {
                 ...split.paymentSubmission,
@@ -615,9 +627,22 @@ export function mergeGroupMember(
         ? replace(payment.reversedBy)
         : undefined,
     })),
+    balanceOffsets: group.balanceOffsets?.map((offset) => ({
+      ...offset,
+      requesterMemberId: replace(offset.requesterMemberId),
+      counterpartyMemberId: replace(offset.counterpartyMemberId),
+      requestedBy: replace(offset.requestedBy),
+      reviewedBy: offset.reviewedBy ? replace(offset.reviewedBy) : undefined,
+      cancelledBy: offset.cancelledBy
+        ? replace(offset.cancelledBy)
+        : undefined,
+    })),
     messages: group.messages?.map((message) => ({
       ...message,
       memberId: replace(message.memberId),
+      mentionedMemberIds: message.mentionedMemberIds
+        ?.map(replace)
+        .filter((memberId, index, values) => values.indexOf(memberId) === index),
     })),
     deletedExpenses: group.deletedExpenses?.map((expense) => ({
       ...expense,
