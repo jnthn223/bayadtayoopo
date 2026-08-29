@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { QRCodeSVG } from "qrcode.react";
-import { X, Copy, Check, Share2 } from "lucide-react";
+import { X, Copy, Check, ChevronDown, Share2 } from "lucide-react";
 import type { Group } from "./types";
 import { buildInviteMessage } from "./inviteMessage";
 import { ensureRequiredShareLinks } from "./requiredShareLinks";
@@ -18,7 +18,8 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
   const [copyStatus, setCopyStatus] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [includeBalance, setIncludeBalance] = useState(true);
-  const [includeAllBalances, setIncludeAllBalances] = useState(false);
+  const [balanceOptionsOpen, setBalanceOptionsOpen] = useState(false);
+  const [balanceMemberIds, setBalanceMemberIds] = useState<string[]>([]);
   const [shareError, setShareError] = useState("");
   const [customMessage, setCustomMessage] = useState("");
   const pendingMembers = group.members.filter(
@@ -39,7 +40,7 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
     joinUrl,
     member: selectedMember,
     includeBalance,
-    includeAllBalances: !selectedMember && includeAllBalances,
+    balanceMemberIds: !selectedMember ? balanceMemberIds : undefined,
   });
   const requiredInviteLink = {
     label: selectedMember ? "Claim your personal invite" : "Join the group",
@@ -53,13 +54,14 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
 
   useEffect(() => {
     if (open) setCustomMessage(inviteMessage);
-  }, [includeAllBalances, includeBalance, inviteMessage, open, selectedMemberId]);
+  }, [balanceMemberIds, includeBalance, inviteMessage, open, selectedMemberId]);
 
   function handleClose() {
     setCopyStatus("");
     setSelectedMemberId("");
     setIncludeBalance(true);
-    setIncludeAllBalances(false);
+    setBalanceOptionsOpen(false);
+    setBalanceMemberIds([]);
     setShareError("");
     setCustomMessage("");
     onClose();
@@ -225,22 +227,89 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
             )}
 
             {!selectedMember && (
-              <label className="flex w-full items-center justify-between gap-4 rounded-xl border border-border bg-muted/30 px-4 py-3">
-                <span>
-                  <span className="block text-sm font-medium text-foreground">
-                    Include all member balances
+              <div className="w-full overflow-hidden rounded-xl border border-border bg-muted/30">
+                <button
+                  type="button"
+                  onClick={() => setBalanceOptionsOpen((current) => !current)}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+                  aria-expanded={balanceOptionsOpen}
+                >
+                  <span>
+                    <span className="block text-sm font-medium text-foreground">
+                      Include member balances
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {balanceMemberIds.length === 0
+                        ? "None selected · recommended for public sharing"
+                        : balanceMemberIds.length === group.members.length
+                          ? "All members selected"
+                          : `${balanceMemberIds.length} of ${group.members.length} members selected`}
+                    </span>
                   </span>
-                  <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-                    Adds each member’s current amount to settle or receive. Leave this off when sharing publicly.
-                  </span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={includeAllBalances}
-                  onChange={(event) => setIncludeAllBalances(event.target.checked)}
-                  className="h-4 w-4 shrink-0 accent-primary"
-                />
-              </label>
+                  <ChevronDown
+                    size={18}
+                    className={`shrink-0 text-muted-foreground transition-transform ${
+                      balanceOptionsOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+
+                {balanceOptionsOpen && (
+                  <div className="border-t border-border bg-card px-4 py-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="text-[11px] leading-relaxed text-muted-foreground">
+                        Choose whose current balance appears in the invite.
+                      </p>
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setBalanceMemberIds(group.members.map((member) => member.id))
+                          }
+                          className="text-[11px] font-semibold text-primary"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBalanceMemberIds([])}
+                          className="text-[11px] font-semibold text-muted-foreground"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                    <div className="max-h-48 space-y-1 overflow-y-auto">
+                      {group.members.map((member) => {
+                        const checked = balanceMemberIds.includes(member.id);
+                        return (
+                          <label
+                            key={member.id}
+                            className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-muted/50"
+                          >
+                            <span className="text-sm text-foreground">{member.name}</span>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setBalanceMemberIds((current) =>
+                                  checked
+                                    ? current.filter((id) => id !== member.id)
+                                    : [...current, member.id],
+                                )
+                              }
+                              className="h-4 w-4 accent-primary"
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">
+                      Balances are private group information. Include only the people relevant to this invitation.
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
 
             <div ref={qrContainerRef} className="p-4 bg-white rounded-2xl shadow-sm border border-border">

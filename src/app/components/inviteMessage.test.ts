@@ -75,6 +75,17 @@ describe("invite messages", () => {
     expect(message).toContain("• Bob: ₱500.00 to settle");
   });
 
+  it("can include only selected member balances in a general invite", () => {
+    const message = buildInviteMessage({
+      group,
+      joinUrl: "https://example.com/general",
+      balanceMemberIds: ["bob"],
+    });
+
+    expect(message).toContain("• Bob: ₱500.00 to settle");
+    expect(message).not.toContain("• Alice:");
+  });
+
   it("can omit the balance from a personal invite", () => {
     const message = buildInviteMessage({
       group,

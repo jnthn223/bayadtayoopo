@@ -31,6 +31,7 @@ export function buildInviteMessage({
   member,
   includeBalance = true,
   includeAllBalances = false,
+  balanceMemberIds,
   includeQrNote = false,
 }: {
   group: Group;
@@ -38,6 +39,7 @@ export function buildInviteMessage({
   member?: Member;
   includeBalance?: boolean;
   includeAllBalances?: boolean;
+  balanceMemberIds?: string[];
   includeQrNote?: boolean;
 }): string {
   const lines = [
@@ -81,10 +83,14 @@ export function buildInviteMessage({
     }
   }
 
-  if (!member && includeAllBalances) {
+  if (!member && (includeAllBalances || (balanceMemberIds?.length ?? 0) > 0)) {
     const activeMemberIds = new Set(group.members.map((item) => item.id));
+    const includedMemberIds = includeAllBalances
+      ? activeMemberIds
+      : new Set(balanceMemberIds);
     const balances = computeProjectedBalances(group).filter((balance) =>
-      activeMemberIds.has(balance.memberId),
+      activeMemberIds.has(balance.memberId) &&
+      includedMemberIds.has(balance.memberId),
     );
     lines.push("", "Current member balances:");
     for (const balance of balances) {
