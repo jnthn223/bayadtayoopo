@@ -47,6 +47,18 @@ export function getExpensePayerId(expense: Expense): string {
   return expense.paidBy;
 }
 
+export function isGroupAdmin(group: Group, member?: Member): boolean {
+  if (!member) return false;
+  const ownerId = group.adminId ?? group.members[0]?.id;
+  return (
+    member.id === ownerId ||
+    member.uid === ownerId ||
+    (group.adminIds ?? []).some(
+      (adminId) => adminId === member.id || adminId === member.uid,
+    )
+  );
+}
+
 export function isExpenseSettled(group: Group, expense: Expense): boolean {
   const payerId = getExpensePayerId(expense);
   const confirmedAllocationsByMember = new Map<string, number>();

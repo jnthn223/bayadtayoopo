@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import type {
   AppNotification,
+  Expense,
   Group,
   CurrentUser,
   NotificationDestination,
@@ -36,6 +37,7 @@ import { MEMBER_COLORS } from "./components/utils";
 import { compactGroupHistory, mergeGroupChanges } from "./components/groupMerge";
 import { HomeScreen } from "./components/HomeScreen";
 import { GroupScreen } from "./components/GroupScreen";
+import { QuickAddScreen } from "./components/QuickAddScreen";
 import {
   LoginScreen,
   CompleteProfileScreen,
@@ -68,6 +70,10 @@ import {
   syncPushNotifications,
   updatePushPreferences,
 } from "../lib/pushNotifications";
+import {
+  isQuickAddPath,
+  upsertExpense,
+} from "./components/quickAddExpense";
 
 /* MARKER-MAKE-KIT-INVOKED */
 
@@ -98,6 +104,9 @@ function systemAlertsPromptDismissedKey(userId: string) {
 }
 
 export default function App() {
+  const [quickAddRoute, setQuickAddRoute] = useState(() =>
+    isQuickAddPath(window.location.pathname),
+  );
   const [authState, setAuthState] = useState<AuthState>("loading");
   const [session, setSession] = useState<Session | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
@@ -135,6 +144,13 @@ export default function App() {
   const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   const notificationStreamReadyRef = useRef(false);
   const bannerTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleLocationChange = () =>
+      setQuickAddRoute(isQuickAddPath(window.location.pathname));
+    window.addEventListener("popstate", handleLocationChange);
+    return () => window.removeEventListener("popstate", handleLocationChange);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -234,8 +250,18 @@ export default function App() {
             setAuthState("authenticated");
           }
 
-          // Clean magic-link params from URL
-          window.history.replaceState({}, "", window.location.pathname);
+          // Clean Firebase's magic-link params while preserving a requested
+          // Quick Add group from the Shortcut URL.
+          const cleanUrl = new URL(window.location.pathname, window.location.origin);
+          const quickAddGroupId = rawParams.get("group");
+          if (isQuickAddPath(window.location.pathname) && quickAddGroupId) {
+            cleanUrl.searchParams.set("group", quickAddGroupId);
+          }
+          window.history.replaceState(
+            {},
+            "",
+            `${cleanUrl.pathname}${cleanUrl.search}`,
+          );
           return;
         } catch (err) {
           showBanner(
@@ -708,25 +734,46 @@ export default function App() {
     }
   }
 
+  async function persistGroupUpdate(
+    group: Group,
+    base: Group | null,
+  ): Promise<Group> {
+    if (!session) throw new Error("Sign in again to save this expense.");
+    const saved = await saveGroupSafely(group, base);
+    const pushEvents = collectPushEvents(base, saved, session.uid);
+    if (pushEvents.length > 0) {
+      void sendPushEvents(saved.id, pushEvents).catch((error) =>
+        console.warn("Unable to send push notification", error),
+      );
+    }
+    setSelectedGroup((current) =>
+      current?.id === saved.id ? saved : current,
+    );
+    setGroups((previous) =>
+      previous.map((candidate) =>
+        candidate.id === saved.id ? saved : candidate,
+      ),
+    );
+    return saved;
+  }
+
   async function handleUpdateGroup(group: Group) {
     if (!session) return;
+    const base =
+      selectedGroup?.id === group.id
+        ? selectedGroup
+        : (groups.find((existing) => existing.id === group.id) ?? null);
     try {
-      const base =
-        selectedGroup?.id === group.id
-          ? selectedGroup
-          : (groups.find((existing) => existing.id === group.id) ?? null);
-      const saved = await saveGroupSafely(group, base);
-      const pushEvents = collectPushEvents(base, saved, session.uid);
-      if (pushEvents.length > 0) {
-        void sendPushEvents(saved.id, pushEvents).catch((error) =>
-          console.warn("Unable to send push notification", error),
-        );
-      }
-      setSelectedGroup(saved);
-      setGroups((prev) => prev.map((g) => (g.id === saved.id ? saved : g)));
+      await persistGroupUpdate(group, base);
     } catch (err) {
       showBanner(errorMessage(err, "Unable to save changes"), "error");
     }
+  }
+
+  async function handleQuickAddExpense(groupId: string, expense: Expense) {
+    const base = groups.find((group) => group.id === groupId);
+    if (!base) throw new Error("That group is no longer available.");
+    await persistGroupUpdate(upsertExpense(base, expense), base);
   }
 
   async function handleDeleteGroup(groupId: string) {
@@ -940,6 +987,10 @@ export default function App() {
     );
     if (!group) return;
     dismissBanner();
+    if (quickAddRoute) {
+      window.history.replaceState({}, "", "/");
+      setQuickAddRoute(false);
+    }
     saveNotificationReadAt(notification.at);
     setSelectedGroup(group);
     setNotificationDestination(notification.destination);
@@ -1119,7 +1170,20 @@ export default function App() {
         )}
 
         {splashMinimumElapsed && authState === "authenticated" && currentUser && (
-          <>
+          quickAddRoute ? (
+            <QuickAddScreen
+              groups={groups}
+              currentUser={currentUser}
+              loading={groupsLoading || !profileLoaded}
+              onAddExpense={handleQuickAddExpense}
+              onClose={() => {
+                window.history.replaceState({}, "", "/");
+                setQuickAddRoute(false);
+                setScreen("home");
+              }}
+            />
+          ) : (
+            <>
             {screen === "profile" && (
               <ProfileScreen
                 user={currentUser}
@@ -1163,7 +1227,8 @@ export default function App() {
                 onOpenProfile={() => setScreen("profile")}
               />
             )}
-          </>
+            </>
+          )
         )}
       </div>
     </div>

@@ -40,10 +40,12 @@ import {
   getExpensePayerId,
   getMemberById,
   isExpenseSettled,
+  isGroupAdmin,
   getTotalExpenses,
   MEMBER_COLORS,
   mergeGroupMember,
 } from "./utils";
+import { upsertExpense } from "./quickAddExpense";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { QRModal } from "./QRModal";
 import { InviteModal } from "./InviteModal";
@@ -184,12 +186,7 @@ export function GroupScreen({
   const adminId = group.adminId ?? group.members[0]?.id;
   const isOwner = !!currentMember &&
     (currentMember.id === adminId || currentMember.uid === adminId);
-  const isAdmin = !!currentMember && (
-    isOwner ||
-    (group.adminIds ?? []).some(
-      (memberId) => memberId === currentMember.id || memberId === currentMember.uid,
-    )
-  );
+  const isAdmin = isGroupAdmin(group, currentMember);
   const activeGroupTourTarget = getGroupTourTarget(groupTourStep);
   const displayMemberName = (memberId: string, fallback?: string) =>
     memberId === currentMember?.id ? "You" : (fallback ?? "Unknown");
@@ -408,16 +405,7 @@ export function GroupScreen({
         ...expense,
         receipts: [...(expense.receipts ?? []), ...uploadedReceipts],
       };
-      const updated = { ...group };
-      const idx = updated.expenses.findIndex((e) => e.id === expense.id);
-      if (idx >= 0) {
-        updated.expenses = updated.expenses.map((e) =>
-          e.id === expense.id ? expenseWithReceipts : e,
-        );
-      } else {
-        updated.expenses = [expenseWithReceipts, ...updated.expenses];
-      }
-      await onUpdate(updated);
+      await onUpdate(upsertExpense(group, expenseWithReceipts));
     } catch (error) {
       uploadedReceipts.forEach((receipt) => {
         deletePaymentImage(group.id, receipt.imageId).catch(() => {});

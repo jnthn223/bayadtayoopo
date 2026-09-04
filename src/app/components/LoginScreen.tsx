@@ -108,6 +108,10 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
       window.location.pathname,
       window.location.origin,
     );
+    const quickAddGroupId = new URLSearchParams(window.location.search).get("group");
+    if (quickAddGroupId) {
+      continueUrlValue.searchParams.set("group", quickAddGroupId);
+    }
     const joinGroupId = localStorage.getItem("pendingJoinGroupId");
     const claimMemberId = localStorage.getItem("pendingClaimMemberId");
     const claimCode = localStorage.getItem("pendingClaimCode");
