@@ -6,6 +6,7 @@ import type { CurrentUser, Group, Expense, SplitType, Category } from "./types";
 import { allocateCustomShares, generateId, CATEGORY_ICONS, getCurrencySymbol, getExpensePayerId } from "./utils";
 import { UserAvatar } from "./UserAvatar";
 import { ImagePasteControl } from "./ImagePasteControl";
+import { hasNonPayerShare, SELF_ONLY_EXPENSE_ERROR } from "./expenseValidation";
 
 interface Props {
   group: Group;
@@ -120,6 +121,21 @@ export function AddExpenseModal({
     if (splitType === "custom") {
       if (customDiff > 0.01)
         errs.splits = `Splits must equal total (diff: ${currencySymbol}${customDiff.toFixed(2)})`;
+    }
+    const payerId = isAdmin ? paidBy : (currentMember?.id ?? currentUser.id);
+    const allocation = splitType === "custom" ? customAllocation : equalAllocation;
+    if (
+      paidBy &&
+      includedMembers.length > 0 &&
+      !hasNonPayerShare(
+        payerId,
+        includedMembers.map((member) => ({
+          memberId: member.id,
+          amount: allocation[member.id] ?? 0,
+        })),
+      )
+    ) {
+      errs.members = SELF_ONLY_EXPENSE_ERROR;
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;

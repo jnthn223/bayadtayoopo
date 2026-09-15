@@ -141,6 +141,18 @@ describe("quick expense entry", () => {
     ).toThrow("non-negative");
   });
 
+  it("rejects an expense assigned only to its payer", () => {
+    expect(() =>
+      buildQuickExpense({
+        group: group("trip"),
+        currentUser: user,
+        amount: 100,
+        description: "Mistaken personal expense",
+        includedMemberIds: ["alice-member"],
+      }),
+    ).toThrow("cannot owe only themselves");
+  });
+
   it("inserts and replaces expenses without mutating the group", () => {
     const original = group("trip");
     const expense = buildQuickExpense({

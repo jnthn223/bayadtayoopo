@@ -1,5 +1,6 @@
 import type { CurrentUser, Expense, Group } from "./types";
 import { allocateCustomShares, generateId, isGroupAdmin } from "./utils";
+import { hasNonPayerShare, SELF_ONLY_EXPENSE_ERROR } from "./expenseValidation";
 
 export const QUICK_ADD_LAST_GROUP_PREFIX = "bayadtayoopo:quick-add:last-group";
 
@@ -108,6 +109,13 @@ export function buildQuickExpense({
   if (splitType === "custom" && Math.abs(allocatedTotal - amount) > 0.01) {
     throw new Error("Custom shares must equal the expense total.");
   }
+  const splits = memberIds.map((memberId) => ({
+    memberId,
+    amount: allocation[memberId] ?? 0,
+  }));
+  if (!hasNonPayerShare(payer.id, splits)) {
+    throw new Error(SELF_ONLY_EXPENSE_ERROR);
+  }
   const createdAt = now.toISOString();
 
   return {
@@ -117,10 +125,7 @@ export function buildQuickExpense({
     paidBy: payer.id,
     createdBy: currentMember.id,
     splitType,
-    splits: memberIds.map((memberId) => ({
-      memberId,
-      amount: allocation[memberId] ?? 0,
-    })),
+    splits,
     date: createdAt.slice(0, 10),
     category: "other",
     createdAt,

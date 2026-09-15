@@ -1,6 +1,7 @@
 import { EXPENSE_CATEGORIES } from "./types";
 import type { Category, Expense, Group, Member, SplitType } from "./types";
 import { generateId } from "./utils";
+import { hasNonPayerShare, SELF_ONLY_EXPENSE_ERROR } from "./expenseValidation";
 
 const HEADERS = [
   "date",
@@ -180,6 +181,9 @@ function parseExpenseRow(
       errors.push(
         `Row ${lineNumber}: split total ${splitTotal.toFixed(2)} does not match amount ${amount.toFixed(2)}`,
       );
+    }
+    if (paidBy && !hasNonPayerShare(paidBy.id, splits.splits)) {
+      errors.push(`Row ${lineNumber}: ${SELF_ONLY_EXPENSE_ERROR}`);
     }
   }
 

@@ -415,7 +415,7 @@ export function GroupScreen({
   }
 
   function openDeleteExpense(expense: Expense) {
-    if (isExpenseSettled(group, expense)) return;
+    if (isExpenseSettled(group, expense) && !isAdmin) return;
     setDeleteExpense(expense);
     setDeleteReason("");
     setDeleteReasonError("");
@@ -423,13 +423,73 @@ export function GroupScreen({
 
   function handleDeleteExpense() {
     if (!deleteExpense || !currentMember) return;
-    if (isExpenseSettled(group, deleteExpense)) {
-      setDeleteReasonError("Settled expenses cannot be deleted.");
+    const settled = isExpenseSettled(group, deleteExpense);
+    if (settled && !isAdmin) {
+      setDeleteReasonError("Only a group admin can delete a settled expense.");
+      return;
+    }
+    const hasLinkedPayment = (group.payments ?? []).some(
+      (payment) =>
+        ["pending", "confirmed"].includes(payment.status) &&
+        payment.allocations.some(
+          (allocation) => allocation.expenseId === deleteExpense.id,
+        ),
+    );
+    const hasLinkedOffset = (group.balanceOffsets ?? []).some(
+      (offset) =>
+        ["pending", "confirmed"].includes(offset.status) &&
+        [...offset.debitAllocations, ...offset.creditAllocations].some(
+          (allocation) => allocation.expenseId === deleteExpense.id,
+        ),
+    );
+    if (hasLinkedPayment || hasLinkedOffset) {
+      setDeleteReasonError(
+        "Reverse or cancel the payment activity covering this expense first, then delete it.",
+      );
       return;
     }
     const reason = deleteReason.trim();
     if (!reason) {
       setDeleteReasonError("Enter a reason for deleting this expense");
+      return;
+    }
+
+    if (settled) {
+      const requiredApproverIds = Array.from(
+        new Set([
+          getExpensePayerId(deleteExpense),
+          deleteExpense.createdBy ?? getExpensePayerId(deleteExpense),
+          ...deleteExpense.splits
+            .filter((split) => split.amount > 0.005)
+            .map((split) => split.memberId),
+        ]),
+      );
+      const approvedByIds = requiredApproverIds.includes(currentMember.id)
+        ? [currentMember.id]
+        : [];
+      const request = {
+        id: generateId(),
+        expenseId: deleteExpense.id,
+        reason,
+        requestedBy: currentMember.id,
+        requestedAt: new Date().toISOString(),
+        requiredApproverIds,
+        approvedByIds,
+        status: "pending" as const,
+      };
+      onUpdate({
+        ...group,
+        expenseDeletionRequests: [
+          ...(group.expenseDeletionRequests ?? []).filter(
+            (item) =>
+              item.expenseId !== deleteExpense.id || item.status !== "pending",
+          ),
+          request,
+        ],
+      });
+      setDeleteExpense(null);
+      setDeleteReason("");
+      setDeleteReasonError("");
       return;
     }
 
@@ -451,6 +511,88 @@ export function GroupScreen({
     setDeleteExpense(null);
     setDeleteReason("");
     setDeleteReasonError("");
+  }
+
+  function reviewExpenseDeletion(requestId: string, approve: boolean) {
+    if (!currentMember) return;
+    const request = (group.expenseDeletionRequests ?? []).find(
+      (item) => item.id === requestId && item.status === "pending",
+    );
+    if (!request || !request.requiredApproverIds.includes(currentMember.id)) return;
+
+    const now = new Date().toISOString();
+    if (!approve) {
+      onUpdate({
+        ...group,
+        expenseDeletionRequests: (group.expenseDeletionRequests ?? []).map(
+          (item) =>
+            item.id === request.id
+              ? { ...item, status: "rejected" as const, rejectedBy: currentMember.id, rejectedAt: now }
+              : item,
+        ),
+      });
+      return;
+    }
+
+    const approvedByIds = Array.from(
+      new Set([...request.approvedByIds, currentMember.id]),
+    );
+    const completed = request.requiredApproverIds.every((id) =>
+      approvedByIds.includes(id),
+    );
+    const expense = group.expenses.find((item) => item.id === request.expenseId);
+    onUpdate({
+      ...group,
+      expenses:
+        completed && expense
+          ? group.expenses.filter((item) => item.id !== expense.id)
+          : group.expenses,
+      expenseDeletionRequests: (group.expenseDeletionRequests ?? []).map(
+        (item) =>
+          item.id === request.id
+            ? {
+                ...item,
+                approvedByIds,
+                status: completed ? "completed" as const : "pending" as const,
+                completedAt: completed ? now : undefined,
+              }
+            : item,
+      ),
+      deletedExpenses:
+        completed && expense
+          ? [
+              ...(group.deletedExpenses ?? []),
+              {
+                expenseId: expense.id,
+                description: expense.description,
+                amount: expense.amount,
+                deletedBy: request.requestedBy,
+                reason: request.reason,
+                deletedAt: now,
+              },
+            ]
+          : group.deletedExpenses,
+    });
+  }
+
+  function cancelExpenseDeletion(requestId: string) {
+    if (!currentMember) return;
+    onUpdate({
+      ...group,
+      expenseDeletionRequests: (group.expenseDeletionRequests ?? []).map(
+        (item) =>
+          item.id === requestId &&
+          item.status === "pending" &&
+          (item.requestedBy === currentMember.id || isAdmin)
+            ? {
+                ...item,
+                status: "cancelled" as const,
+                cancelledBy: currentMember.id,
+                cancelledAt: new Date().toISOString(),
+              }
+            : item,
+      ),
+    });
   }
 
   function reviewPayment(
@@ -1071,6 +1213,8 @@ export function GroupScreen({
         setEditExpense={setEditExpense}
         setAddOpen={setAddOpen}
         openDeleteExpense={openDeleteExpense}
+        reviewExpenseDeletion={reviewExpenseDeletion}
+        cancelExpenseDeletion={cancelExpenseDeletion}
         openPaymentDetails={openPaymentDetails}
         viewPaymentImage={viewPaymentImage}
         onUpdate={onUpdate}
@@ -1381,11 +1525,16 @@ export function GroupScreen({
           <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
           <Dialog.Content className="fixed inset-x-4 bottom-8 z-50 bg-card rounded-3xl p-6 shadow-2xl">
             <Dialog.Title className="text-base font-semibold text-foreground mb-1">
-              Delete expense?
+              {deleteExpense && isExpenseSettled(group, deleteExpense)
+                ? "Request expense deletion?"
+                : "Delete expense?"}
             </Dialog.Title>
             <Dialog.Description className="text-sm text-muted-foreground mb-4">
               Give a reason for deleting "{deleteExpense?.description}". This
               will be saved with the group history.
+              {deleteExpense && isExpenseSettled(group, deleteExpense)
+                ? " Because it is settled, every financially involved member must approve before it is removed from totals and balances."
+                : ""}
             </Dialog.Description>
             <textarea
               value={deleteReason}
@@ -1416,7 +1565,9 @@ export function GroupScreen({
                 onClick={handleDeleteExpense}
                 className="flex-1 py-3.5 rounded-2xl bg-destructive text-white text-sm font-semibold transition-all active:scale-95"
               >
-                Delete
+                {deleteExpense && isExpenseSettled(group, deleteExpense)
+                  ? "Request deletion"
+                  : "Delete"}
               </button>
             </div>
           </Dialog.Content>

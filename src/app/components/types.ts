@@ -231,9 +231,26 @@ export interface Group {
   balanceOffsets?: BalanceOffset[];
   memberClaimRequests?: MemberClaimRequest[];
   deletedExpenses?: DeletedExpense[];
+  expenseDeletionRequests?: ExpenseDeletionRequest[];
   messages?: ChatMessage[];
   createdAt: string;
   currency: string;
+}
+
+export interface ExpenseDeletionRequest {
+  id: string;
+  expenseId: string;
+  reason: string;
+  requestedBy: string;
+  requestedAt: string;
+  requiredApproverIds: string[];
+  approvedByIds: string[];
+  status: "pending" | "rejected" | "cancelled" | "completed";
+  rejectedBy?: string;
+  rejectedAt?: string;
+  cancelledBy?: string;
+  cancelledAt?: string;
+  completedAt?: string;
 }
 
 export interface DeletedExpense {

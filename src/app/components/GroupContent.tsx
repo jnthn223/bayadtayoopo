@@ -68,6 +68,8 @@ interface Props {
   setEditExpense: Dispatch<SetStateAction<Expense | null>>;
   setAddOpen: Dispatch<SetStateAction<boolean>>;
   openDeleteExpense: (expense: Expense) => void;
+  reviewExpenseDeletion: (requestId: string, approve: boolean) => void;
+  cancelExpenseDeletion: (requestId: string) => void;
   openPaymentDetails: () => void;
   viewPaymentImage: (imageId: string, title: string) => void;
   onUpdate: (group: Group) => Promise<void> | void;
@@ -104,6 +106,8 @@ export function GroupContent({
   setEditExpense,
   setAddOpen,
   openDeleteExpense,
+  reviewExpenseDeletion,
+  cancelExpenseDeletion,
   openPaymentDetails,
   viewPaymentImage,
   onUpdate,
@@ -464,6 +468,15 @@ export function GroupContent({
                       const isCreator =
                         currentMember?.id === (exp.createdBy ?? exp.paidBy);
                       const settled = isExpenseSettled(group, exp);
+                      const deletionRequest = group.expenseDeletionRequests?.find(
+                        (request) =>
+                          request.expenseId === exp.id && request.status === "pending",
+                      );
+                      const canReviewDeletion = Boolean(
+                        currentMember &&
+                          deletionRequest?.requiredApproverIds.includes(currentMember.id) &&
+                          !deletionRequest.approvedByIds.includes(currentMember.id),
+                      );
                       return (
                         <div
                           key={exp.id}
@@ -526,6 +539,43 @@ export function GroupContent({
                                 ))}
                               </div>
                             )}
+                            {deletionRequest && (
+                              <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-950">
+                                <p className="font-semibold">Deletion requested</p>
+                                <p className="mt-0.5">{deletionRequest.reason}</p>
+                                <p className="mt-1 text-[11px] text-amber-800">
+                                  {deletionRequest.approvedByIds.length} of {deletionRequest.requiredApproverIds.length} approvals
+                                </p>
+                                {canReviewDeletion && (
+                                  <div className="mt-2 flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => reviewExpenseDeletion(deletionRequest.id, true)}
+                                      className="rounded-lg bg-green-700 px-2.5 py-1.5 font-semibold text-white"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => reviewExpenseDeletion(deletionRequest.id, false)}
+                                      className="rounded-lg border border-amber-400 px-2.5 py-1.5 font-semibold"
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+                                )}
+                                {currentMember &&
+                                  (deletionRequest.requestedBy === currentMember.id || isAdmin) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => cancelExpenseDeletion(deletionRequest.id)}
+                                      className="mt-2 text-[11px] font-medium underline"
+                                    >
+                                      Cancel request
+                                    </button>
+                                  )}
+                              </div>
+                            )}
                           </div>
                           <div className="text-right shrink-0">
                             <p className="text-sm font-semibold text-foreground">
@@ -536,9 +586,9 @@ export function GroupContent({
                                 Settled
                               </span>
                             )}
-                            {!settled && (isCreator || isAdmin) && (
+                            {!deletionRequest && (!settled ? isCreator || isAdmin : isAdmin) && (
                               <div className="flex gap-1 mt-1 justify-end">
-                                {isCreator && (
+                                {!settled && isCreator && (
                                   <button
                                     onClick={() => {
                                       setEditExpense(exp);
@@ -553,7 +603,7 @@ export function GroupContent({
                                     />
                                   </button>
                                 )}
-                                {!settled && (isCreator || isAdmin) && (
+                                {(!settled ? isCreator || isAdmin : isAdmin) && (
                                   <button
                                     onClick={() => openDeleteExpense(exp)}
                                     className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
