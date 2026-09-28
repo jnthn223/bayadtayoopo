@@ -1,0 +1,11 @@
+{
+  "name": "bayadtayoopo-reminder-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "../../node_modules/.bin/vitest run",
+    "dev:staging": "../push/node_modules/.bin/wrangler dev --config wrangler.staging.toml",
+    "deploy:staging": "../push/node_modules/.bin/wrangler deploy --config wrangler.staging.toml",
+    "deploy:production": "../push/node_modules/.bin/wrangler deploy --config wrangler.production.toml"
+  }
+}

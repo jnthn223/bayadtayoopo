@@ -1,10 +1,12 @@
 import { useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink, Bell, Camera, ImageOff } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
-import type { CurrentUser, Group, NotificationPreferences } from "./types";
+import type { CurrentUser, Group, NotificationPreferences, PaymentReminderPreferences } from "./types";
 import { MEMBER_COLORS } from "./utils";
 import { UserAvatar } from "./UserAvatar";
 import { normalizeNotificationPreferences } from "./notifications";
+import { normalizePaymentReminderPreferences } from "./reminderPreferences";
 import {
   disablePushNotifications,
   enablePushNotifications,
@@ -33,11 +35,16 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
   const [avatarSeedInput, setAvatarSeedInput] = useState(user.avatarSeed);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(
+    () => new URLSearchParams(window.location.search).get("settings") === "notifications",
+  );
   const [notificationDraft, setNotificationDraft] =
     useState<NotificationPreferences>(() =>
       normalizeNotificationPreferences(user.notificationPreferences),
     );
+  const [reminderDraft, setReminderDraft] = useState(() =>
+    normalizePaymentReminderPreferences(user.paymentReminderPreferences),
+  );
   const [notificationError, setNotificationError] = useState("");
   const [pushSaving, setPushSaving] = useState(false);
   const [photoSaving, setPhotoSaving] = useState(false);
@@ -100,11 +107,14 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
           icon: Bell,
           label: "Notifications",
           value: user.notificationPreferences?.systemNotifications
-            ? "In-app and system alerts"
-            : "In-app alerts",
+            ? "In-app, email, and system alerts"
+            : "In-app and email reminders",
           action: () => {
             setNotificationDraft(
               normalizeNotificationPreferences(user.notificationPreferences),
+            );
+            setReminderDraft(
+              normalizePaymentReminderPreferences(user.paymentReminderPreferences),
             );
             setNotificationError("");
             setNotificationsOpen(true);
@@ -233,6 +243,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
                   />
                 ))}
               </div>
+
             </div>
           )}
         </div>
@@ -346,6 +357,12 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
                 If you enable system alerts, a device-specific push token is
                 stored by our push-delivery service so your browser can receive
                 notifications. Turning system alerts off removes that device.
+              </span>
+              <span className="block">
+                Automatic payment reminders use your verified login email and
+                current unsettled balances to create a combined account summary.
+                You can change the schedule, mute individual groups, or turn
+                email reminders off from Notification settings or any reminder email.
               </span>
               <span className="block">
                 Your data is used only to provide app features. We do not sell
@@ -473,6 +490,13 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
                 </div>
               )}
 
+              <PaymentReminderSettings
+                email={user.email}
+                groups={groups}
+                value={reminderDraft}
+                onChange={setReminderDraft}
+              />
+
               <div className="rounded-2xl border border-border p-4">
                 <div className="flex items-start gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent">
@@ -550,6 +574,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
                   onUpdateUser({
                     ...user,
                     notificationPreferences: notificationDraft,
+                    paymentReminderPreferences: reminderDraft,
                   });
                   setNotificationsOpen(false);
                 }}
@@ -588,6 +613,168 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+    </div>
+  );
+}
+
+function PaymentReminderSettings({
+  email,
+  groups,
+  value,
+  onChange,
+}: {
+  email: string;
+  groups: Group[];
+  value: PaymentReminderPreferences;
+  onChange: Dispatch<SetStateAction<PaymentReminderPreferences>>;
+}) {
+  return (
+    <div className="space-y-3 rounded-2xl border border-border p-4">
+      <div>
+        <p className="text-sm font-semibold text-foreground">Payment reminders</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          Receive one friendly summary covering every group where you still
+          have a balance. Email reminders are enabled by default.
+        </p>
+      </div>
+      <NotificationToggle
+        label="Email summary"
+        detail={`Sent to ${email}`}
+        checked={value.emailEnabled}
+        onChange={(emailEnabled) =>
+          onChange((current) => ({ ...current, emailEnabled }))
+        }
+      />
+      <NotificationToggle
+        label="In-app reminder"
+        detail="Keep the same summary in your notification inbox"
+        checked={value.inAppEnabled}
+        onChange={(inAppEnabled) =>
+          onChange((current) => ({ ...current, inAppEnabled }))
+        }
+      />
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
+          Frequency
+        </span>
+        <select
+          value={value.frequency}
+          onChange={(event) =>
+            onChange((current) => ({
+              ...current,
+              frequency: event.target.value as typeof current.frequency,
+            }))
+          }
+          className="w-full rounded-xl border border-border bg-input-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary"
+        >
+          <option value="every3days">Every 3 days</option>
+          <option value="weekly">Weekly</option>
+          <option value="biweekly">Every 2 weeks</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </label>
+      {(value.frequency === "weekly" || value.frequency === "biweekly") && (
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
+            Preferred day
+          </span>
+          <select
+            value={value.weekday}
+            onChange={(event) =>
+              onChange((current) => ({
+                ...current,
+                weekday: Number(event.target.value),
+              }))
+            }
+            className="w-full rounded-xl border border-border bg-input-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary"
+          >
+            {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day, index) => (
+              <option key={day} value={index}>{day}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
+          Preferred time
+        </span>
+        <select
+          value={value.hour}
+          onChange={(event) =>
+            onChange((current) => ({ ...current, hour: Number(event.target.value) }))
+          }
+          className="w-full rounded-xl border border-border bg-input-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary"
+        >
+          <option value={7}>7:00 AM</option>
+          <option value={9}>9:00 AM</option>
+          <option value={12}>12:00 PM</option>
+          <option value={18}>6:00 PM</option>
+          <option value={20}>8:00 PM</option>
+        </select>
+        <span className="mt-1 block text-[11px] text-muted-foreground">
+          {value.timeZone}
+        </span>
+      </label>
+      {groups.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">
+            Email reminders by group
+          </p>
+          <div className="overflow-hidden rounded-xl border border-border">
+            {groups.map((group, index) => {
+              const enabled = !value.mutedGroupIds.includes(group.id);
+              const snoozedUntil = value.groupSnoozes[group.id];
+              const snoozed = Boolean(
+                snoozedUntil && new Date(snoozedUntil).getTime() > Date.now(),
+              );
+              return (
+                <div
+                  key={group.id}
+                  className={index < groups.length - 1 ? "border-b border-border" : ""}
+                >
+                  <NotificationToggle
+                    label={group.name}
+                    detail={enabled ? (snoozed ? "Snoozed for 7 days" : "Included in summary") : "Muted"}
+                    checked={enabled}
+                    onChange={(nextEnabled) =>
+                      onChange((current) => ({
+                        ...current,
+                        mutedGroupIds: nextEnabled
+                          ? current.mutedGroupIds.filter((id) => id !== group.id)
+                          : [...new Set([...current.mutedGroupIds, group.id])],
+                      }))
+                    }
+                  />
+                  {enabled && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onChange((current) => {
+                          const groupSnoozes = { ...current.groupSnoozes };
+                          if (snoozed) delete groupSnoozes[group.id];
+                          else {
+                            groupSnoozes[group.id] = new Date(
+                              Date.now() + 7 * 86_400_000,
+                            ).toISOString();
+                          }
+                          return { ...current, groupSnoozes };
+                        })
+                      }
+                      className="mb-3 ml-4 text-[11px] font-semibold text-primary"
+                    >
+                      {snoozed ? "Resume reminders" : "Snooze for 7 days"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        Settled groups are omitted, and amounts awaiting payment confirmation
+        are excluded automatically.
+      </p>
     </div>
   );
 }

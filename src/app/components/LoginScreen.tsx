@@ -112,6 +112,11 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
     if (quickAddGroupId) {
       continueUrlValue.searchParams.set("group", quickAddGroupId);
     }
+    const currentParams = new URLSearchParams(window.location.search);
+    for (const key of ["screen", "settings", "openGroup", "tab", "expense", "payment", "message", "members"]) {
+      const value = currentParams.get(key);
+      if (value) continueUrlValue.searchParams.set(key, value);
+    }
     const joinGroupId = localStorage.getItem("pendingJoinGroupId");
     const claimMemberId = localStorage.getItem("pendingClaimMemberId");
     const claimCode = localStorage.getItem("pendingClaimCode");

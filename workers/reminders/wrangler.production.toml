@@ -1,0 +1,16 @@
+name = "bayadtayoopo-reminders"
+main = "src/index.js"
+compatibility_date = "2026-09-28"
+workers_dev = true
+preview_urls = false
+
+[vars]
+FIREBASE_PROJECT_ID = "group-expense-management-app"
+APP_URL = "https://bayadtayoopo.web.app"
+WORKER_PUBLIC_URL = "https://bayadtayoopo-reminders.bayadtayoopo.workers.dev"
+EMAIL_FROM = "BayadTayoOpo <reminders@bayadtayoopo.whythough.space>"
+EMAIL_REPLY_TO = "support@whythough.space"
+MAX_EMAILS_PER_DAY = "95"
+
+[triggers]
+crons = ["0 * * * *"]

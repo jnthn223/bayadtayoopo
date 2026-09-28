@@ -12,6 +12,9 @@
     "dev": "vite",
     "deploy:production": "npm run build && firebase deploy --only hosting:app,firestore:rules --project production",
     "deploy:staging": "npm run build:staging && firebase deploy --only hosting:app,firestore:rules --project staging",
+    "test:reminders": "npm --prefix workers/reminders test",
+    "deploy:reminders:staging": "npm --prefix workers/reminders run deploy:staging",
+    "deploy:reminders:production": "npm --prefix workers/reminders run deploy:production",
     "test": "vitest run"
   },
   "dependencies": {

@@ -18,7 +18,13 @@ service cloud.firestore {
           'avatarSeed',
           'profileImageVersion',
           'notificationReadAt',
-          'notificationPreferences'
+          'notificationPreferences',
+          'email',
+          'paymentReminderPreferences',
+          'paymentReminderDigest',
+          'lastPaymentReminderAt',
+          'lastPaymentReminderKey',
+          'lastPaymentReminderEmailAt'
         ])
         && request.resource.data.groupIds is list
         && (!request.resource.data.keys().hasAny(['name'])
@@ -33,6 +39,42 @@ service cloud.firestore {
             && request.resource.data.profileImageVersion.size() <= 150))
         && (!request.resource.data.keys().hasAny(['notificationReadAt'])
           || request.resource.data.notificationReadAt is string)
+        && (!request.resource.data.keys().hasAny(['email'])
+          || (request.resource.data.email is string
+            && request.auth.token.email == request.resource.data.email))
+        && (!request.resource.data.keys().hasAny(['lastPaymentReminderAt'])
+          || request.resource.data.lastPaymentReminderAt is string)
+        && (!request.resource.data.keys().hasAny(['lastPaymentReminderKey'])
+          || request.resource.data.lastPaymentReminderKey is string)
+        && (!request.resource.data.keys().hasAny(['lastPaymentReminderEmailAt'])
+          || request.resource.data.lastPaymentReminderEmailAt is string)
+        && (!request.resource.data.keys().hasAny(['paymentReminderDigest'])
+          || request.resource.data.paymentReminderDigest is map)
+        && (!request.resource.data.keys().hasAny(['paymentReminderPreferences'])
+          || (request.resource.data.paymentReminderPreferences is map
+            && request.resource.data.paymentReminderPreferences.keys().hasOnly([
+              'emailEnabled',
+              'inAppEnabled',
+              'frequency',
+              'weekday',
+              'hour',
+              'timeZone',
+              'mutedGroupIds',
+              'groupSnoozes'
+            ])
+            && request.resource.data.paymentReminderPreferences.emailEnabled is bool
+            && request.resource.data.paymentReminderPreferences.inAppEnabled is bool
+            && request.resource.data.paymentReminderPreferences.frequency in ['every3days', 'weekly', 'biweekly', 'monthly']
+            && request.resource.data.paymentReminderPreferences.weekday is int
+            && request.resource.data.paymentReminderPreferences.weekday >= 0
+            && request.resource.data.paymentReminderPreferences.weekday <= 6
+            && request.resource.data.paymentReminderPreferences.hour is int
+            && request.resource.data.paymentReminderPreferences.hour >= 0
+            && request.resource.data.paymentReminderPreferences.hour <= 23
+            && request.resource.data.paymentReminderPreferences.timeZone is string
+            && request.resource.data.paymentReminderPreferences.mutedGroupIds is list
+            && request.resource.data.paymentReminderPreferences.mutedGroupIds.size() <= 100
+            && request.resource.data.paymentReminderPreferences.groupSnoozes is map))
         && (!request.resource.data.keys().hasAny(['notificationPreferences'])
           || (request.resource.data.notificationPreferences is map
             && request.resource.data.notificationPreferences.keys().hasOnly([

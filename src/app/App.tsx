@@ -33,7 +33,7 @@ import {
   loadOrCreateUserProfile,
   saveUserProfile,
 } from "../lib/groupService";
-import { MEMBER_COLORS } from "./components/utils";
+import { computeProjectedBalances, MEMBER_COLORS } from "./components/utils";
 import { compactGroupHistory, mergeGroupChanges } from "./components/groupMerge";
 import { HomeScreen } from "./components/HomeScreen";
 import { GroupScreen } from "./components/GroupScreen";
@@ -253,9 +253,12 @@ export default function App() {
           // Clean Firebase's magic-link params while preserving a requested
           // Quick Add group from the Shortcut URL.
           const cleanUrl = new URL(window.location.pathname, window.location.origin);
-          const quickAddGroupId = rawParams.get("group");
-          if (isQuickAddPath(window.location.pathname) && quickAddGroupId) {
-            cleanUrl.searchParams.set("group", quickAddGroupId);
+          const preservedParams = isQuickAddPath(window.location.pathname)
+            ? ["group"]
+            : ["screen", "settings", "openGroup", "tab", "expense", "payment", "message", "members"];
+          for (const key of preservedParams) {
+            const value = rawParams.get(key);
+            if (value) cleanUrl.searchParams.set(key, value);
           }
           window.history.replaceState(
             {},
@@ -320,7 +323,7 @@ export default function App() {
     try {
       const [loaded, profile] = await Promise.all([
         loadUserGroups(uid),
-        loadOrCreateUserProfile(uid),
+        loadOrCreateUserProfile(uid, session?.email),
       ]);
       setGroups(loaded);
       setCurrentUser((user) =>
@@ -333,6 +336,8 @@ export default function App() {
               profileImageVersion: profile.profileImageVersion,
               notificationReadAt: profile.notificationReadAt,
               notificationPreferences: profile.notificationPreferences,
+              paymentReminderPreferences: profile.paymentReminderPreferences,
+              paymentReminderDigest: profile.paymentReminderDigest,
             }
           : user,
       );
@@ -458,7 +463,7 @@ export default function App() {
     try {
       const newSession = saveSession(user);
       const cu = sessionToCurrentUser(newSession);
-      const savedProfile = await loadOrCreateUserProfile(user.uid);
+      const savedProfile = await loadOrCreateUserProfile(user.uid, user.email);
       const colorIndex = user.uid.charCodeAt(0) % MEMBER_COLORS.length;
       const memberName = savedProfile.name ?? cu.name;
       const personalClaimMemberId =
@@ -661,6 +666,7 @@ export default function App() {
         profileImageVersion: updated.profileImageVersion ?? "",
         notificationReadAt: updated.notificationReadAt,
         notificationPreferences: updated.notificationPreferences,
+        paymentReminderPreferences: updated.paymentReminderPreferences,
       }).catch((err) => {
         showBanner(errorMessage(err, "Unable to save profile"), "error");
       });
@@ -791,14 +797,45 @@ export default function App() {
 
   const totalExpenses = groups.reduce((sum, g) => sum + g.expenses.length, 0);
   const notifications = useMemo(
-    () =>
-      currentUser
-        ? deriveNotifications(
-            groups,
-            currentUser.id,
-            currentUser.notificationPreferences,
-          )
-        : [],
+    () => {
+      if (!currentUser) return [];
+      const activity = deriveNotifications(
+        groups,
+        currentUser.id,
+        currentUser.notificationPreferences,
+      );
+      const reminderItems = currentUser.paymentReminderPreferences?.inAppEnabled === false
+        ? []
+        : (currentUser.paymentReminderDigest?.groups ?? []).flatMap((summary) => {
+            const group = groups.find((item) => item.id === summary.groupId);
+            if (!group || !currentUser.paymentReminderDigest) return [];
+            const member = group.members.find(
+              (item) => item.id === currentUser.id || item.uid === currentUser.id,
+            );
+            const currentBalance = member
+              ? computeProjectedBalances(group).find(
+                  (balance) => balance.memberId === member.id,
+                )
+              : undefined;
+            if (!currentBalance || currentBalance.net >= -0.005) return [];
+            return [{
+              id: `${currentUser.paymentReminderDigest.id}:${summary.groupId}`,
+              type: "payment_reminder" as const,
+              groupId: group.id,
+              groupName: group.name,
+              title: `Payment reminder · ${group.name}`,
+              body: `${new Intl.NumberFormat("en-PH", {
+                style: "currency",
+                currency: summary.currency,
+              }).format(-currentBalance.net)} left to settle. Pay in full or make a partial payment.`,
+              at: currentUser.paymentReminderDigest.createdAt,
+              destination: { tab: "settle" as const },
+            }];
+          });
+      return [...reminderItems, ...activity].sort(
+        (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
+      );
+    },
     [currentUser, groups],
   );
   const unreadNotificationCount = notifications.filter((notification) =>
@@ -1026,6 +1063,12 @@ export default function App() {
     setScreen("group");
     window.history.replaceState({}, "", window.location.pathname);
   }, [authState, groups]);
+
+  useEffect(() => {
+    if (authState !== "authenticated" || !currentUser) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("screen") === "profile") setScreen("profile");
+  }, [authState, currentUser?.id]);
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (

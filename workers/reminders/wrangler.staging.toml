@@ -1,0 +1,13 @@
+name = "bayadtayoopo-reminders-staging"
+main = "src/index.js"
+compatibility_date = "2026-09-28"
+workers_dev = true
+preview_urls = false
+
+[vars]
+FIREBASE_PROJECT_ID = "bayadtayoopo-staging"
+APP_URL = "https://bayadtayoopo-staging.web.app"
+WORKER_PUBLIC_URL = "https://bayadtayoopo-reminders-staging.bayadtayoopo.workers.dev"
+EMAIL_FROM = "BayadTayoOpo Staging <reminders@bayadtayoopo.whythough.space>"
+EMAIL_REPLY_TO = "support@whythough.space"
+MAX_EMAILS_PER_DAY = "10"

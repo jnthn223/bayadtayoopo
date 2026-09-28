@@ -158,6 +158,39 @@ export interface NotificationPreferences {
   mutedChatGroupIds: string[];
 }
 
+export type PaymentReminderFrequency =
+  | "every3days"
+  | "weekly"
+  | "biweekly"
+  | "monthly";
+
+export interface PaymentReminderPreferences {
+  emailEnabled: boolean;
+  inAppEnabled: boolean;
+  frequency: PaymentReminderFrequency;
+  /** 0 = Sunday, 5 = Friday. */
+  weekday: number;
+  /** Local hour using a 24-hour clock. */
+  hour: number;
+  timeZone: string;
+  mutedGroupIds: string[];
+  groupSnoozes: Record<string, string>;
+}
+
+export interface PaymentReminderGroupSummary {
+  groupId: string;
+  groupName: string;
+  amount: number;
+  currency: string;
+  pendingPaymentAmount: number;
+}
+
+export interface PaymentReminderDigest {
+  id: string;
+  createdAt: string;
+  groups: PaymentReminderGroupSummary[];
+}
+
 export interface CurrentUser {
   id: string;
   name: string;
@@ -167,15 +200,20 @@ export interface CurrentUser {
   profileImageVersion?: string;
   notificationReadAt?: string;
   notificationPreferences?: NotificationPreferences;
+  paymentReminderPreferences?: PaymentReminderPreferences;
+  paymentReminderDigest?: PaymentReminderDigest;
 }
 
 export interface UserProfile {
+  email?: string;
   name?: string;
   color?: string;
   avatarSeed?: string;
   profileImageVersion?: string;
   notificationReadAt?: string;
   notificationPreferences?: NotificationPreferences;
+  paymentReminderPreferences?: PaymentReminderPreferences;
+  paymentReminderDigest?: PaymentReminderDigest;
 }
 
 export type NotificationType =
@@ -191,6 +229,7 @@ export type NotificationType =
   | "expense_created"
   | "expense_updated"
   | "expense_deleted"
+  | "payment_reminder"
   | "chat_message"
   | "member_joined";
 

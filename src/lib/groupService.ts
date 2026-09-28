@@ -17,6 +17,7 @@ import type { Group, Member, UserProfile } from "../app/components/types";
 import { compactGroupHistory } from "../app/components/groupMerge";
 import { MEMBER_COLORS, generateId } from "../app/components/utils";
 import { normalizeNotificationPreferences } from "../app/components/notifications";
+import { normalizePaymentReminderPreferences } from "../app/components/reminderPreferences";
 
 // ─── User document ─────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ async function addGroupIdToUser(uid: string, groupId: string): Promise<void> {
   );
 }
 
-export async function loadOrCreateUserProfile(uid: string): Promise<UserProfile> {
+export async function loadOrCreateUserProfile(uid: string, verifiedEmail?: string): Promise<UserProfile> {
   const user = await getUserDocument(uid);
   const now = new Date().toISOString();
   const avatarSeed =
@@ -72,6 +73,14 @@ export async function loadOrCreateUserProfile(uid: string): Promise<UserProfile>
   if (typeof user.notificationReadAt !== "string") {
     profileRepairs.notificationReadAt = notificationReadAt;
   }
+  if (verifiedEmail && user.email !== verifiedEmail) profileRepairs.email = verifiedEmail;
+  if (
+    typeof user.paymentReminderPreferences !== "object" ||
+    user.paymentReminderPreferences === null
+  ) {
+    profileRepairs.paymentReminderPreferences =
+      normalizePaymentReminderPreferences();
+  }
 
   if (Object.keys(profileRepairs).length > 0) {
     await finishFirestoreWrite(
@@ -84,6 +93,7 @@ export async function loadOrCreateUserProfile(uid: string): Promise<UserProfile>
   }
 
   return {
+    email: verifiedEmail ?? (typeof user.email === "string" ? user.email : undefined),
     name: typeof user.name === "string" ? user.name : undefined,
     color: typeof user.color === "string" ? user.color : undefined,
     avatarSeed,
@@ -98,6 +108,17 @@ export async function loadOrCreateUserProfile(uid: string): Promise<UserProfile>
         ? (user.notificationPreferences as UserProfile["notificationPreferences"])
         : undefined,
     ),
+    paymentReminderPreferences: normalizePaymentReminderPreferences(
+      typeof user.paymentReminderPreferences === "object" &&
+        user.paymentReminderPreferences !== null
+        ? (user.paymentReminderPreferences as UserProfile["paymentReminderPreferences"])
+        : undefined,
+    ),
+    paymentReminderDigest:
+      typeof user.paymentReminderDigest === "object" &&
+      user.paymentReminderDigest !== null
+        ? (user.paymentReminderDigest as UserProfile["paymentReminderDigest"])
+        : undefined,
   };
 }
 
