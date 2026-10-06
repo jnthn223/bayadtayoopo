@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ArrowRight,
   BarChart2,
+  BellRing,
   Check,
   CheckCircle2,
   Copy,
@@ -17,8 +18,10 @@ import {
   Share2,
   Shield,
   Smartphone,
+  Scale,
   UserPlus,
   Users,
+  Zap,
   X,
 } from "lucide-react";
 import { sendMagicLink } from "../../lib/firebaseRest";
@@ -203,8 +206,12 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
           Built for real ambagan
         </p>
         <h2 className="mt-1 text-xl font-semibold text-foreground">
-          Walang gulatan. Walang kalkulan.
+          From first expense to final payment.
         </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          BayadTayoOpo keeps everyone clear, reminded, and accounted for—without
+          awkward singilan.
+        </p>
         <div className="mt-5 rounded-3xl bg-card border border-border p-5">
           <p className="text-sm font-semibold text-foreground">
             Start now. Settle with proof.
@@ -223,8 +230,8 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
               ],
               [
                 "3",
-                "Pay fully or partially",
-                "One transfer can cover several expenses. Attach one proof, then let the recipient confirm it.",
+                "Settle in the way that works",
+                "Pay by expense, pay in full, make a partial payment, or offset balances—with proof and confirmation.",
               ],
             ].map(([number, title, copy]) => (
               <div key={number} className="flex gap-3">
@@ -241,58 +248,37 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
             ))}
           </div>
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[
             [
-              Receipt,
-              "Flexible splits",
-              "Equal or custom amounts for every expense.",
+              UserPlus,
+              "Start before everyone joins",
+              "Add pending members now, include them in expenses, then let them claim their profile by link or QR.",
+            ],
+            [
+              Zap,
+              "Add expenses in seconds",
+              "Use Quick Add, paste a receipt, or import several expenses from CSV.",
             ],
             [
               BarChart2,
-              "Clear balances",
-              "See who owes and who gets money back.",
-            ],
-            [Users, "Easy invites", "Add friends now and let them join later."],
-            [
-              Shield,
-              "Payment tracking",
-              "Track partial payments, remaining balances, and confirmation.",
-            ],
-            [
-              UserPlus,
-              "Pending members",
-              "Include someone in expenses before they create an account.",
-            ],
-            [
-              QrCode,
-              "QR invitations",
-              "Let friends scan a code to join or claim their pending profile.",
-            ],
-            [
-              MessageCircle,
-              "Group messages",
-              "Keep expense conversations and updates inside the group.",
+              "Always know what you owe",
+              "See clear balances, pay specific expenses, or settle your whole balance at once.",
             ],
             [
               CreditCard,
-              "Payment instructions & proof",
-              "Share payment details, attach one proof, and see which expenses the transfer covers.",
+              "Pay the way that works for you",
+              "Pay in full, make partial payments, or use one transfer to cover several expenses.",
             ],
             [
-              CheckCircle2,
-              "Expense receipts",
-              "Attach the original receipt to an expense for group transparency.",
+              Scale,
+              "Settle without sending money",
+              "When you owe each other, request a balance offset and settle the overlap after approval.",
             ],
             [
-              FileSpreadsheet,
-              "CSV import & export",
-              "Move expenses in bulk or download a clean group record.",
-            ],
-            [
-              Smartphone,
-              "Install on mobile",
-              "Add it from Safari or Chrome and use it like a regular app.",
+              BellRing,
+              "Never forget a balance",
+              "Get in-app and email payment reminders with schedules and per-group controls.",
             ],
           ].map(([Icon, title, copy]) => {
             const FeatureIcon = Icon as typeof Receipt;
@@ -313,6 +299,33 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
               </div>
             );
           })}
+        </div>
+        <div className="mt-5 rounded-3xl border border-border bg-card p-5">
+          <p className="text-sm font-semibold text-foreground">And there’s more</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[
+              [QrCode, "QR & link invitations"],
+              [CreditCard, "Payment instructions"],
+              [Shield, "Payment proof & confirmation"],
+              [CheckCircle2, "Expense receipts"],
+              [MessageCircle, "Chat, mentions & replies"],
+              [FileSpreadsheet, "CSV import & export"],
+              [Smartphone, "Installable & offline-ready"],
+              [Users, "Member claiming"],
+              [Receipt, "Flexible splits"],
+            ].map(([Icon, label]) => {
+              const MoreIcon = Icon as typeof Receipt;
+              return (
+                <span
+                  key={String(label)}
+                  className="inline-flex items-center gap-2 rounded-full bg-muted/60 px-3 py-2 text-xs font-medium text-foreground"
+                >
+                  <MoreIcon size={14} className="text-primary" />
+                  {String(label)}
+                </span>
+              );
+            })}
+          </div>
         </div>
       </section>
 
@@ -365,33 +378,51 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={handleGoogleSignIn}
-                disabled={googleLoading || loading}
-                className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-card border border-border text-foreground font-semibold transition-all active:scale-95 disabled:opacity-60"
-              >
-                {googleLoading ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <>
-                    <span className="grid place-items-center size-5 rounded-full bg-white text-sm font-bold text-[#4285f4] border border-border">
-                      G
-                    </span>
-                    Continue with Google
-                  </>
-                )}
-              </button>
+              <div className="rounded-3xl border-2 border-primary/25 bg-accent/70 p-3 shadow-sm">
+                <div className="mb-2.5 flex items-center justify-between gap-3 px-1">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      Sign in with Google
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Fastest and most reliable option
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold text-primary-foreground">
+                    <Check size={11} /> Recommended
+                  </span>
+                </div>
+                <button
+                  onClick={handleGoogleSignIn}
+                  disabled={googleLoading || loading}
+                  className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-card border border-primary/20 text-foreground font-semibold shadow-md shadow-primary/10 transition-all hover:border-primary/40 active:scale-[0.98] disabled:opacity-60"
+                >
+                  {googleLoading ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <>
+                      <span className="grid place-items-center size-6 rounded-full bg-white text-sm font-bold text-[#4285f4] border border-border">
+                        G
+                      </span>
+                      Continue with Google
+                      <ArrowRight size={17} className="text-primary" />
+                    </>
+                  )}
+                </button>
+              </div>
             )}
 
             <div className="flex items-center gap-3">
               <div className="h-px flex-1 bg-border" />
-              <span className="text-xs text-muted-foreground">or</span>
+              <span className="text-[11px] font-medium text-muted-foreground">
+                or use email instead
+              </span>
               <div className="h-px flex-1 bg-border" />
             </div>
 
             <div>
-              <p className="text-foreground font-semibold mb-1">
-                Sign in with email
+              <p className="text-sm text-foreground font-semibold mb-1">
+                Magic link
               </p>
               <p className="text-sm text-muted-foreground mb-4">
                 We'll send a magic link — no password needed.
@@ -419,8 +450,7 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
             <button
               onClick={handleSend}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-primary-foreground font-semibold transition-all active:scale-95 disabled:opacity-60"
-              style={{ backgroundColor: "var(--primary)" }}
+              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-border bg-card text-foreground font-semibold transition-all active:scale-95 disabled:opacity-60"
             >
               {loading ? (
                 <Loader2 size={18} className="animate-spin" />

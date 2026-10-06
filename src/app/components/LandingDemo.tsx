@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
+  BellRing,
   Check,
   CheckCircle2,
   CreditCard,
@@ -12,6 +13,7 @@ import {
   MousePointer2,
   Plus,
   QrCode,
+  Scale,
   Share2,
   Smartphone,
   Upload,
@@ -34,7 +36,8 @@ type DemoScene =
   | "install"
   | "members"
   | "instructions"
-  | "proof";
+  | "proof"
+  | "reminders";
 
 const DEMO_SCENES: DemoScene[] = [
   "expenses",
@@ -44,6 +47,7 @@ const DEMO_SCENES: DemoScene[] = [
   "settle",
   "instructions",
   "proof",
+  "reminders",
   "chat",
   "csv",
   "install",
@@ -51,7 +55,7 @@ const DEMO_SCENES: DemoScene[] = [
 
 const DEMO_SCENE_LABELS: Record<DemoScene, string> = {
   expenses: "Expenses",
-  addExpense: "Add expense",
+  addExpense: "Quick Add",
   csv: "CSV tools",
   install: "Install on mobile",
   members: "Manage members",
@@ -59,6 +63,7 @@ const DEMO_SCENE_LABELS: Record<DemoScene, string> = {
   settle: "Settle Up",
   instructions: "Payment instructions",
   proof: "Payment proof",
+  reminders: "Reminders",
   chat: "Chat",
 };
 
@@ -107,7 +112,7 @@ export function LandingDemo() {
     demoScene === "csv" ||
     demoScene === "install"
       ? "expenses"
-      : demoScene === "instructions" || demoScene === "proof"
+      : demoScene === "instructions" || demoScene === "proof" || demoScene === "reminders"
         ? "settle"
         : demoScene;
 
@@ -265,10 +270,10 @@ export function LandingDemo() {
                 <div className="flex items-center justify-between border-b border-border px-5 py-3">
                   <div>
                     <p className="text-base font-semibold text-foreground">
-                      Add Expense
+                      Quick Expense
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      Boracay Trip
+                      Open straight from your phone shortcut
                     </p>
                   </div>
                   <button
@@ -282,25 +287,31 @@ export function LandingDemo() {
                 </div>
 
                 <div className="space-y-3 p-4">
-                  <div>
-                    <p className="mb-1 text-[11px] font-medium text-muted-foreground">
-                      Description
-                    </p>
-                    <div className="rounded-xl border border-primary/30 bg-input-background px-3.5 py-2.5 text-sm font-medium text-foreground ring-2 ring-primary/10">
-                      Dinner at the beach
-                    </div>
-                  </div>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-xl border border-primary/25 bg-accent px-3.5 py-2.5 text-left"
+                  >
+                    <span>
+                      <span className="block text-[10px] text-muted-foreground">Group</span>
+                      <span className="block text-xs font-semibold text-foreground">Boracay Trip</span>
+                    </span>
+                    <ArrowRight size={14} className="text-primary" />
+                  </button>
                   <div>
                     <p className="mb-1 text-[11px] font-medium text-muted-foreground">
                       Amount (PHP)
                     </p>
-                    <div className="flex items-center rounded-xl border border-border bg-input-background px-3.5 py-2.5">
-                      <span className="mr-2 text-sm text-muted-foreground">
-                        ₱
-                      </span>
-                      <span className="text-sm font-semibold text-foreground">
-                        2,400.00
-                      </span>
+                    <div className="flex items-center rounded-xl border border-primary/30 bg-input-background px-3.5 py-3 ring-2 ring-primary/10">
+                      <span className="mr-2 text-lg text-muted-foreground">₱</span>
+                      <span className="text-xl font-semibold text-foreground">2,400.00</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+                      What was it for?
+                    </p>
+                    <div className="rounded-xl border border-border bg-input-background px-3.5 py-2.5 text-sm font-medium text-foreground">
+                      Dinner at the beach
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -361,7 +372,7 @@ export function LandingDemo() {
                     onClick={() => selectDemoTab("expenses")}
                     className="relative flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-xs font-semibold text-primary-foreground"
                   >
-                    <Check size={15} /> Save Expense
+                    <Check size={15} /> Add Expense
                     {demoAutoPlaying && (
                       <span
                         className="absolute right-8 text-white"
@@ -747,35 +758,31 @@ export function LandingDemo() {
 
                   {demoScene === "settle" && (
                     <div className="space-y-3 animate-in fade-in slide-in-from-right-2 duration-500">
-                      <div className="rounded-2xl border border-border p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-foreground">
-                              Julianne pays You
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              GCash · Awaiting payment
-                            </p>
-                          </div>
-                          <p className="font-semibold text-foreground">₱540</p>
-                        </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Choose how to settle</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">Your remaining balance is ₱1,240.00</p>
                       </div>
-                      <div className="rounded-2xl border border-border p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-foreground">
-                              Marco pays You
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Bank transfer
-                            </p>
-                          </div>
-                          <p className="font-semibold text-foreground">₱700</p>
-                        </div>
-                      </div>
-                      <p className="text-center text-xs text-muted-foreground">
-                        Walang hulaan. Everyone knows what to pay.
-                      </p>
+                      {[
+                        ["Pay specific expenses", "Choose exactly what this payment covers", "₱540"],
+                        ["Pay the full balance", "Clear everything in one payment", "₱1,240"],
+                        ["Pay another amount", "Make a partial or installment payment", "Any amount"],
+                      ].map(([title, copy, amount]) => (
+                        <button key={title} type="button" className="flex w-full items-center gap-3 rounded-xl border border-border p-3 text-left">
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-xs font-semibold text-foreground">{title}</span>
+                            <span className="mt-0.5 block text-[10px] text-muted-foreground">{copy}</span>
+                          </span>
+                          <span className="text-[11px] font-semibold text-primary">{amount}</span>
+                        </button>
+                      ))}
+                      <button type="button" className="flex w-full items-center gap-3 rounded-xl border border-primary/20 bg-accent p-3 text-left">
+                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-card text-primary"><Scale size={17} /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold text-foreground">Settle using an existing balance</span>
+                          <span className="mt-0.5 block text-[10px] text-muted-foreground">Offset what you owe each other, with approval.</span>
+                        </span>
+                        <ArrowRight size={14} className="text-primary" />
+                      </button>
                     </div>
                   )}
 
@@ -856,6 +863,12 @@ export function LandingDemo() {
                           View
                         </span>
                       </div>
+                      <div className="rounded-xl bg-muted/60 px-3 py-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">This payment covers</p>
+                        <div className="mt-1 flex items-center justify-between text-xs text-foreground">
+                          <span>Pizza night</span><span className="font-semibold">₱540.00</span>
+                        </div>
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
@@ -870,6 +883,40 @@ export function LandingDemo() {
                           Confirm paid
                         </button>
                       </div>
+                    </div>
+                  )}
+
+                  {demoScene === "reminders" && (
+                    <div className="space-y-3 animate-in fade-in slide-in-from-right-2 duration-500">
+                      <div className="flex items-center gap-3">
+                        <div className="grid size-10 place-items-center rounded-xl bg-accent text-primary">
+                          <BellRing size={19} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Gentle reminders, automatically</p>
+                          <p className="text-[11px] text-muted-foreground">In the app and in one combined email.</p>
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-border p-4">
+                        <div className="flex items-start gap-3">
+                          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-xs font-bold text-primary-foreground">B</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-foreground">Payment reminder · Boracay Trip</p>
+                            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">₱1,240.00 left to settle. Pay in full or make a partial payment.</p>
+                          </div>
+                          <span className="size-2 rounded-full bg-primary" />
+                        </div>
+                      </div>
+                      <div className="rounded-2xl bg-[#f0edff] p-4">
+                        <p className="text-[10px] font-semibold tracking-wide text-primary">EMAIL SUMMARY</p>
+                        <p className="mt-2 text-sm font-semibold text-foreground">May balances ka pang kailangang ayusin</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">All groups with balances, combined into one clear reminder.</p>
+                        <div className="mt-3 flex items-center justify-between rounded-xl bg-card px-3 py-2.5">
+                          <span className="text-xs font-medium text-foreground">Boracay Trip</span>
+                          <span className="text-xs font-semibold text-primary">₱1,240.00</span>
+                        </div>
+                      </div>
+                      <p className="text-center text-[11px] text-muted-foreground">Choose the schedule—or mute reminders per group.</p>
                     </div>
                   )}
 
@@ -943,4 +990,3 @@ export function LandingDemo() {
 
   );
 }
-
