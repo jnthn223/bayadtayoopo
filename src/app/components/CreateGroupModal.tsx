@@ -5,6 +5,7 @@ import type { Group, CurrentUser, Member } from "./types";
 import { generateId, MEMBER_COLORS } from "./utils";
 import { UserAvatar } from "./UserAvatar";
 import { GroupAvatar } from "./GroupAvatar";
+import { SUPPORTED_CURRENCIES } from "./currencies";
 
 interface Props {
   open: boolean;
@@ -163,22 +164,20 @@ export function CreateGroupModal({
                 Currency
               </label>
 
-              <div className="grid grid-cols-4 gap-2">
-                {["PHP", "USD", "EUR", "GBP"].map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setCurrency(c)}
-                    className={`py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                      currency === c
-                        ? "border-primary bg-accent text-accent-foreground"
-                        : "border-border bg-input-background text-muted-foreground"
-                    }`}
-                  >
-                    {c}
-                  </button>
+              <select
+                value={currency}
+                onChange={(event) => setCurrency(event.target.value)}
+                className="w-full rounded-xl border border-border bg-input-background px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+              >
+                {SUPPORTED_CURRENCIES.map(([code, currencyName]) => (
+                  <option key={code} value={code}>
+                    {code} — {currencyName}
+                  </option>
                 ))}
-              </div>
+              </select>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                All group totals, balances, and settlements will use this base currency.
+              </p>
             </div>
 
             <div>
