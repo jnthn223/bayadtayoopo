@@ -97,6 +97,8 @@ function clearPendingJoin() {
   localStorage.removeItem("pendingJoinGroupId");
   localStorage.removeItem("pendingClaimMemberId");
   localStorage.removeItem("pendingClaimCode");
+  localStorage.removeItem("pendingClaimMemberName");
+  localStorage.removeItem("pendingClaimGroupName");
 }
 
 function systemAlertsPromptDismissedKey(userId: string) {
@@ -202,10 +204,24 @@ export default function App() {
       if (pendingJoin) localStorage.setItem("pendingJoinGroupId", pendingJoin);
       const pendingClaimMember = rawParams.get("claimMemberId");
       const pendingClaimCode = rawParams.get("claimCode");
+      const pendingClaimMemberName = rawParams.get("claimMemberName");
+      const pendingClaimGroupName = rawParams.get("claimGroupName");
+      if (pendingJoin && !pendingClaimMember && !pendingClaimCode) {
+        localStorage.removeItem("pendingClaimMemberId");
+        localStorage.removeItem("pendingClaimCode");
+        localStorage.removeItem("pendingClaimMemberName");
+        localStorage.removeItem("pendingClaimGroupName");
+      }
       if (pendingClaimMember) {
         localStorage.setItem("pendingClaimMemberId", pendingClaimMember);
       }
       if (pendingClaimCode) localStorage.setItem("pendingClaimCode", pendingClaimCode);
+      if (pendingClaimMemberName) {
+        localStorage.setItem("pendingClaimMemberName", pendingClaimMemberName);
+      }
+      if (pendingClaimGroupName) {
+        localStorage.setItem("pendingClaimGroupName", pendingClaimGroupName);
+      }
 
       // 1. Magic link callback?
       if (isMagicLink()) {

@@ -49,6 +49,17 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
   >("android");
   const inAppBrowser = detectInAppBrowser();
   const isInAppBrowser = Boolean(inAppBrowser);
+  const inviteParams = new URLSearchParams(window.location.search);
+  const claimMemberName =
+    inviteParams.get("claimMemberName") ??
+    localStorage.getItem("pendingClaimMemberName");
+  const claimGroupName =
+    inviteParams.get("claimGroupName") ??
+    localStorage.getItem("pendingClaimGroupName");
+  const isPersonalClaimInvite = Boolean(
+    (inviteParams.get("claimMemberId") ?? localStorage.getItem("pendingClaimMemberId")) &&
+    (inviteParams.get("claimCode") ?? localStorage.getItem("pendingClaimCode")),
+  );
 
   useEffect(() => {
     const navigatorWithStandalone = navigator as Navigator & {
@@ -123,11 +134,19 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
     const joinGroupId = localStorage.getItem("pendingJoinGroupId");
     const claimMemberId = localStorage.getItem("pendingClaimMemberId");
     const claimCode = localStorage.getItem("pendingClaimCode");
+    const pendingClaimMemberName = localStorage.getItem("pendingClaimMemberName");
+    const pendingClaimGroupName = localStorage.getItem("pendingClaimGroupName");
     if (joinGroupId)
       continueUrlValue.searchParams.set("joinGroupId", joinGroupId);
     if (claimMemberId)
       continueUrlValue.searchParams.set("claimMemberId", claimMemberId);
     if (claimCode) continueUrlValue.searchParams.set("claimCode", claimCode);
+    if (pendingClaimMemberName) {
+      continueUrlValue.searchParams.set("claimMemberName", pendingClaimMemberName);
+    }
+    if (pendingClaimGroupName) {
+      continueUrlValue.searchParams.set("claimGroupName", pendingClaimGroupName);
+    }
     const continueUrl = continueUrlValue.toString();
 
     try {
@@ -341,6 +360,36 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
             Create a group and start tracking for free.
           </p>
         </div>
+        {isPersonalClaimInvite && (
+          <div className="mb-5 rounded-3xl border border-primary/20 bg-accent p-4 text-left">
+            <div className="flex items-start gap-3">
+              <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground">
+                <UserPlus size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">
+                  {claimMemberName
+                    ? `You’ve been invited, ${claimMemberName}`
+                    : "You’ve been invited"}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  You’ve been invited to claim
+                  {claimMemberName ? ` the member profile “${claimMemberName}”` : " a member profile"}
+                  {claimGroupName ? ` in “${claimGroupName}.”` : "."}
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-foreground">
+                  Sign in first, then ibabalik ka namin dito automatically. Your
+                  existing expenses and balance will be connected to your account.
+                </p>
+                {claimMemberName && (
+                  <p className="mt-2 text-[11px] font-medium text-primary">
+                    Only continue if you are {claimMemberName}.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         {!sent ? (
           <div className="space-y-4">
             {inAppBrowser ? (

@@ -167,11 +167,13 @@ export function InviteModal({
     setPendingError("");
   }
 
-  function personalJoinUrl(memberId: string, claimCode: string) {
+  function personalJoinUrl(memberId: string, claimCode: string, memberName: string) {
     const params = new URLSearchParams({
       joinGroupId: group.id,
       claimMemberId: memberId,
       claimCode,
+      claimMemberName: memberName,
+      claimGroupName: group.name,
     });
     return `${window.location.origin}${window.location.pathname}?${params}`;
   }
@@ -184,7 +186,7 @@ export function InviteModal({
           buildInviteMessage({
             group,
             member,
-            joinUrl: personalJoinUrl(member.id, member.claimCode!),
+            joinUrl: personalJoinUrl(member.id, member.claimCode!, member.name),
             includeBalance,
           }),
       )
@@ -202,7 +204,7 @@ export function InviteModal({
       .filter((member) => member.claimCode)
       .map((member) => ({
         label: `${member.name}'s personal invite`,
-        url: personalJoinUrl(member.id, member.claimCode!),
+        url: personalJoinUrl(member.id, member.claimCode!, member.name),
       }));
     const finalizedMessage = ensureRequiredShareLinks(
       shareMessage,
