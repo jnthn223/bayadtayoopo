@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   BarChart2,
@@ -36,6 +36,7 @@ interface Props {
 }
 
 export function LoginScreen({ onGoogleSignIn }: Props) {
+  const signInRef = useRef<HTMLElement | null>(null);
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -60,6 +61,23 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
     (inviteParams.get("claimMemberId") ?? localStorage.getItem("pendingClaimMemberId")) &&
     (inviteParams.get("claimCode") ?? localStorage.getItem("pendingClaimCode")),
   );
+
+  useEffect(() => {
+    if (!isPersonalClaimInvite) return;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        signInRef.current?.scrollIntoView({
+          behavior: "auto",
+          block: "start",
+        });
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [isPersonalClaimInvite]);
 
   useEffect(() => {
     const navigatorWithStandalone = navigator as Navigator & {
@@ -349,6 +367,7 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
       </section>
 
       <section
+        ref={signInRef}
         id="sign-in"
         className="w-full bg-card rounded-t-[2rem] shadow-2xl border-t border-border px-6 pt-8 pb-12 sm:max-w-xl sm:mx-auto sm:mb-16 sm:rounded-[2rem] sm:border"
       >
