@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Check, ChevronDown, ImagePlus, X } from "lucide-react";
+import { Check, ChevronDown, ImagePlus, Loader2, RefreshCw, X } from "lucide-react";
 import { EXPENSE_CATEGORIES } from "./types";
 import type { CurrentUser, Group, Expense, SplitType, Category } from "./types";
-import { allocateCustomShares, generateId, CATEGORY_ICONS, getCurrencySymbol, getExpensePayerId } from "./utils";
+import { allocateCustomShares, formatCurrency, generateId, CATEGORY_ICONS, getCurrencySymbol, getExpensePayerId } from "./utils";
 import { UserAvatar } from "./UserAvatar";
 import { ImagePasteControl } from "./ImagePasteControl";
 import { hasNonPayerShare, SELF_ONLY_EXPENSE_ERROR } from "./expenseValidation";
+import { SUPPORTED_CURRENCIES } from "./currencies";
+import { fetchExchangeRate } from "../../lib/exchangeRateService";
 
 interface Props {
   group: Group;
@@ -41,6 +43,13 @@ export function AddExpenseModal({
   const defaultPayerId = currentMember?.id ?? currentUser.id;
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [foreignCurrencyOpen, setForeignCurrencyOpen] = useState(false);
+  const [originalAmount, setOriginalAmount] = useState("");
+  const [originalCurrency, setOriginalCurrency] = useState("USD");
+  const [suggestedBaseAmount, setSuggestedBaseAmount] = useState<number | null>(null);
+  const [suggestedRateDate, setSuggestedRateDate] = useState("");
+  const [rateLoading, setRateLoading] = useState(false);
+  const [rateError, setRateError] = useState("");
   const [paidBy, setPaidBy] = useState(defaultPayerId);
   const [splitType, setSplitType] = useState<SplitType>("equal");
   const [category, setCategory] = useState<Category>("food");
@@ -59,6 +68,13 @@ export function AddExpenseModal({
     if (editExpense) {
       setDescription(editExpense.description);
       setAmount(String(editExpense.amount));
+      setForeignCurrencyOpen(!!editExpense.originalCurrency);
+      setOriginalAmount(editExpense.originalAmount ? String(editExpense.originalAmount) : "");
+      setOriginalCurrency(editExpense.originalCurrency ?? (group.currency === "USD" ? "PHP" : "USD"));
+      setSuggestedBaseAmount(
+        editExpense.conversionSource === "online-suggestion" ? editExpense.amount : null,
+      );
+      setSuggestedRateDate(editExpense.conversionRateDate ?? "");
       setPaidBy(isAdmin ? editExpense.paidBy : defaultPayerId);
       setSplitType(editExpense.splitType);
       setCategory(editExpense.category);
@@ -75,6 +91,11 @@ export function AddExpenseModal({
     } else {
       setDescription("");
       setAmount("");
+      setForeignCurrencyOpen(false);
+      setOriginalAmount("");
+      setOriginalCurrency(group.currency === "USD" ? "PHP" : "USD");
+      setSuggestedBaseAmount(null);
+      setSuggestedRateDate("");
       setPaidBy(defaultPayerId);
       setSplitType("equal");
       setCategory("food");
@@ -84,10 +105,12 @@ export function AddExpenseModal({
     }
 
     setErrors({});
+    setRateError("");
     setReceiptFiles([]);
   }, [open, editExpense, isAdmin, defaultPayerId]);
 
   const totalAmount = parseFloat(amount) || 0;
+  const numericOriginalAmount = parseFloat(originalAmount) || 0;
   const includedMembers = availableMembers.filter((member) =>
     includedMemberIds.includes(member.id),
   );
@@ -113,6 +136,9 @@ export function AddExpenseModal({
     const errs: Record<string, string> = {};
     if (!description.trim()) errs.description = "Required";
     if (!totalAmount || totalAmount <= 0) errs.amount = "Enter a valid amount";
+    if (foreignCurrencyOpen && numericOriginalAmount <= 0) {
+      errs.originalAmount = "Enter the amount that was originally paid";
+    }
     if (!paidBy) errs.paidBy = "Choose who paid the expense";
     if (includedMembers.length === 0) errs.members = "Include at least one member";
     if (Object.values(customOverrides).some((value) => parseFloat(value) < 0)) {
@@ -189,6 +215,20 @@ export function AddExpenseModal({
           id: editExpense?.id ?? generateId(),
           description: description.trim(),
           amount: totalAmount,
+          originalAmount: foreignCurrencyOpen ? numericOriginalAmount : undefined,
+          originalCurrency: foreignCurrencyOpen ? originalCurrency : undefined,
+          conversionRate:
+            foreignCurrencyOpen && numericOriginalAmount > 0
+              ? totalAmount / numericOriginalAmount
+              : undefined,
+          conversionRateDate: foreignCurrencyOpen
+            ? (suggestedRateDate || date)
+            : undefined,
+          conversionSource: foreignCurrencyOpen
+            ? suggestedBaseAmount !== null && Math.abs(totalAmount - suggestedBaseAmount) < 0.005
+              ? "online-suggestion"
+              : "manual"
+            : undefined,
           paidBy: payerId,
           createdBy: creatorId,
           splitType,
@@ -213,6 +253,33 @@ export function AddExpenseModal({
       }));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function suggestConversion() {
+    if (!numericOriginalAmount || numericOriginalAmount <= 0) {
+      setRateError("Enter the original amount first.");
+      return;
+    }
+    if (originalCurrency === group.currency) {
+      setAmount(String(numericOriginalAmount));
+      setSuggestedBaseAmount(numericOriginalAmount);
+      setSuggestedRateDate(date);
+      setRateError("");
+      return;
+    }
+    setRateLoading(true);
+    setRateError("");
+    try {
+      const suggestion = await fetchExchangeRate(originalCurrency, group.currency, date);
+      const converted = Math.round(numericOriginalAmount * suggestion.rate * 100) / 100;
+      setAmount(converted.toFixed(2));
+      setSuggestedBaseAmount(converted);
+      setSuggestedRateDate(suggestion.date);
+    } catch (error) {
+      setRateError(error instanceof Error ? error.message : "Unable to get a suggested rate.");
+    } finally {
+      setRateLoading(false);
     }
   }
 
@@ -272,10 +339,76 @@ export function AddExpenseModal({
               )}
             </div>
 
+            <div className="rounded-xl border border-border bg-muted/20">
+              <button
+                type="button"
+                onClick={() => {
+                  setForeignCurrencyOpen((value) => !value);
+                  setRateError("");
+                }}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-foreground">Paid in another currency?</span>
+                  <span className="block text-[11px] text-muted-foreground">Optional · keep the original amount for reference</span>
+                </span>
+                <ChevronDown size={16} className={`text-muted-foreground transition-transform ${foreignCurrencyOpen ? "rotate-180" : ""}`} />
+              </button>
+              {foreignCurrencyOpen && (
+                <div className="space-y-3 border-t border-border p-3">
+                  <div className="grid grid-cols-[1fr_1.45fr] gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={originalAmount}
+                      onChange={(event) => {
+                        setOriginalAmount(event.target.value);
+                        setSuggestedBaseAmount(null);
+                      }}
+                      placeholder="Original amount"
+                      className="min-w-0 rounded-xl border border-border bg-input-background px-3 py-3 text-sm outline-none focus:border-primary"
+                    />
+                    <select
+                      value={originalCurrency}
+                      onChange={(event) => {
+                        setOriginalCurrency(event.target.value);
+                        setSuggestedBaseAmount(null);
+                      }}
+                      className="min-w-0 rounded-xl border border-border bg-input-background px-3 py-3 text-sm outline-none focus:border-primary"
+                    >
+                      {SUPPORTED_CURRENCIES.filter(([code]) => code !== group.currency).map(([code, name]) => (
+                        <option key={code} value={code}>{code} — {name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {errors.originalAmount && (
+                    <p className="text-xs text-destructive">{errors.originalAmount}</p>
+                  )}
+                  <button
+                    type="button"
+                    disabled={rateLoading}
+                    onClick={() => void suggestConversion()}
+                    className="inline-flex items-center gap-2 text-xs font-semibold text-primary disabled:opacity-50"
+                  >
+                    {rateLoading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                    Suggest conversion to {group.currency}
+                  </button>
+                  {rateError && <p className="text-xs text-destructive">{rateError} You can still enter the converted amount manually.</p>}
+                  {suggestedBaseAmount !== null && (
+                    <p className="text-xs text-muted-foreground">
+                      Suggested {formatCurrency(suggestedBaseAmount, group.currency)} using the {suggestedRateDate} reference rate. Edit it below to match the actual cash or card charge.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Amount */}
             <div>
               <label className="block text-sm text-muted-foreground mb-1.5">
-                Amount ({group.currency})
+                {foreignCurrencyOpen ? `Amount used for group (${group.currency})` : `Amount (${group.currency})`}
               </label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground">
@@ -293,6 +426,11 @@ export function AddExpenseModal({
               </div>
               {errors.amount && (
                 <p className="text-destructive text-xs mt-1">{errors.amount}</p>
+              )}
+              {foreignCurrencyOpen && (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                  This editable amount is what splits, balances, and settlements will use. It will not change when exchange rates change later.
+                </p>
               )}
             </div>
 

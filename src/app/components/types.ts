@@ -139,6 +139,11 @@ export interface Expense {
   id: string;
   description: string;
   amount: number;
+  originalAmount?: number;
+  originalCurrency?: string;
+  conversionRate?: number;
+  conversionRateDate?: string;
+  conversionSource?: "online-suggestion" | "manual";
   paidBy: string;
   createdBy?: string;
   splitType: SplitType;

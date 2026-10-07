@@ -581,6 +581,16 @@ export function GroupContent({
                             <p className="text-sm font-semibold text-foreground">
                               {formatCurrency(exp.amount, group.currency)}
                             </p>
+                            {exp.originalCurrency && exp.originalAmount && (
+                              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                Originally {formatCurrency(exp.originalAmount, exp.originalCurrency)}
+                                {exp.conversionSource === "online-suggestion" && exp.conversionRateDate
+                                  ? ` · reference rate ${exp.conversionRateDate}`
+                                  : exp.conversionSource === "manual"
+                                    ? " · manual conversion"
+                                    : ""}
+                              </p>
+                            )}
                             {settled && (
                               <span className="mt-1.5 inline-flex -rotate-2 rounded-md border-2 border-green-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-green-700">
                                 Settled
