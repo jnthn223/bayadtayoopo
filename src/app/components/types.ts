@@ -65,6 +65,8 @@ export interface GroupPayment {
   submittedBy: string;
   reviewedAt?: string;
   reviewedBy?: string;
+  reviewedOnBehalfOfMemberId?: string;
+  reviewNote?: string;
   rejectionReason?: string;
   cancelledAt?: string;
   cancelledBy?: string;

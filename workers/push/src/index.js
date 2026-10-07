@@ -418,6 +418,9 @@ export function validateAndBuild(group, event, actorUid) {
   const paymentUrl = notificationUrl(group.id, "settle", {
     payment: payment.id,
   });
+  const confirmationBody = payment.reviewedOnBehalfOfMemberId
+    ? `${actor.name} confirmed your ${amount} payment to ${to?.name ?? "the recipient"} on their behalf`
+    : `${to?.name ?? actor.name} confirmed your ${amount} payment`;
   if (
     event.type === "payment_submitted" &&
     actorMatches(actor, payment.submittedBy) &&
@@ -441,7 +444,7 @@ export function validateAndBuild(group, event, actorUid) {
       recipients: from?.uid && from.uid !== actorUid ? [from] : [],
       preference: "payments",
       title: "Payment confirmed",
-      body: `${to?.name ?? actor.name} confirmed your ${amount} payment`,
+      body: confirmationBody,
       url: paymentUrl,
     };
   }

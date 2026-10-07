@@ -982,6 +982,7 @@ export function GroupContent({
                   <GroupPayments
                     group={group}
                     currentMember={currentMember}
+                    isAdmin={isAdmin}
                     settlements={settlements}
                     focusedPaymentId={focusedPaymentId}
                     onUpdate={onUpdate}

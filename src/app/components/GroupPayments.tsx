@@ -20,6 +20,7 @@ import type {
 import {
   allocatePaymentToExpenses,
   buildBalanceOffsetPreview,
+  canAdminConfirmPayment,
   createBalanceOffset,
   formatCurrency,
   generateId,
@@ -37,6 +38,7 @@ import { ImagePasteControl } from "./ImagePasteControl";
 interface Props {
   group: Group;
   currentMember?: Member;
+  isAdmin: boolean;
   settlements: Settlement[];
   focusedPaymentId?: string;
   onUpdate: (group: Group) => Promise<void> | void;
@@ -54,12 +56,16 @@ interface PaymentDraft {
   confirmImmediately?: boolean;
 }
 
-function paymentStatusLabel(payment: GroupPayment, currentMemberId?: string) {
+function paymentStatusLabel(
+  payment: GroupPayment,
+  currentMemberId?: string,
+  adminReviewForName?: string,
+) {
   switch (payment.status) {
     case "pending":
-      return payment.toMemberId === currentMemberId
-        ? "Review payment"
-        : "Awaiting confirmation";
+      if (payment.toMemberId === currentMemberId) return "Review payment";
+      if (adminReviewForName) return `Review for ${adminReviewForName}`;
+      return "Awaiting confirmation";
     case "confirmed":
       return "Confirmed";
     case "rejected":
@@ -154,6 +160,7 @@ function offsetTimestamp(offset: BalanceOffset) {
 export function GroupPayments({
   group,
   currentMember,
+  isAdmin,
   settlements,
   focusedPaymentId,
   onUpdate,
@@ -178,6 +185,9 @@ export function GroupPayments({
   const [reversalDraft, setReversalDraft] = useState<GroupPayment | null>(null);
   const [reversalReason, setReversalReason] = useState("");
   const [reversalError, setReversalError] = useState("");
+  const [adminConfirmationDraft, setAdminConfirmationDraft] =
+    useState<GroupPayment | null>(null);
+  const [adminConfirmationNote, setAdminConfirmationNote] = useState("");
   const [offsetDraft, setOffsetDraft] = useState<{
     counterparty: Member;
     expenseId: string;
@@ -191,12 +201,23 @@ export function GroupPayments({
     () =>
       [...(group.payments ?? [])]
         .filter(
-          (payment) =>
-            payment.fromMemberId === memberId ||
-            payment.toMemberId === memberId,
+          (payment) => {
+            const adminCanReview =
+              isAdmin && canAdminConfirmPayment(group, payment, currentMember);
+            const adminReviewedOnBehalf =
+              isAdmin &&
+              payment.reviewedBy === memberId &&
+              !!payment.reviewedOnBehalfOfMemberId;
+            return (
+              payment.fromMemberId === memberId ||
+              payment.toMemberId === memberId ||
+              adminCanReview ||
+              adminReviewedOnBehalf
+            );
+          },
         )
         .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
-    [group.payments, memberId],
+    [group, currentMember, isAdmin, memberId],
   );
   const activePayments = relevantPayments.filter(
     (payment) => payment.status === "pending" || payment.status === "rejected",
@@ -509,8 +530,33 @@ export function GroupPayments({
       status: "confirmed",
       reviewedAt,
       reviewedBy: currentMember.id,
+      reviewedOnBehalfOfMemberId: undefined,
+      reviewNote: undefined,
       rejectionReason: undefined,
     }));
+  }
+
+  function openAdminConfirmation(payment: GroupPayment) {
+    if (!canAdminConfirmPayment(group, payment, currentMember)) return;
+    setAdminConfirmationDraft(payment);
+    setAdminConfirmationNote("");
+  }
+
+  function confirmPaymentForRecipient() {
+    if (!currentMember || !adminConfirmationDraft) return;
+    if (!canAdminConfirmPayment(group, adminConfirmationDraft, currentMember)) return;
+    const reviewedAt = new Date().toISOString();
+    updatePayment(adminConfirmationDraft.id, (item) => ({
+      ...item,
+      status: "confirmed",
+      reviewedAt,
+      reviewedBy: currentMember.id,
+      reviewedOnBehalfOfMemberId: adminConfirmationDraft.toMemberId,
+      reviewNote: adminConfirmationNote.trim() || undefined,
+      rejectionReason: undefined,
+    }));
+    setAdminConfirmationDraft(null);
+    setAdminConfirmationNote("");
   }
 
   function rejectPayment(payment: GroupPayment) {
@@ -807,6 +853,14 @@ export function GroupPayments({
                             </span>
                           </div>
                         </div>
+                        {payment.reviewedOnBehalfOfMemberId && payment.reviewedBy && (
+                          <p className="rounded-xl bg-green-50 px-3 py-2 text-xs text-green-800">
+                            Confirmed by{" "}
+                            {getMemberById(group, payment.reviewedBy)?.name ?? "a group admin"}
+                            {" "}(admin) for {toMember?.name ?? "the recipient"}
+                            {payment.reviewNote ? ` · ${payment.reviewNote}` : ""}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-3">
                           <button type="button" onClick={() => toggleAllocations(payment.id)} className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
                             {allocationsOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -986,6 +1040,8 @@ export function GroupPayments({
             const toMember = getMemberById(group, payment.toMemberId);
             const isSender = payment.fromMemberId === memberId;
             const isRecipient = payment.toMemberId === memberId;
+            const adminCanConfirm =
+              isAdmin && canAdminConfirmPayment(group, payment, currentMember);
             const allocationsOpen = expandedPaymentIds.has(payment.id);
             const activityTimestamp = paymentActivityTimestamp(payment);
 
@@ -1037,7 +1093,11 @@ export function GroupPayments({
                         payment.status,
                       )}`}
                     >
-                      {paymentStatusLabel(payment, memberId)}
+                      {paymentStatusLabel(
+                        payment,
+                        memberId,
+                        adminCanConfirm ? toMember?.name : undefined,
+                      )}
                     </span>
                   </div>
                 </div>
@@ -1055,6 +1115,14 @@ export function GroupPayments({
                 {payment.reversalReason && (
                   <p className="text-xs text-destructive">
                     Reversal reason: {payment.reversalReason}
+                  </p>
+                )}
+                {payment.reviewedOnBehalfOfMemberId && payment.reviewedBy && (
+                  <p className="rounded-xl bg-green-50 px-3 py-2 text-xs text-green-800">
+                    Confirmed by{" "}
+                    {getMemberById(group, payment.reviewedBy)?.name ?? "a group admin"}
+                    {" "}(admin) for {toMember?.name ?? "the recipient"}
+                    {payment.reviewNote ? ` · ${payment.reviewNote}` : ""}
                   </p>
                 )}
 
@@ -1109,6 +1177,20 @@ export function GroupPayments({
                     >
                       <X size={15} />
                       Reject
+                    </button>
+                  </div>
+                )}
+                {adminCanConfirm && (
+                  <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-xs leading-relaxed text-amber-900">
+                      {toMember?.name ?? "This recipient"} hasn’t joined or is no longer active. A group admin can confirm on their behalf.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => openAdminConfirmation(payment)}
+                      className="w-full rounded-xl bg-green-600 py-2.5 text-sm font-semibold text-white"
+                    >
+                      Confirm for {toMember?.name ?? "recipient"}
                     </button>
                   </div>
                 )}
@@ -1462,6 +1544,93 @@ export function GroupPayments({
                 >
                   {saving ? "Requesting…" : `Request approval from ${offsetDraft.counterparty.name}`}
                 </button>
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={!!adminConfirmationDraft}
+        onOpenChange={(open) => {
+          if (open) return;
+          setAdminConfirmationDraft(null);
+          setAdminConfirmationNote("");
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-[60] max-h-[92vh] overflow-y-auto rounded-t-3xl bg-card p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">
+                  Confirm payment for {adminConfirmationDraft
+                    ? getMemberById(group, adminConfirmationDraft.toMemberId)?.name ?? "recipient"
+                    : "recipient"}?
+                </Dialog.Title>
+                <Dialog.Description className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  You’re confirming as a group admin that the intended recipient received this payment. This will reduce the sender’s remaining balance.
+                </Dialog.Description>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdminConfirmationDraft(null)}
+                className="rounded-full p-2 hover:bg-muted"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {adminConfirmationDraft && (
+              <div className="mt-5 space-y-4">
+                <div className="rounded-2xl border border-border bg-muted/30 p-4">
+                  <p className="text-sm font-medium text-foreground">
+                    {getMemberById(group, adminConfirmationDraft.fromMemberId)?.name ?? "A member"} paid{" "}
+                    {getMemberById(group, adminConfirmationDraft.toMemberId)?.name ?? "the recipient"}
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-foreground">
+                    {formatCurrency(adminConfirmationDraft.amount, group.currency)}
+                  </p>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="admin-payment-confirmation-note"
+                    className="mb-1.5 block text-sm font-medium text-foreground"
+                  >
+                    Verification note <span className="font-normal text-muted-foreground">(optional)</span>
+                  </label>
+                  <textarea
+                    id="admin-payment-confirmation-note"
+                    value={adminConfirmationNote}
+                    onChange={(event) => setAdminConfirmationNote(event.target.value)}
+                    placeholder="For example: Confirmed through Messenger"
+                    rows={3}
+                    className="w-full resize-none rounded-xl border border-border bg-input-background px-4 py-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+
+                <div className="rounded-xl bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                  The history will show that you confirmed this as an admin on the recipient’s behalf.
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdminConfirmationDraft(null)}
+                    className="rounded-xl bg-muted py-3 text-sm font-medium text-muted-foreground"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmPaymentForRecipient}
+                    className="rounded-xl bg-green-600 py-3 text-sm font-semibold text-white"
+                  >
+                    Confirm on behalf
+                  </button>
+                </div>
               </div>
             )}
           </Dialog.Content>

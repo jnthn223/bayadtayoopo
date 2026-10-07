@@ -7,6 +7,7 @@ import type {
   Split,
   PaymentAllocation,
   BalanceOffset,
+  GroupPayment,
 } from "./types";
 
 export const MEMBER_COLORS = [
@@ -57,6 +58,19 @@ export function isGroupAdmin(group: Group, member?: Member): boolean {
       (adminId) => adminId === member.id || adminId === member.uid,
     )
   );
+}
+
+export function canAdminConfirmPayment(
+  group: Group,
+  payment: GroupPayment,
+  member?: Member,
+): boolean {
+  if (!isGroupAdmin(group, member) || payment.status !== "pending") {
+    return false;
+  }
+  if (payment.toMemberId === member?.id) return false;
+  const recipient = getMemberById(group, payment.toMemberId);
+  return !recipient?.uid || !!recipient.removedAt;
 }
 
 export function isExpenseSettled(group: Group, expense: Expense): boolean {
@@ -558,6 +572,10 @@ export function mergeGroupMember(
   const sourceMember = group.members.find(
     (member) => member.id === sourceMemberId,
   );
+  const destinationMember = group.members.find(
+    (member) => member.id === destinationMemberId,
+  );
+  const isPendingMemberClaim = !sourceMember?.uid && !!destinationMember?.uid;
   const sourceIdentifiers = new Set(
     [sourceMemberId, sourceMember?.uid].filter(
       (identifier): identifier is string => !!identifier,
@@ -573,7 +591,13 @@ export function mergeGroupMember(
     adminIds: group.adminIds?.map(replace).filter(
       (memberId, index, values) => values.indexOf(memberId) === index,
     ),
-    members: group.members.filter((member) => member.id !== sourceMemberId),
+    members: group.members
+      .filter((member) => member.id !== sourceMemberId)
+      .map((member) =>
+        member.id === destinationMemberId && isPendingMemberClaim
+          ? { ...member, claimedFromPlaceholder: true }
+          : member,
+      ),
     expenses: group.expenses.map((expense) => {
       const combined = new Map<string, Split>();
       for (const split of expense.splits) {
@@ -631,6 +655,9 @@ export function mergeGroupMember(
       submittedBy: replace(payment.submittedBy),
       reviewedBy: payment.reviewedBy
         ? replace(payment.reviewedBy)
+        : undefined,
+      reviewedOnBehalfOfMemberId: payment.reviewedOnBehalfOfMemberId
+        ? replace(payment.reviewedOnBehalfOfMemberId)
         : undefined,
       cancelledBy: payment.cancelledBy
         ? replace(payment.cancelledBy)

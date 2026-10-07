@@ -50,6 +50,7 @@ import { AddExpenseModal } from "./AddExpenseModal";
 import { QRModal } from "./QRModal";
 import { InviteModal } from "./InviteModal";
 import { getGroupTourTarget, GroupTour } from "./GroupTour";
+import { MemberCatchUp } from "./MemberCatchUp";
 import { GroupHeader } from "./GroupHeader";
 import type { GroupTab } from "./GroupHeader";
 import { GroupContent } from "./GroupContent";
@@ -100,9 +101,13 @@ export function GroupScreen({
   const currentMember = group.members.find(
     (member) => member.id === currentUser.id || member.uid === currentUser.id,
   );
+  const memberCatchUpKey = currentMember
+    ? `bayadtayoopo:member-catch-up:${currentUser.id}:${group.id}:${currentMember.id}`
+    : "";
   const initialChatReadAt = localStorage.getItem(chatReadKey) ?? "";
   const [tab, setTab] = useState<Tab>(destination?.tab ?? "expenses");
   const [groupTourStep, setGroupTourStep] = useState<number | null>(null);
+  const [memberCatchUpOpen, setMemberCatchUpOpen] = useState(false);
   const [lastChatReadAt, setLastChatReadAt] = useState(
     initialChatReadAt,
   );
@@ -344,11 +349,19 @@ export function GroupScreen({
   ]);
 
   useEffect(() => {
+    setMemberCatchUpOpen(false);
+    if (!currentMember?.claimedFromPlaceholder || !memberCatchUpKey) return;
+    if (localStorage.getItem(memberCatchUpKey) === "complete") return;
+    setMemberCatchUpOpen(true);
+  }, [currentMember?.claimedFromPlaceholder, memberCatchUpKey]);
+
+  useEffect(() => {
     setGroupTourStep(null);
+    if (memberCatchUpOpen) return;
     if (localStorage.getItem(groupTourKey) === "complete") return;
     const timeout = window.setTimeout(() => setGroupTourStep(0), 700);
     return () => window.clearTimeout(timeout);
-  }, [groupTourKey]);
+  }, [groupTourKey, memberCatchUpOpen]);
 
   useEffect(() => {
     if (tab !== "chat") return;
@@ -375,6 +388,13 @@ export function GroupScreen({
   function closeGroupTour() {
     localStorage.setItem(groupTourKey, "complete");
     setGroupTourStep(null);
+  }
+
+  function closeMemberCatchUp() {
+    if (memberCatchUpKey) {
+      localStorage.setItem(memberCatchUpKey, "complete");
+    }
+    setMemberCatchUpOpen(false);
   }
 
   async function handleAddExpense(expense: Expense, receiptFiles: File[]) {
@@ -1348,6 +1368,15 @@ export function GroupScreen({
           step={groupTourStep}
           onStepChange={setGroupTourStep}
           onClose={closeGroupTour}
+        />
+      )}
+      {currentMember && (
+        <MemberCatchUp
+          open={memberCatchUpOpen}
+          group={group}
+          member={currentMember}
+          onClose={closeMemberCatchUp}
+          onOpenTab={handleTabChange}
         />
       )}
       {/* Delete confirmation dialog */}

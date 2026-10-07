@@ -56,6 +56,12 @@ export function deriveNotifications(
         const from = getMemberById(group, payment.fromMemberId);
         const to = getMemberById(group, payment.toMemberId);
         const amount = formatCurrency(payment.amount, group.currency);
+        const reviewer = payment.reviewedBy
+          ? getMemberById(group, payment.reviewedBy)
+          : undefined;
+        const confirmationActor = payment.reviewedOnBehalfOfMemberId
+          ? `${reviewer?.name ?? "A group admin"} confirmed your ${amount} payment to ${to?.name ?? "the recipient"} on their behalf`
+          : `${to?.name ?? "The recipient"} confirmed your ${amount} payment`;
 
         if (
           payment.toMemberId === currentMemberId &&
@@ -82,7 +88,7 @@ export function deriveNotifications(
             id: `${group.id}:payment:${payment.id}:confirmed:${payment.reviewedAt}`,
             type: "payment_confirmed",
             title: "Payment confirmed",
-            body: `${to?.name ?? "The recipient"} confirmed your ${amount} payment`,
+            body: confirmationActor,
             at: payment.reviewedAt,
             actorId: payment.reviewedBy,
             destination: { tab: "settle", paymentId: payment.id },

@@ -152,6 +152,35 @@ describe("Spark notification derivation", () => {
     ).toContain("payment_confirmed");
   });
 
+  it("names the admin when payment is confirmed for a pending recipient", () => {
+    const confirmedForPendingMember: Group = {
+      ...group,
+      members: [
+        ...group.members,
+        { id: "reva", name: "Reva", color: "#333" },
+      ],
+      payments: [
+        {
+          ...group.payments![0],
+          fromMemberId: "bob",
+          toMemberId: "reva",
+          status: "confirmed",
+          reviewedAt: "2026-07-04T10:00:00.000Z",
+          reviewedBy: "alice",
+          reviewedOnBehalfOfMemberId: "reva",
+        },
+      ],
+    };
+
+    const notification = deriveNotifications(
+      [confirmedForPendingMember],
+      "bob-uid",
+    ).find((item) => item.type === "payment_confirmed");
+    expect(notification?.body).toBe(
+      "Alice confirmed your ₱25.00 payment to Reva on their behalf",
+    );
+  });
+
   it("notifies both sides of a balance offset approval flow", () => {
     const withOffset: Group = {
       ...group,

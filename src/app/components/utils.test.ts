@@ -4,6 +4,7 @@ import {
   allocateCustomShares,
   allocatePaymentToExpenses,
   archiveGroupMember,
+  canAdminConfirmPayment,
   canDirectlyConfirmSplit,
   computeBalances,
   computeProjectedBalances,
@@ -65,6 +66,48 @@ const group: Group = {
 };
 
 describe("expense business logic", () => {
+  it("lets an admin confirm only for an unlinked or inactive recipient", () => {
+    const payment = {
+      id: "pending-payment",
+      fromMemberId: "bob",
+      toMemberId: "pending-reva",
+      amount: 25,
+      method: "Cash",
+      allocations: [],
+      status: "pending" as const,
+      submittedAt: "2026-10-07T00:00:00.000Z",
+      submittedBy: "bob",
+    };
+    const withPendingRecipient: Group = {
+      ...group,
+      members: [
+        ...group.members,
+        { id: "pending-reva", name: "Reva", color: "#444444" },
+      ],
+    };
+
+    expect(
+      canAdminConfirmPayment(withPendingRecipient, payment, group.members[0]),
+    ).toBe(true);
+    expect(
+      canAdminConfirmPayment(withPendingRecipient, payment, group.members[1]),
+    ).toBe(false);
+    expect(
+      canAdminConfirmPayment(
+        {
+          ...withPendingRecipient,
+          members: withPendingRecipient.members.map((member) =>
+            member.id === "pending-reva"
+              ? { ...member, uid: "reva-uid" }
+              : member,
+          ),
+        },
+        payment,
+        group.members[0],
+      ),
+    ).toBe(false);
+  });
+
   it("offsets reciprocal expense shares without double-changing the net balance", () => {
     const reciprocal: Group = {
       ...group,
