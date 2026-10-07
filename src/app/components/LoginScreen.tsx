@@ -29,6 +29,8 @@ import type { AuthUser } from "../../lib/firebaseRest";
 import { BrandMark, BrandWordmark } from "./Brand";
 import { LandingDemo } from "./LandingDemo";
 import { detectInAppBrowser } from "../../lib/inAppBrowser";
+import { loadPublicStats } from "../../lib/publicStatsService";
+import type { PublicStats } from "../../lib/publicStatsService";
 
 interface Props {
   onProfileNeeded: () => void; // unused but kept for API compat
@@ -43,6 +45,7 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
+  const [publicStats, setPublicStats] = useState<PublicStats | null>(null);
   const [mobileInstallPromptOpen, setMobileInstallPromptOpen] = useState(false);
   const [mobileInstallGuideOpen, setMobileInstallGuideOpen] = useState(false);
   const [mobileInstallPlatform, setMobileInstallPlatform] = useState<
@@ -61,6 +64,16 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
     (inviteParams.get("claimMemberId") ?? localStorage.getItem("pendingClaimMemberId")) &&
     (inviteParams.get("claimCode") ?? localStorage.getItem("pendingClaimCode")),
   );
+
+  useEffect(() => {
+    let active = true;
+    void loadPublicStats()
+      .then((stats) => active && setPublicStats(stats))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isPersonalClaimInvite) return;
@@ -238,6 +251,28 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
 
         <LandingDemo />
       </div>
+      {publicStats && (
+        <section className="px-6 pb-2 lg:mx-auto lg:max-w-6xl lg:px-10">
+          <div className="overflow-hidden rounded-3xl border border-primary/15 bg-primary text-primary-foreground shadow-lg shadow-primary/10">
+            <div className="grid grid-cols-3 divide-x divide-white/15">
+              {[
+                [publicStats.userCount, "people joined"],
+                [publicStats.groupCount, "groups created"],
+                [publicStats.expenseCount, "expenses tracked"],
+              ].map(([value, label]) => (
+                <div key={String(label)} className="px-2 py-5 text-center sm:py-6">
+                  <p className="text-xl font-bold tracking-tight sm:text-3xl">
+                    {new Intl.NumberFormat().format(Number(value))}
+                  </p>
+                  <p className="mt-1 text-[10px] font-medium text-primary-foreground/75 sm:text-xs">
+                    {String(label)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
       <section className="pt-12 px-6 pb-12 lg:max-w-6xl lg:mx-auto lg:px-10">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
           Built for real ambagan

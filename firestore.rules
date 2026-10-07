@@ -195,6 +195,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /publicStats/{documentId} {
+      allow get: if documentId == 'overview';
+      allow list, create, update, delete: if false;
+    }
+
     match /profileImages/{userId} {
       allow get: if signedIn();
       allow list: if false;

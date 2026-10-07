@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildUserSummary, hasReminderEmail, reminderIsDue } from "./index.js";
+import { buildPublicStats, buildUserSummary, hasReminderEmail, reminderIsDue } from "./index.js";
 
 const user = {
   id: "debtor-uid",
@@ -39,6 +39,17 @@ const group = {
 };
 
 describe("payment reminder worker", () => {
+  it("builds privacy-safe public totals", () => {
+    expect(
+      buildPublicStats([user, { id: "another" }], [group, { ...group, id: "second", expenses: [] }], new Date("2026-10-07T07:00:00.000Z")),
+    ).toEqual({
+      userCount: 2,
+      groupCount: 2,
+      expenseCount: 1,
+      updatedAt: "2026-10-07T07:00:00.000Z",
+    });
+  });
+
   it("runs at the configured local weekly time", () => {
     expect(reminderIsDue(user, new Date("2026-10-02T01:00:00.000Z"))).toBe(true);
     expect(reminderIsDue(user, new Date("2026-10-02T02:00:00.000Z"))).toBe(false);

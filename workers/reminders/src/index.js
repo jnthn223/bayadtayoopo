@@ -356,6 +356,39 @@ async function commitReminderUpdates(env, token, updates) {
   if (!response.ok) throw new Error(`Unable to save reminder history: ${response.status}`);
 }
 
+async function writePublicStats(env, token, stats) {
+  const response = await fetch(
+    `${firestoreRoot(env)}/documents/publicStats/overview`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fields: Object.fromEntries(
+          Object.entries(stats).map(([key, value]) => [key, encodeValue(value)]),
+        ),
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Unable to save public stats: ${response.status}`);
+  }
+}
+
+export function buildPublicStats(users, groups, now = new Date()) {
+  return {
+    userCount: users.length,
+    groupCount: groups.length,
+    expenseCount: groups.reduce(
+      (count, group) => count + (Array.isArray(group.expenses) ? group.expenses.length : 0),
+      0,
+    ),
+    updatedAt: now.toISOString(),
+  };
+}
+
 async function runReminders(env, now = new Date()) {
   const token = await serviceAccessToken(env);
   const [users, groupDocuments] = await Promise.all([
@@ -366,6 +399,8 @@ async function runReminders(env, now = new Date()) {
     if (document.deleted || typeof document.data !== "string") return [];
     try { return [{ ...JSON.parse(document.data), id: document.id }]; } catch { return []; }
   });
+  const publicStats = buildPublicStats(users, groups, now);
+  await writePublicStats(env, token, publicStats);
   const dailyLimit = Math.min(100, Math.max(1, Number(env.MAX_EMAILS_PER_DAY ?? 95)));
   const utcDate = now.toISOString().slice(0, 10);
   const sentToday = users.filter((user) =>
@@ -407,7 +442,7 @@ async function runReminders(env, now = new Date()) {
     if (!response.ok) throw new Error(`Resend rejected reminder batch: ${response.status} ${await response.text()}`);
   }
   await commitReminderUpdates(env, token, updates);
-  return { usersScanned: users.length, groupsScanned: groups.length, remindersCreated: updates.length, emailsSent: emails.length, emailQuotaRemaining: remainingEmailCapacity };
+  return { usersScanned: users.length, groupsScanned: groups.length, remindersCreated: updates.length, emailsSent: emails.length, emailQuotaRemaining: remainingEmailCapacity, publicStats };
 }
 
 async function unsubscribe(request, env) {
