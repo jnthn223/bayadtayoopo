@@ -26,6 +26,7 @@ const group: Group = {
     {
       id: "expense-1",
       description: "Dinner, seafood",
+      notes: "Birthday dinner, including tip",
       amount: 900,
       paidBy: "alice",
       createdBy: "alice",
@@ -44,6 +45,7 @@ const group: Group = {
 describe("CSV expense tools", () => {
   it("exports expenses with quoted CSV fields when needed", () => {
     expect(exportExpensesCsv(group)).toContain('"Dinner, seafood"');
+    expect(exportExpensesCsv(group)).toContain('"Birthday dinner, including tip"');
     expect(exportExpensesCsv(group)).toContain("Alice:300;Bob:300;Carol:300");
   });
 
@@ -108,9 +110,11 @@ describe("CSV expense tools", () => {
     if (result.ok) return;
 
     expect(result.errors).toContain("Row 2: amount must be greater than zero");
-    expect(result.errors).toContain(
-      "Row 2: category must be one of food, transport, accommodation, trip, entertainment, shopping, utilities, other",
-    );
+    expect(
+      result.errors.some((error) =>
+        error.startsWith("Row 2: category must be one of food, drinks, groceries"),
+      ),
+    ).toBe(true);
   });
 
   it("accepts You as an alias for the importing member", () => {
@@ -133,11 +137,11 @@ describe("CSV expense tools", () => {
     });
   });
 
-  it("imports trip expenses", () => {
+  it("imports activities expenses", () => {
     const result = parseExpensesCsv(
       [
         "date,description,category,amount,currency,paidBy,splitType,splits",
-        '2026-07-10,Island hopping,trip,600,PHP,Alice,equal,"Alice:300;Bob:300"',
+        '2026-07-10,Island hopping,activities,600,PHP,Alice,equal,"Alice:300;Bob:300"',
       ].join("\n"),
       group,
       "alice",
@@ -146,7 +150,36 @@ describe("CSV expense tools", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.expenses[0].category).toBe("trip");
+    expect(result.expenses[0].category).toBe("activities");
+  });
+
+  it("requires and preserves a custom label for Other", () => {
+    const missingDetail = parseExpensesCsv(
+      [
+        "date,description,category,categoryDetail,amount,currency,paidBy,splitType,splits",
+        '2026-07-10,Tips,other,,600,PHP,Alice,equal,"Alice:300;Bob:300"',
+      ].join("\n"),
+      group,
+      "alice",
+    );
+
+    expect(missingDetail).toEqual({
+      ok: false,
+      errors: ["Row 2: categoryDetail is required when category is other"],
+    });
+
+    const result = parseExpensesCsv(
+      [
+        "date,description,category,categoryDetail,amount,currency,paidBy,splitType,splits",
+        '2026-07-10,Tips,other,Tour guide tip,600,PHP,Alice,equal,"Alice:300;Bob:300"',
+      ].join("\n"),
+      group,
+      "alice",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.expenses[0].categoryDetail).toBe("Tour guide tip");
   });
 
   it("rejects a CSV with no expense rows", () => {

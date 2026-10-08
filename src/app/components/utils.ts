@@ -692,11 +692,15 @@ export function mergeGroupMember(
 
 export const CATEGORY_ICONS: Record<string, string> = {
   food: "🍔",
+  drinks: "🥤",
+  groceries: "🛒",
   transport: "🚗",
   accommodation: "🏨",
-  trip: "🧳",
+  activities: "🎟️",
   entertainment: "🎬",
   shopping: "🛍️",
   utilities: "💡",
   other: "📦",
+  // Preserve the icon for existing expenses created under the former Trip category.
+  trip: "🧳",
 };

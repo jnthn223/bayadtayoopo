@@ -506,6 +506,9 @@ export function GroupContent({
                               {exp.splitType === "equal"
                                 ? "Split equally"
                                 : "Custom split"}
+                              {exp.category === "other" && exp.categoryDetail
+                                ? ` · ${exp.categoryDetail}`
+                                : ""}
                               {amountSorted &&
                                 ` · ${new Date(
                                   exp.date + "T12:00:00",
@@ -514,6 +517,11 @@ export function GroupContent({
                                   day: "numeric",
                                 })}`}
                             </p>
+                            {exp.notes && (
+                              <p className="mt-1.5 line-clamp-2 whitespace-pre-line text-xs leading-relaxed text-foreground/75">
+                                {exp.notes}
+                              </p>
+                            )}
                             {(exp.receipts?.length ?? 0) > 0 && (
                               <div className="flex flex-wrap gap-1.5 mt-2">
                                 {exp.receipts!.map((receipt, receiptIndex) => (

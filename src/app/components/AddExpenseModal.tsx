@@ -42,6 +42,7 @@ export function AddExpenseModal({
   );
   const defaultPayerId = currentMember?.id ?? currentUser.id;
   const [description, setDescription] = useState("");
+  const [notes, setNotes] = useState("");
   const [amount, setAmount] = useState("");
   const [foreignCurrencyOpen, setForeignCurrencyOpen] = useState(false);
   const [originalAmount, setOriginalAmount] = useState("");
@@ -53,6 +54,7 @@ export function AddExpenseModal({
   const [paidBy, setPaidBy] = useState(defaultPayerId);
   const [splitType, setSplitType] = useState<SplitType>("equal");
   const [category, setCategory] = useState<Category>("food");
+  const [categoryDetail, setCategoryDetail] = useState("");
   const [customOverrides, setCustomOverrides] = useState<Record<string, string>>({});
   const [includedMemberIds, setIncludedMemberIds] = useState<string[]>(
     group.members.map((member) => member.id),
@@ -67,6 +69,7 @@ export function AddExpenseModal({
 
     if (editExpense) {
       setDescription(editExpense.description);
+      setNotes(editExpense.notes ?? "");
       setAmount(String(editExpense.amount));
       setForeignCurrencyOpen(!!editExpense.originalCurrency);
       setOriginalAmount(editExpense.originalAmount ? String(editExpense.originalAmount) : "");
@@ -78,6 +81,7 @@ export function AddExpenseModal({
       setPaidBy(isAdmin ? editExpense.paidBy : defaultPayerId);
       setSplitType(editExpense.splitType);
       setCategory(editExpense.category);
+      setCategoryDetail(editExpense.categoryDetail ?? "");
       setDate(editExpense.date);
 
       setIncludedMemberIds(editExpense.splits.map((split) => split.memberId));
@@ -90,6 +94,7 @@ export function AddExpenseModal({
       );
     } else {
       setDescription("");
+      setNotes("");
       setAmount("");
       setForeignCurrencyOpen(false);
       setOriginalAmount("");
@@ -99,6 +104,7 @@ export function AddExpenseModal({
       setPaidBy(defaultPayerId);
       setSplitType("equal");
       setCategory("food");
+      setCategoryDetail("");
       setDate(new Date().toISOString().slice(0, 10));
       setCustomOverrides({});
       setIncludedMemberIds(group.members.map((member) => member.id));
@@ -140,6 +146,9 @@ export function AddExpenseModal({
       errs.originalAmount = "Enter the amount that was originally paid";
     }
     if (!paidBy) errs.paidBy = "Choose who paid the expense";
+    if (category === "other" && !categoryDetail.trim()) {
+      errs.categoryDetail = "Specify what kind of expense this is";
+    }
     if (includedMembers.length === 0) errs.members = "Include at least one member";
     if (Object.values(customOverrides).some((value) => parseFloat(value) < 0)) {
       errs.splits = "Split amounts cannot be negative";
@@ -214,6 +223,7 @@ export function AddExpenseModal({
         {
           id: editExpense?.id ?? generateId(),
           description: description.trim(),
+          notes: notes.trim() || undefined,
           amount: totalAmount,
           originalAmount: foreignCurrencyOpen ? numericOriginalAmount : undefined,
           originalCurrency: foreignCurrencyOpen ? originalCurrency : undefined,
@@ -235,6 +245,7 @@ export function AddExpenseModal({
           splits,
           date,
           category,
+          categoryDetail: category === "other" ? categoryDetail.trim() : undefined,
           receipts: editExpense?.receipts,
           createdAt: editExpense?.createdAt ?? savedAt,
           updatedAt: editExpense ? savedAt : undefined,
@@ -339,6 +350,21 @@ export function AddExpenseModal({
               )}
             </div>
 
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1.5">
+                Notes <span className="text-xs">(optional)</span>
+              </label>
+              <textarea
+                rows={3}
+                maxLength={500}
+                placeholder="Add details, context, or anything the group should know"
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                className="w-full resize-none rounded-xl border border-border bg-input-background px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+              />
+              <p className="mt-1 text-right text-[10px] text-muted-foreground">{notes.length}/500</p>
+            </div>
+
             <div className="rounded-xl border border-border bg-muted/20">
               <button
                 type="button"
@@ -406,7 +432,7 @@ export function AddExpenseModal({
             </div>
 
             {/* Amount */}
-            <div>
+            <div className="w-full min-w-0 overflow-hidden">
               <label className="block text-sm text-muted-foreground mb-1.5">
                 {foreignCurrencyOpen ? `Amount used for group (${group.currency})` : `Amount (${group.currency})`}
               </label>
@@ -435,7 +461,7 @@ export function AddExpenseModal({
             </div>
 
             {/* Date */}
-            <div>
+            <div className="w-full min-w-0 overflow-hidden">
               <label className="block text-sm text-muted-foreground mb-1.5">
                 Date
               </label>
@@ -443,7 +469,7 @@ export function AddExpenseModal({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                className="block w-full min-w-0 max-w-full box-border px-4 py-3 rounded-xl bg-input-background border border-border text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
@@ -452,22 +478,39 @@ export function AddExpenseModal({
               <label className="block text-sm text-muted-foreground mb-1.5">
                 Category
               </label>
-              <div className="grid grid-cols-4 gap-2">
-                {EXPENSE_CATEGORIES.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setCategory(cat)}
-                    className={`flex flex-col items-center gap-1 py-2.5 rounded-xl border text-xs transition-all ${
-                      category === cat
-                        ? "border-primary bg-accent text-accent-foreground"
-                        : "border-border bg-input-background text-muted-foreground hover:border-primary/50"
-                    }`}
-                  >
-                    <span className="text-lg">{CATEGORY_ICONS[cat]}</span>
-                    <span className="capitalize">{cat}</span>
-                  </button>
-                ))}
+              <div className="relative">
+                <select
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value as Category)}
+                  className="w-full appearance-none rounded-xl border border-border bg-input-background py-3 pl-4 pr-10 text-sm capitalize text-foreground outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                >
+                  {EXPENSE_CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {CATEGORY_ICONS[cat]} {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
               </div>
+              {category === "other" && (
+                <div className="mt-3">
+                  <input
+                    type="text"
+                    maxLength={50}
+                    autoFocus
+                    value={categoryDetail}
+                    onChange={(event) => {
+                      setCategoryDetail(event.target.value);
+                      setErrors((current) => ({ ...current, categoryDetail: "" }));
+                    }}
+                    placeholder="Specify category, e.g. Tour guide tip"
+                    className="w-full rounded-xl border border-border bg-input-background px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  />
+                  {errors.categoryDetail && (
+                    <p className="mt-1 text-xs text-destructive">{errors.categoryDetail}</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Initial payer */}

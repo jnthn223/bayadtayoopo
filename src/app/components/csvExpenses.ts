@@ -7,12 +7,20 @@ const HEADERS = [
   "date",
   "description",
   "category",
+  "categoryDetail",
   "amount",
   "currency",
   "paidBy",
   "splitType",
   "splits",
+  "notes",
 ] as const;
+
+const OPTIONAL_HEADERS = new Set<(typeof HEADERS)[number]>([
+  "categoryDetail",
+  "notes",
+]);
+const REQUIRED_HEADERS = HEADERS.filter((header) => !OPTIONAL_HEADERS.has(header));
 
 type CsvRow = Record<(typeof HEADERS)[number], string>;
 
@@ -32,21 +40,25 @@ export function exportExpensesTemplateCsv(group: Group): string {
       new Date().toISOString().slice(0, 10),
       "Sample dinner",
       "food",
+      "",
       String(equalAmount),
       group.currency,
       payer?.name ?? "Member name",
       "equal",
       members.map((member) => `${member.name}:300`).join(";"),
+      "",
     ],
     [
       new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
       "Sample hotel",
       "accommodation",
+      "",
       String(customAmount),
       group.currency,
       payer?.name ?? "Member name",
       "custom",
       members.map((member) => `${member.name}:500`).join(";"),
+      "",
     ],
   ]);
 }
@@ -74,7 +86,7 @@ export function parseExpensesCsv(
   }
 
   const headers = rows[0].map((header) => header.trim());
-  const missingHeaders = HEADERS.filter((header) => !headers.includes(header));
+  const missingHeaders = REQUIRED_HEADERS.filter((header) => !headers.includes(header));
   if (missingHeaders.length) {
     return {
       ok: false,
@@ -128,6 +140,7 @@ function expenseToRow(expense: Expense, group: Group): string[] {
     expense.date,
     expense.description,
     expense.category,
+    expense.categoryDetail ?? "",
     String(expense.amount),
     group.currency,
     paidBy,
@@ -135,6 +148,7 @@ function expenseToRow(expense: Expense, group: Group): string[] {
     expense.splits
       .map((split) => `${getMemberName(historicalMembers, split.memberId)}:${split.amount}`)
       .join(";"),
+    expense.notes ?? "",
   ];
 }
 
@@ -162,6 +176,12 @@ function parseExpenseRow(
     errors.push(
       `Row ${lineNumber}: category must be one of ${EXPENSE_CATEGORIES.join(", ")}`,
     );
+  }
+  if (category === "other" && !row.categoryDetail) {
+    errors.push(`Row ${lineNumber}: categoryDetail is required when category is other`);
+  }
+  if (row.categoryDetail && row.categoryDetail.length > 50) {
+    errors.push(`Row ${lineNumber}: categoryDetail must be 50 characters or fewer`);
   }
   if (splitType !== "equal" && splitType !== "custom") {
     errors.push(`Row ${lineNumber}: splitType must be equal or custom`);
@@ -194,6 +214,7 @@ function parseExpenseRow(
     expense: {
       id: generateId(),
       description: row.description,
+      notes: row.notes || undefined,
       amount: roundMoney(amount),
       paidBy: paidBy.id,
       createdBy,
@@ -201,6 +222,7 @@ function parseExpenseRow(
       splits: splits.splits,
       date: row.date,
       category,
+      categoryDetail: category === "other" ? row.categoryDetail || undefined : undefined,
       createdAt: new Date().toISOString(),
     },
   };

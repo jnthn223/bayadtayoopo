@@ -124,9 +124,11 @@ export interface Split {
 export type SplitType = "equal" | "custom";
 export const EXPENSE_CATEGORIES = [
   "food",
+  "drinks",
+  "groceries",
   "transport",
   "accommodation",
-  "trip",
+  "activities",
   "entertainment",
   "shopping",
   "utilities",
@@ -138,6 +140,7 @@ export type Category = (typeof EXPENSE_CATEGORIES)[number];
 export interface Expense {
   id: string;
   description: string;
+  notes?: string;
   amount: number;
   originalAmount?: number;
   originalCurrency?: string;
@@ -150,6 +153,7 @@ export interface Expense {
   splits: Split[];
   date: string;
   category: Category;
+  categoryDetail?: string;
   receipts?: ExpenseReceipt[];
   createdAt?: string;
   updatedAt?: string;
