@@ -237,6 +237,100 @@ export function computeBalances(group: Group): Balance[] {
   return computeBalancesWithPaymentStatuses(group, new Set(["confirmed"]));
 }
 
+export interface BalanceDetail {
+  id: string;
+  label: string;
+  amount: number;
+  date: string;
+}
+
+/**
+ * Returns the signed entries used to arrive at one member's confirmed balance.
+ * Positive entries increase what the member should receive; negative entries
+ * increase what they owe.
+ */
+export function getMemberBalanceDetails(
+  group: Group,
+  memberId: string,
+): BalanceDetail[] {
+  const entries: BalanceDetail[] = [];
+
+  for (const expense of group.expenses) {
+    const payerId = getExpensePayerId(expense);
+    const payerName = getMemberById(group, payerId)?.name ?? "Member";
+    const memberSplit = expense.splits.find((split) => split.memberId === memberId);
+
+    if (payerId === memberId) {
+      entries.push({
+        id: `expense-paid-${expense.id}`,
+        label: `Paid upfront · ${expense.description}`,
+        amount: expense.amount,
+        date: expense.date,
+      });
+    }
+
+    if (memberSplit) {
+      entries.push({
+        id: `expense-share-${expense.id}`,
+        label: `${payerName} · ${expense.description}`,
+        amount: -memberSplit.amount,
+        date: expense.date,
+      });
+    }
+
+    for (const split of expense.splits) {
+      if (
+        split.memberId === payerId ||
+        split.paymentStatus !== "confirmed" ||
+        split.amount <= 0.005
+      ) {
+        continue;
+      }
+
+      if (split.memberId === memberId) {
+        entries.push({
+          id: `split-payment-sent-${expense.id}-${split.memberId}`,
+          label: `Confirmed payment sent · ${expense.description}`,
+          amount: split.amount,
+          date: split.confirmedAt ?? expense.date,
+        });
+      }
+      if (payerId === memberId) {
+        entries.push({
+          id: `split-payment-received-${expense.id}-${split.memberId}`,
+          label: `Confirmed payment received · ${expense.description}`,
+          amount: -split.amount,
+          date: split.confirmedAt ?? expense.date,
+        });
+      }
+    }
+  }
+
+  for (const payment of group.payments ?? []) {
+    if (payment.status !== "confirmed") continue;
+    const counterpartyId =
+      payment.fromMemberId === memberId
+        ? payment.toMemberId
+        : payment.toMemberId === memberId
+          ? payment.fromMemberId
+          : undefined;
+    if (!counterpartyId) continue;
+
+    const counterparty = getMemberById(group, counterpartyId)?.name ?? "member";
+    const sent = payment.fromMemberId === memberId;
+    entries.push({
+      id: `group-payment-${payment.id}`,
+      label: sent
+        ? `Payment sent to ${counterparty}`
+        : `Payment received from ${counterparty}`,
+      amount: sent ? payment.amount : -payment.amount,
+      date: payment.reviewedAt ?? payment.submittedAt,
+    });
+  }
+
+  return entries.sort((a, b) => b.date.localeCompare(a.date));
+}
+
 export function computeProjectedBalances(group: Group): Balance[] {
   return computeBalancesWithPaymentStatuses(
     group,

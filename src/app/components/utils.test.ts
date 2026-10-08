@@ -12,6 +12,7 @@ import {
   createBalanceOffset,
   formatCurrency,
   getCurrencySymbol,
+  getMemberBalanceDetails,
   getMemberById,
   getOutstandingExpenseShares,
   getTotalExpenses,
@@ -231,6 +232,28 @@ describe("expense business logic", () => {
       { memberId: "bob", memberName: "Bob", net: -10 },
       { memberId: "carol", memberName: "Carol", net: -50 },
     ]);
+  });
+
+  it("explains each confirmed balance with signed ledger entries", () => {
+    const balances = computeBalances(group);
+
+    for (const balance of balances) {
+      const details = getMemberBalanceDetails(group, balance.memberId);
+      const detailTotal = details.reduce((sum, detail) => sum + detail.amount, 0);
+      expect(detailTotal).toBeCloseTo(balance.net, 2);
+    }
+
+    expect(getMemberBalanceDetails(group, "alice")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Paid upfront · Dinner", amount: 90 }),
+        expect.objectContaining({ label: "Alice · Dinner", amount: -30 }),
+        expect.objectContaining({ label: "Bob · Taxi", amount: -20 }),
+        expect.objectContaining({
+          label: "Confirmed payment sent · Taxi",
+          amount: 20,
+        }),
+      ]),
+    );
   });
 
   it("applies confirmed group payments while keeping pending payments projected", () => {
