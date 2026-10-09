@@ -291,7 +291,7 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
             </p>
           </div>
           <div className="mt-10 rounded-3xl border border-border bg-card p-5 lg:mt-14 lg:p-10">
-            <p className="text-center text-sm font-semibold text-foreground lg:text-base">
+            <p className="text-center text-xl font-semibold tracking-tight text-foreground lg:text-3xl">
               Start now. Settle with proof.
             </p>
             <div className="mt-6 grid gap-4 md:grid-cols-3 lg:gap-6">
@@ -376,10 +376,10 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
             return (
               <div
                 key={String(title)}
-                className="rounded-3xl border border-border bg-card p-5 lg:min-h-56 lg:p-7"
+                className="rounded-3xl border border-border bg-card p-5 text-center lg:min-h-56 lg:p-7"
               >
-                <div className="grid size-11 place-items-center rounded-2xl bg-accent">
-                  <FeatureIcon size={19} className="text-primary" />
+                <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-accent lg:size-16">
+                  <FeatureIcon size={25} className="text-primary lg:size-7" />
                 </div>
                 <p className="mt-5 text-sm font-semibold text-foreground lg:text-base">
                   {String(title)}
@@ -391,9 +391,9 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
             );
           })}
         </div>
-          <div className="mt-16 rounded-3xl border border-border bg-card p-5 lg:mt-24 lg:p-8">
-          <p className="text-sm font-semibold text-foreground">And there’s more</p>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mx-auto mt-16 max-w-6xl rounded-3xl border border-border bg-card p-5 text-center lg:mt-24 lg:p-10">
+          <p className="text-xl font-semibold tracking-tight text-foreground lg:text-3xl">And there’s more</p>
+          <div className="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:mt-8 lg:grid-cols-3 lg:gap-3">
             {[
               [QrCode, "QR & link invitations"],
               [CreditCard, "Payment instructions"],
@@ -409,9 +409,11 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
               return (
                 <span
                   key={String(label)}
-                  className="inline-flex items-center gap-2 rounded-full bg-muted/60 px-3 py-2 text-xs font-medium text-foreground"
+                  className="flex min-h-14 items-center gap-3 rounded-2xl bg-muted/60 px-4 py-3 text-left text-xs font-semibold text-foreground sm:text-sm"
                 >
-                  <MoreIcon size={14} className="text-primary" />
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-card text-primary shadow-sm">
+                    <MoreIcon size={17} />
+                  </span>
                   {String(label)}
                 </span>
               );

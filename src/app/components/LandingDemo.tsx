@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import {
+  ArrowLeft,
+  ArrowRight,
   Check,
   CheckCircle2,
   Copy,
@@ -115,6 +117,23 @@ export function LandingDemo() {
             </div>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => selectStep(STEPS[(stepIndex - 1 + STEPS.length) % STEPS.length][0])}
+          className="absolute left-3 top-1/2 z-20 grid size-10 -translate-y-1/2 place-items-center rounded-full border border-border bg-card/95 text-foreground shadow-lg backdrop-blur active:scale-95 lg:hidden"
+          aria-label="Previous demo step"
+        >
+          <ArrowLeft size={17} />
+        </button>
+        <button
+          type="button"
+          onClick={() => selectStep(STEPS[(stepIndex + 1) % STEPS.length][0])}
+          className="absolute right-3 top-1/2 z-20 grid size-10 -translate-y-1/2 place-items-center rounded-full border border-border bg-card/95 text-foreground shadow-lg backdrop-blur active:scale-95 lg:hidden"
+          aria-label="Next demo step"
+        >
+          <ArrowRight size={17} />
+        </button>
 
       </div>
     </section>
