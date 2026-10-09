@@ -356,27 +356,6 @@ async function commitReminderUpdates(env, token, updates) {
   if (!response.ok) throw new Error(`Unable to save reminder history: ${response.status}`);
 }
 
-async function writePublicStats(env, token, stats) {
-  const response = await fetch(
-    `${firestoreRoot(env)}/documents/publicStats/overview`,
-    {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fields: Object.fromEntries(
-          Object.entries(stats).map(([key, value]) => [key, encodeValue(value)]),
-        ),
-      }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`Unable to save public stats: ${response.status}`);
-  }
-}
-
 export function buildPublicStats(users, groups, now = new Date()) {
   return {
     userCount: users.length,
@@ -399,8 +378,6 @@ async function runReminders(env, now = new Date()) {
     if (document.deleted || typeof document.data !== "string") return [];
     try { return [{ ...JSON.parse(document.data), id: document.id }]; } catch { return []; }
   });
-  const publicStats = buildPublicStats(users, groups, now);
-  await writePublicStats(env, token, publicStats);
   const dailyLimit = Math.min(100, Math.max(1, Number(env.MAX_EMAILS_PER_DAY ?? 95)));
   const utcDate = now.toISOString().slice(0, 10);
   const sentToday = users.filter((user) =>
@@ -442,7 +419,51 @@ async function runReminders(env, now = new Date()) {
     if (!response.ok) throw new Error(`Resend rejected reminder batch: ${response.status} ${await response.text()}`);
   }
   await commitReminderUpdates(env, token, updates);
-  return { usersScanned: users.length, groupsScanned: groups.length, remindersCreated: updates.length, emailsSent: emails.length, emailQuotaRemaining: remainingEmailCapacity, publicStats };
+  return { usersScanned: users.length, groupsScanned: groups.length, remindersCreated: updates.length, emailsSent: emails.length, emailQuotaRemaining: remainingEmailCapacity };
+}
+
+async function publicStatsResponse(request, env, ctx) {
+  const url = new URL(request.url);
+  const cacheKey = new Request(`${url.origin}/stats`, { method: "GET" });
+  const cache = caches.default;
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const token = await serviceAccessToken(env);
+    const [users, groupDocuments] = await Promise.all([
+      listCollection(env, "users", token),
+      listCollection(env, "groups", token),
+    ]);
+    const groups = groupDocuments.flatMap((document) => {
+      if (document.deleted || typeof document.data !== "string") return [];
+      try {
+        return [{ ...JSON.parse(document.data), id: document.id }];
+      } catch {
+        return [];
+      }
+    });
+    const response = Response.json(buildPublicStats(users, groups), {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=3600, s-maxage=3600",
+      },
+    });
+    ctx.waitUntil(cache.put(cacheKey, response.clone()));
+    return response;
+  } catch (error) {
+    console.error("Unable to load public stats", error);
+    return Response.json(
+      { error: "Public statistics are temporarily unavailable" },
+      {
+        status: 502,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
 }
 
 async function unsubscribe(request, env) {
@@ -471,8 +492,11 @@ export default {
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil(runReminders(env));
   },
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/stats" && request.method === "GET") {
+      return publicStatsResponse(request, env, ctx);
+    }
     if (url.pathname === "/unsubscribe") return unsubscribe(request, env);
     if (url.pathname === "/health") return Response.json({ ok: true, service: "bayadtayoopo-reminders" });
     if (url.pathname === "/run" && request.method === "POST") {

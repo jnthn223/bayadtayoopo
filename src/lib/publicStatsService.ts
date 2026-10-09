@@ -1,6 +1,3 @@
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "./firebase";
-
 export interface PublicStats {
   userCount: number;
   groupCount: number;
@@ -9,9 +6,11 @@ export interface PublicStats {
 }
 
 export async function loadPublicStats(): Promise<PublicStats | null> {
-  const snapshot = await getDoc(doc(db, "publicStats", "overview"));
-  if (!snapshot.exists()) return null;
-  const data = snapshot.data();
+  const baseUrl = import.meta.env.VITE_PUBLIC_STATS_API_URL?.trim();
+  if (!baseUrl) return null;
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/stats`);
+  if (!response.ok) return null;
+  const data = await response.json();
   if (
     !Number.isFinite(data.userCount) ||
     !Number.isFinite(data.groupCount) ||
