@@ -205,7 +205,29 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
 
   return (
     <div className="landing-scroll h-full overflow-y-auto bg-background scroll-smooth">
-      <div className="lg:grid lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-12 lg:max-w-6xl lg:mx-auto lg:px-10 lg:py-16">
+      {publicStats && (
+        <div className="landing-stats-ticker overflow-hidden border-b border-primary/20 bg-primary py-2 text-primary-foreground">
+          <div className="landing-stats-track flex w-max items-center whitespace-nowrap text-[11px] font-semibold tracking-wide sm:text-xs">
+            {[0, 1].map((copy) => (
+              <div
+                key={copy}
+                className="flex shrink-0 items-center gap-5 px-2"
+                aria-hidden={copy === 1 ? "true" : undefined}
+              >
+                <span>{new Intl.NumberFormat().format(publicStats.userCount)} people joined</span>
+                <span className="text-primary-foreground/50">✦</span>
+                <span>{new Intl.NumberFormat().format(publicStats.groupCount)} groups created</span>
+                <span className="text-primary-foreground/50">✦</span>
+                <span>{new Intl.NumberFormat().format(publicStats.expenseCount)} expenses tracked</span>
+                <span className="text-primary-foreground/50">✦</span>
+                <span>Add now. Track now. Invite later.</span>
+                <span className="text-primary-foreground/50">✦</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="landing-hero-grid lg:grid lg:min-h-[calc(100dvh-33px)] lg:w-full lg:max-w-none lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:items-center lg:gap-[clamp(2rem,5vw,6rem)] lg:px-[clamp(2rem,4vw,5rem)] lg:py-5">
         <section className="relative overflow-hidden px-6 pt-10 pb-12 text-center lg:px-0 lg:py-0 lg:text-left">
           <div className="absolute inset-x-8 top-16 h-56 rounded-full bg-accent blur-3xl opacity-80" />
           <div className="relative">
@@ -216,15 +238,18 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
             <div className="inline-flex items-center gap-1.5 mt-8 px-3 py-1.5 rounded-full bg-card border border-border text-[11px] font-semibold text-primary shadow-sm">
               <Check size={13} /> Free to use · Walang password
             </div>
-            <h1 className="mt-5 text-[2rem] leading-[1.15] font-semibold tracking-tight text-foreground lg:text-[3.4rem]">
-              May nagbayad. May may utang.
+            <h1 className="mt-5 text-[2rem] leading-[1.15] font-semibold tracking-tight text-foreground lg:text-[clamp(2.6rem,4vw,4.6rem)]">
+              Huwag nang hintayin ang lahat
               <span className="block mt-1 text-primary">
-                Kami na bahala sa math.
+                bago magsimulang mag-track.
               </span>
             </h1>
-            <p className="mt-4 text-sm leading-relaxed text-muted-foreground max-w-sm mx-auto lg:mx-0 lg:text-base">
-              Track ambagan, shared expenses, and repayments without
-              spreadsheets or awkward singilan.
+            <p className="mt-4 text-sm leading-relaxed text-muted-foreground max-w-sm mx-auto lg:mx-0 lg:max-w-xl lg:text-base">
+              Create a group, add everyone by name, and record shared expenses
+              immediately. Invite them by QR or link when they’re ready.
+            </p>
+            <p className="mt-3 text-sm font-semibold text-foreground">
+              Add now. Track now. Invite later.
             </p>
             <div className="mt-7 flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
               <button
@@ -232,7 +257,7 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
                 onClick={scrollToSignIn}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-3.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 active:scale-[0.98] transition-transform"
               >
-                Sign in, Tara? <ArrowRight size={17} />
+                Start a group <ArrowRight size={17} />
               </button>
               <button
                 type="button"
@@ -243,7 +268,7 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
                 }
                 className="rounded-2xl bg-card border border-border px-6 py-3.5 text-sm font-semibold text-foreground active:scale-[0.98] transition-transform"
               >
-                Tingnan ang sample
+                See how it works
               </button>
             </div>
           </div>
@@ -251,44 +276,25 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
 
         <LandingDemo />
       </div>
-      {publicStats && (
-        <section className="px-6 pb-2 lg:mx-auto lg:max-w-6xl lg:px-10">
-          <div className="overflow-hidden rounded-3xl border border-primary/15 bg-primary text-primary-foreground shadow-lg shadow-primary/10">
-            <div className="grid grid-cols-3 divide-x divide-white/15">
-              {[
-                [publicStats.userCount, "people joined"],
-                [publicStats.groupCount, "groups created"],
-                [publicStats.expenseCount, "expenses tracked"],
-              ].map(([value, label]) => (
-                <div key={String(label)} className="px-2 py-5 text-center sm:py-6">
-                  <p className="text-xl font-bold tracking-tight sm:text-3xl">
-                    {new Intl.NumberFormat().format(Number(value))}
-                  </p>
-                  <p className="mt-1 text-[10px] font-medium text-primary-foreground/75 sm:text-xs">
-                    {String(label)}
-                  </p>
-                </div>
-              ))}
-            </div>
+      <section className="px-6 pb-16 pt-16 lg:w-full lg:px-[clamp(2rem,4vw,5rem)] lg:py-28">
+        <div className="mx-auto max-w-[1680px]">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+              Built for real ambagan
+            </p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground lg:text-[clamp(2.4rem,3vw,3.75rem)] lg:leading-[1.08]">
+              From first expense to final payment.
+            </h2>
+            <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground lg:text-base">
+              BayadTayoOpo keeps everyone clear, reminded, and accounted for—without
+              awkward singilan.
+            </p>
           </div>
-        </section>
-      )}
-      <section className="pt-12 px-6 pb-12 lg:max-w-6xl lg:mx-auto lg:px-10">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-          Built for real ambagan
-        </p>
-        <h2 className="mt-1 text-xl font-semibold text-foreground">
-          From first expense to final payment.
-        </h2>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          BayadTayoOpo keeps everyone clear, reminded, and accounted for—without
-          awkward singilan.
-        </p>
-        <div className="mt-5 rounded-3xl bg-card border border-border p-5">
-          <p className="text-sm font-semibold text-foreground">
-            Start now. Settle with proof.
-          </p>
-          <div className="mt-4 space-y-4">
+          <div className="mt-10 rounded-3xl border border-border bg-card p-5 lg:mt-14 lg:p-10">
+            <p className="text-center text-sm font-semibold text-foreground lg:text-base">
+              Start now. Settle with proof.
+            </p>
+            <div className="mt-6 grid gap-4 md:grid-cols-3 lg:gap-6">
             {[
               [
                 "1",
@@ -306,21 +312,34 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
                 "Pay by expense, pay in full, make a partial payment, or offset balances—with proof and confirmation.",
               ],
             ].map(([number, title, copy]) => (
-              <div key={number} className="flex gap-3">
-                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+              <div key={number} className="flex gap-4 rounded-2xl bg-muted/35 p-5 lg:min-h-44 lg:p-6">
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                   {number}
                 </span>
                 <div>
                   <p className="text-sm font-semibold text-foreground">
                     {title}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{copy}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground lg:text-sm">{copy}</p>
                 </div>
               </div>
             ))}
+            </div>
           </div>
-        </div>
-        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+
+          <div className="mx-auto mt-20 max-w-3xl text-center lg:mt-28">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+              Made for the whole payment journey
+            </p>
+            <h3 className="mt-3 text-2xl font-semibold tracking-tight text-foreground lg:text-4xl">
+              Less chasing. More clarity.
+            </h3>
+            <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground lg:text-base">
+              Track the details when they matter, then keep everyone moving until the group is fully settled.
+            </p>
+          </div>
+
+          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:mt-14 lg:grid-cols-3 lg:gap-6">
           {[
             [
               UserPlus,
@@ -357,24 +376,24 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
             return (
               <div
                 key={String(title)}
-                className="rounded-2xl border border-border bg-card p-4"
+                className="rounded-3xl border border-border bg-card p-5 lg:min-h-56 lg:p-7"
               >
-                <div className="grid size-9 place-items-center rounded-xl bg-accent">
-                  <FeatureIcon size={17} className="text-primary" />
+                <div className="grid size-11 place-items-center rounded-2xl bg-accent">
+                  <FeatureIcon size={19} className="text-primary" />
                 </div>
-                <p className="mt-3 text-sm font-semibold text-foreground">
+                <p className="mt-5 text-sm font-semibold text-foreground lg:text-base">
                   {String(title)}
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground lg:text-sm">
                   {String(copy)}
                 </p>
               </div>
             );
           })}
         </div>
-        <div className="mt-5 rounded-3xl border border-border bg-card p-5">
+          <div className="mt-16 rounded-3xl border border-border bg-card p-5 lg:mt-24 lg:p-8">
           <p className="text-sm font-semibold text-foreground">And there’s more</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             {[
               [QrCode, "QR & link invitations"],
               [CreditCard, "Payment instructions"],
@@ -398,6 +417,7 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
               );
             })}
           </div>
+        </div>
         </div>
       </section>
 

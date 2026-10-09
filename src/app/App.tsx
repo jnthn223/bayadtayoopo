@@ -1090,8 +1090,8 @@ export default function App() {
   return (
     <div className="size-full flex justify-center bg-background sm:bg-muted overflow-hidden">
       <div
-        className={`w-full h-full relative overflow-hidden bg-background flex flex-col sm:shadow-2xl transition-[max-width] duration-300 ${
-          authState === "unauthenticated" ? "sm:max-w-6xl" : "sm:max-w-sm"
+        className={`w-full h-full relative overflow-hidden bg-background flex flex-col transition-[max-width] duration-300 ${
+          authState === "unauthenticated" ? "max-w-none" : "sm:max-w-sm sm:shadow-2xl"
         }`}
       >
         {/* Banner */}
