@@ -4,6 +4,7 @@ import {
   allocateCustomShares,
   allocatePaymentToExpenses,
   archiveGroupMember,
+  canAdminApproveBalanceOffset,
   canAdminConfirmPayment,
   canDirectlyConfirmSplit,
   computeBalances,
@@ -104,6 +105,56 @@ describe("expense business logic", () => {
           ),
         },
         payment,
+        group.members[0],
+      ),
+    ).toBe(false);
+  });
+
+  it("lets an admin approve an offset only for a temporary counterparty", () => {
+    const offset = {
+      id: "pending-offset",
+      requesterMemberId: "bob",
+      counterpartyMemberId: "pending-reva",
+      amount: 25,
+      debitAllocations: [],
+      creditAllocations: [],
+      status: "pending" as const,
+      requestedAt: "2026-10-12T00:00:00.000Z",
+      requestedBy: "bob",
+    };
+    const withPendingCounterparty: Group = {
+      ...group,
+      members: [
+        ...group.members,
+        { id: "pending-reva", name: "Reva", color: "#444444" },
+      ],
+    };
+
+    expect(
+      canAdminApproveBalanceOffset(
+        withPendingCounterparty,
+        offset,
+        group.members[0],
+      ),
+    ).toBe(true);
+    expect(
+      canAdminApproveBalanceOffset(
+        withPendingCounterparty,
+        offset,
+        group.members[1],
+      ),
+    ).toBe(false);
+    expect(
+      canAdminApproveBalanceOffset(
+        {
+          ...withPendingCounterparty,
+          members: withPendingCounterparty.members.map((member) =>
+            member.id === "pending-reva"
+              ? { ...member, uid: "reva-uid" }
+              : member,
+          ),
+        },
+        offset,
         group.members[0],
       ),
     ).toBe(false);

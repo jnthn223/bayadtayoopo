@@ -20,6 +20,7 @@ import type {
 import {
   allocatePaymentToExpenses,
   buildBalanceOffsetPreview,
+  canAdminApproveBalanceOffset,
   canAdminConfirmPayment,
   createBalanceOffset,
   formatCurrency,
@@ -133,8 +134,13 @@ function formatPaymentDateTime(value: string): string {
   }).format(date);
 }
 
-function offsetStatusLabel(offset: BalanceOffset, memberId?: string) {
+function offsetStatusLabel(
+  offset: BalanceOffset,
+  memberId?: string,
+  adminReviewForName?: string,
+) {
   if (offset.status === "pending") {
+    if (adminReviewForName) return `Review for ${adminReviewForName}`;
     return offset.counterpartyMemberId === memberId
       ? "Review offset"
       : "Awaiting approval";
@@ -232,12 +238,24 @@ export function GroupPayments({
     () =>
       [...(group.balanceOffsets ?? [])]
         .filter(
-          (offset) =>
-            offset.requesterMemberId === memberId ||
-            offset.counterpartyMemberId === memberId,
+          (offset) => {
+            const adminCanReview =
+              isAdmin &&
+              canAdminApproveBalanceOffset(group, offset, currentMember);
+            const adminReviewedOnBehalf =
+              isAdmin &&
+              offset.reviewedBy === memberId &&
+              !!offset.reviewedOnBehalfOfMemberId;
+            return (
+              offset.requesterMemberId === memberId ||
+              offset.counterpartyMemberId === memberId ||
+              adminCanReview ||
+              adminReviewedOnBehalf
+            );
+          },
         )
         .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)),
-    [group.balanceOffsets, memberId],
+    [group, currentMember, isAdmin, memberId],
   );
   const activeOffsets = relevantOffsets.filter(
     (offset) => offset.status === "pending" || offset.status === "rejected",
@@ -416,7 +434,15 @@ export function GroupPayments({
   }
 
   function approveBalanceOffset(offset: BalanceOffset) {
-    if (!currentMember || offset.counterpartyMemberId !== currentMember.id) return;
+    if (!currentMember) return;
+    const approvingOwnOffset =
+      offset.counterpartyMemberId === currentMember.id;
+    const approvingForTemporaryMember = canAdminApproveBalanceOffset(
+      group,
+      offset,
+      currentMember,
+    );
+    if (!approvingOwnOffset && !approvingForTemporaryMember) return;
     const stillValid = buildBalanceOffsetPreview(
       {
         ...group,
@@ -438,6 +464,9 @@ export function GroupPayments({
       status: "confirmed",
       reviewedAt: new Date().toISOString(),
       reviewedBy: currentMember.id,
+      reviewedOnBehalfOfMemberId: approvingForTemporaryMember
+        ? offset.counterpartyMemberId
+        : undefined,
       rejectionReason: undefined,
     }));
   }
@@ -807,6 +836,12 @@ export function GroupPayments({
                             {formatCurrency(offset.amount, group.currency)}
                           </p>
                         </div>
+                        {offset.reviewedOnBehalfOfMemberId && offset.reviewedBy && (
+                          <p className="rounded-xl bg-green-50 px-3 py-2 text-xs text-green-800">
+                            Approved by {getMemberById(group, offset.reviewedBy)?.name ?? "a group admin"}
+                            {" "}(admin) for {counterparty?.name ?? "the temporary member"}
+                          </p>
+                        )}
                         <button
                           type="button"
                           onClick={() => toggleAllocations(offset.id)}
@@ -922,6 +957,9 @@ export function GroupPayments({
             );
             const isRequester = offset.requesterMemberId === memberId;
             const isCounterparty = offset.counterpartyMemberId === memberId;
+            const adminCanApprove =
+              isAdmin &&
+              canAdminApproveBalanceOffset(group, offset, currentMember);
             const timestamp = offsetTimestamp(offset);
             const offsetOpen = expandedPaymentIds.has(offset.id);
             return (
@@ -973,7 +1011,11 @@ export function GroupPayments({
                             : offset.status,
                       )}`}
                     >
-                      {offsetStatusLabel(offset, memberId)}
+                      {offsetStatusLabel(
+                        offset,
+                        memberId,
+                        adminCanApprove ? counterparty?.name : undefined,
+                      )}
                     </span>
                   </div>
                 </div>
@@ -1016,22 +1058,26 @@ export function GroupPayments({
                   </div>
                 )}
 
-                {offset.status === "pending" && isCounterparty && (
-                  <div className="grid grid-cols-2 gap-2">
+                {offset.status === "pending" && (isCounterparty || adminCanApprove) && (
+                  <div className={isCounterparty ? "grid grid-cols-2 gap-2" : "grid"}>
                     <button
                       type="button"
                       onClick={() => approveBalanceOffset(offset)}
                       className="rounded-xl bg-green-600 py-2.5 text-sm font-semibold text-white"
                     >
-                      Approve offset
+                      {adminCanApprove
+                        ? `Approve for ${counterparty?.name ?? "temporary member"}`
+                        : "Approve offset"}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => rejectBalanceOffset(offset)}
-                      className="rounded-xl bg-destructive py-2.5 text-sm font-semibold text-white"
-                    >
-                      Reject
-                    </button>
+                    {isCounterparty && (
+                      <button
+                        type="button"
+                        onClick={() => rejectBalanceOffset(offset)}
+                        className="rounded-xl bg-destructive py-2.5 text-sm font-semibold text-white"
+                      >
+                        Reject
+                      </button>
+                    )}
                   </div>
                 )}
                 {offset.status === "pending" && isRequester && (

@@ -28,6 +28,7 @@ export interface PaymentSubmission {
   submittedAt: string;
   reviewedAt?: string;
   reviewedBy?: string;
+  reviewedOnBehalfOfMemberId?: string;
   rejectionReason?: string;
 }
 
@@ -95,6 +96,7 @@ export interface BalanceOffset {
   requestedBy: string;
   reviewedAt?: string;
   reviewedBy?: string;
+  reviewedOnBehalfOfMemberId?: string;
   rejectionReason?: string;
   cancelledAt?: string;
   cancelledBy?: string;

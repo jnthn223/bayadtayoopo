@@ -73,6 +73,17 @@ export function canAdminConfirmPayment(
   return !recipient?.uid || !!recipient.removedAt;
 }
 
+export function canAdminApproveBalanceOffset(
+  group: Group,
+  offset: BalanceOffset,
+  member?: Member,
+): boolean {
+  if (!isGroupAdmin(group, member) || offset.status !== "pending") return false;
+  if (offset.counterpartyMemberId === member?.id) return false;
+  const counterparty = getMemberById(group, offset.counterpartyMemberId);
+  return !counterparty?.uid || !!counterparty.removedAt;
+}
+
 export function isExpenseSettled(group: Group, expense: Expense): boolean {
   const payerId = getExpensePayerId(expense);
   const confirmedAllocationsByMember = new Map<string, number>();
@@ -766,6 +777,9 @@ export function mergeGroupMember(
       counterpartyMemberId: replace(offset.counterpartyMemberId),
       requestedBy: replace(offset.requestedBy),
       reviewedBy: offset.reviewedBy ? replace(offset.reviewedBy) : undefined,
+      reviewedOnBehalfOfMemberId: offset.reviewedOnBehalfOfMemberId
+        ? replace(offset.reviewedOnBehalfOfMemberId)
+        : undefined,
       cancelledBy: offset.cancelledBy
         ? replace(offset.cancelledBy)
         : undefined,
