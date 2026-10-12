@@ -246,8 +246,8 @@ describe("expense business logic", () => {
     expect(getMemberBalanceDetails(group, "alice")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: "Paid upfront · Dinner", amount: 90 }),
-        expect.objectContaining({ label: "Alice · Dinner", amount: -30 }),
-        expect.objectContaining({ label: "Bob · Taxi", amount: -20 }),
+        expect.objectContaining({ label: "Paid by Alice · Dinner", amount: -30 }),
+        expect.objectContaining({ label: "Paid by Bob · Taxi", amount: -20 }),
         expect.objectContaining({
           label: "Confirmed payment sent · Taxi",
           amount: 20,

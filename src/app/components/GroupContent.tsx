@@ -747,7 +747,7 @@ export function GroupContent({
                             Balance breakdown
                           </p>
                           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                            Positive amounts add to what this member should receive. Negative amounts add to what they owe.
+                            This builds the member’s overall group balance. Negative expense shares show who originally paid; they are not necessarily direct debts to you.
                           </p>
                           <div className="mt-3 space-y-2.5">
                             {balanceDetails.map((detail) => (

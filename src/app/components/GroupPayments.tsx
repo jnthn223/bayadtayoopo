@@ -300,6 +300,18 @@ export function GroupPayments({
   const draftRecipient = draft
     ? getMemberById(group, draft.toMemberId)
     : undefined;
+  const hasSimplifiedRouting = useMemo(
+    () =>
+      !!draft &&
+      draft.flow !== "expense" &&
+      draftAllocations.some((allocation) => {
+        const expense = group.expenses.find(
+          (candidate) => candidate.id === allocation.expenseId,
+        );
+        return !!expense && getExpensePayerId(expense) !== draft.toMemberId;
+      }),
+    [draft, draftAllocations, group.expenses],
+  );
   const offsetPreview = useMemo(
     () =>
       offsetDraft && memberId
@@ -872,7 +884,14 @@ export function GroupPayments({
                             </button>
                           )}
                         </div>
-                        {allocationsOpen && <AllocationList allocations={payment.allocations} currency={group.currency} />}
+                        {allocationsOpen && (
+                          <AllocationList
+                            allocations={payment.allocations}
+                            currency={group.currency}
+                            group={group}
+                            recipientMemberId={payment.toMemberId}
+                          />
+                        )}
                         {payment.status === "confirmed" && isRecipient && (
                           <button type="button" onClick={() => reversePayment(payment)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-muted py-2.5 text-sm font-medium text-muted-foreground">
                             <RotateCcw size={14} /> Undo confirmation
@@ -1157,6 +1176,8 @@ export function GroupPayments({
                   <AllocationList
                     allocations={payment.allocations}
                     currency={group.currency}
+                    group={group}
+                    recipientMemberId={payment.toMemberId}
                   />
                 )}
 
@@ -1919,12 +1940,16 @@ export function GroupPayments({
                   <div className="mb-2 flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-foreground">
-                        {draft.confirmImmediately
-                          ? "What this received payment settles"
-                          : "What this payment covers"}
+                        {hasSimplifiedRouting
+                          ? "How this affects the simplified group balance"
+                          : draft.confirmImmediately
+                            ? "What this received payment settles"
+                            : "What this payment covers"}
                       </p>
                       <span className="text-xs text-muted-foreground">
-                        {chooseExpenses
+                        {hasSimplifiedRouting
+                          ? "Includes shares from expenses paid by different members"
+                          : chooseExpenses
                           ? "Expenses you selected"
                           : "Applied to oldest unpaid expenses first"}
                       </span>
@@ -1951,6 +1976,12 @@ export function GroupPayments({
                       {outstandingExpenseShares.map((share) => {
                         const expenseId = share.expenseId!;
                         const selected = selectedExpenseIds.has(expenseId);
+                        const expense = group.expenses.find(
+                          (candidate) => candidate.id === expenseId,
+                        );
+                        const payer = expense
+                          ? getMemberById(group, getExpensePayerId(expense))
+                          : undefined;
                         return (
                           <button
                             key={expenseId}
@@ -1979,7 +2010,9 @@ export function GroupPayments({
                               {selected && <Check size={11} />}
                             </span>
                             <span className="min-w-0 flex-1 truncate text-xs text-foreground">
-                              {share.expenseDescription}
+                              {payer
+                                ? `Paid by ${payer.name} · ${share.expenseDescription}`
+                                : share.expenseDescription}
                             </span>
                             <span className="text-xs font-medium text-muted-foreground">
                               {formatCurrency(share.amount, group.currency)}
@@ -1989,15 +2022,30 @@ export function GroupPayments({
                       })}
                     </div>
                   )}
+                  {hasSimplifiedRouting && (
+                    <div className="mb-3 rounded-xl border border-primary/15 bg-accent px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+                      <p className="font-semibold text-foreground">
+                        Simplified group payment
+                      </p>
+                      <p className="mt-1">
+                        Some expenses below were originally paid by other members.
+                        BayadTayoOpo routes this payment to {draftRecipient?.name ?? "the recipient"} to settle the group’s net balances with fewer transfers.
+                      </p>
+                    </div>
+                  )}
                   <AllocationList
                     allocations={draftAllocations}
                     currency={group.currency}
+                    group={group}
+                    recipientMemberId={draft.toMemberId}
                   />
                   <div className="mt-3 flex justify-between border-t border-border pt-3 text-xs">
                     <span className="text-muted-foreground">
-                      {draft.confirmImmediately
-                        ? "Balance still owed to you"
-                        : "You’ll still owe"}
+                      {draft.flow === "expense"
+                        ? draft.confirmImmediately
+                          ? "Still owed to you for this expense"
+                          : "You’ll still owe for this expense"
+                        : "Remaining simplified balance"}
                     </span>
                     <span className="font-semibold text-foreground">
                       {formatCurrency(
@@ -2038,9 +2086,13 @@ export function GroupPayments({
 function AllocationList({
   allocations,
   currency,
+  group,
+  recipientMemberId,
 }: {
   allocations: PaymentAllocation[];
   currency: string;
+  group?: Group;
+  recipientMemberId?: string;
 }) {
   if (allocations.length === 0) {
     return (
@@ -2052,19 +2104,38 @@ function AllocationList({
 
   return (
     <div className="space-y-1.5">
-      {allocations.map((allocation, index) => (
-        <div
-          key={`${allocation.expenseId ?? "balance"}-${index}`}
-          className="flex items-center justify-between gap-3 text-xs"
-        >
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">
-            {allocation.expenseDescription}
-          </span>
-          <span className="font-medium text-foreground">
-            {formatCurrency(allocation.amount, currency)}
-          </span>
-        </div>
-      ))}
+      {allocations.map((allocation, index) => {
+        const expense = group?.expenses.find(
+          (candidate) => candidate.id === allocation.expenseId,
+        );
+        const payerId = expense ? getExpensePayerId(expense) : undefined;
+        const payer = payerId && group ? getMemberById(group, payerId) : undefined;
+        const isSimplifiedRoute =
+          !!payerId && !!recipientMemberId && payerId !== recipientMemberId;
+
+        return (
+          <div
+            key={`${allocation.expenseId ?? "balance"}-${index}`}
+            className="flex items-start justify-between gap-3 text-xs"
+          >
+            <span className="min-w-0 flex-1 text-muted-foreground">
+              <span className="block truncate">
+                {payer
+                  ? `Paid by ${payer.name} · ${allocation.expenseDescription}`
+                  : allocation.expenseDescription}
+              </span>
+              {isSimplifiedRoute && (
+                <span className="mt-0.5 block text-[10px] font-medium text-primary">
+                  Routed through the simplified group balance
+                </span>
+              )}
+            </span>
+            <span className="shrink-0 font-medium text-foreground">
+              {formatCurrency(allocation.amount, currency)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -272,7 +272,7 @@ export function getMemberBalanceDetails(
     if (memberSplit) {
       entries.push({
         id: `expense-share-${expense.id}`,
-        label: `${payerName} · ${expense.description}`,
+        label: `Paid by ${payerName} · ${expense.description}`,
         amount: -memberSplit.amount,
         date: expense.date,
       });
