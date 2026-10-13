@@ -843,7 +843,15 @@ export default function App() {
               body: `${new Intl.NumberFormat("en-PH", {
                 style: "currency",
                 currency: summary.currency,
-              }).format(-currentBalance.net)} left to settle. Pay in full or make a partial payment.`,
+              }).format(-currentBalance.net)} left to settle.${
+                (summary.overdueAmount ?? 0) > 0
+                  ? ` ${new Intl.NumberFormat("en-PH", { style: "currency", currency: summary.currency }).format(summary.overdueAmount)} is overdue.`
+                  : (summary.dueTodayAmount ?? 0) > 0
+                    ? ` ${new Intl.NumberFormat("en-PH", { style: "currency", currency: summary.currency }).format(summary.dueTodayAmount)} is due today.`
+                    : (summary.dueSoonAmount ?? 0) > 0
+                      ? ` ${new Intl.NumberFormat("en-PH", { style: "currency", currency: summary.currency }).format(summary.dueSoonAmount)} is due soon.`
+                      : ""
+              } Pay in full or make a partial payment.`,
               at: currentUser.paymentReminderDigest.createdAt,
               destination: { tab: "settle" as const },
             }];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPublicStats, buildUserSummary, hasReminderEmail, reminderIsDue } from "./index.js";
+import { buildPublicStats, buildUserSummary, deadlineReminderKey, hasReminderEmail, reminderIsDue, userDisplayName } from "./index.js";
 
 const user = {
   id: "debtor-uid",
@@ -39,6 +39,12 @@ const group = {
 };
 
 describe("payment reminder worker", () => {
+  it("never uses a Firestore document path as the email greeting", () => {
+    expect(userDisplayName({
+      name: "projects/example/databases/(default)/documents/users/123",
+      email: "jonathan@example.com",
+    })).toBe("jonathan");
+  });
   it("builds privacy-safe public totals", () => {
     expect(
       buildPublicStats([user, { id: "another" }], [group, { ...group, id: "second", expenses: [] }], new Date("2026-10-07T07:00:00.000Z")),
@@ -92,5 +98,28 @@ describe("payment reminder worker", () => {
     expect(reminderIsDue(userWithoutEmail, new Date("2026-10-02T01:00:00.000Z"))).toBe(true);
     expect(buildUserSummary(userWithoutEmail, [group], new Date("2026-10-02T01:00:00.000Z"))).toHaveLength(1);
     expect(hasReminderEmail(userWithoutEmail)).toBe(false);
+  });
+
+  it("includes unpaid deadline amounts in the reminder summary", () => {
+    const result = buildUserSummary(user, [{
+      ...group,
+      expenses: [{ ...group.expenses[0], dueDate: "2026-10-02", createdAt: "2026-10-01T00:00:00.000Z" }],
+    }], new Date("2026-10-02T01:00:00.000Z"));
+
+    expect(result[0]).toMatchObject({
+      nearestDueDate: "2026-10-02",
+      dueTodayAmount: 500,
+    });
+    expect(deadlineReminderKey(result)).toBe("trip:today:2026-10-02");
+  });
+
+  it("identifies deadline milestones independently of the recurring reminder hour", () => {
+    const summaries = buildUserSummary(user, [{
+      ...group,
+      expenses: [{ ...group.expenses[0], dueDate: "2026-10-02" }],
+    }], new Date("2026-10-02T07:00:00.000Z"));
+
+    expect(reminderIsDue(user, new Date("2026-10-02T07:00:00.000Z"))).toBe(false);
+    expect(deadlineReminderKey(summaries)).toBe("trip:today:2026-10-02");
   });
 });

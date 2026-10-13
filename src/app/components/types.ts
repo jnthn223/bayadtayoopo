@@ -154,6 +154,7 @@ export interface Expense {
   splitType: SplitType;
   splits: Split[];
   date: string;
+  dueDate?: string;
   category: Category;
   categoryDetail?: string;
   receipts?: ExpenseReceipt[];
@@ -196,6 +197,10 @@ export interface PaymentReminderGroupSummary {
   amount: number;
   currency: string;
   pendingPaymentAmount: number;
+  nearestDueDate?: string;
+  overdueAmount?: number;
+  dueTodayAmount?: number;
+  dueSoonAmount?: number;
 }
 
 export interface PaymentReminderDigest {

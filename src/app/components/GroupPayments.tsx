@@ -36,6 +36,7 @@ import {
 } from "../../lib/paymentImageService";
 import { UserAvatar } from "./UserAvatar";
 import { ImagePasteControl } from "./ImagePasteControl";
+import { getExpenseDeadlineState } from "./expenseDeadline";
 
 interface Props {
   group: Group;
@@ -2281,6 +2282,7 @@ function AllocationList({
         const payer = payerId && group ? getMemberById(group, payerId) : undefined;
         const isSimplifiedRoute =
           !!payerId && !!recipientMemberId && payerId !== recipientMemberId;
+        const deadline = getExpenseDeadlineState(expense?.dueDate);
 
         return (
           <div
@@ -2296,6 +2298,19 @@ function AllocationList({
               {isSimplifiedRoute && (
                 <span className="mt-0.5 block text-[10px] font-medium text-primary">
                   Routed through the simplified group balance
+                </span>
+              )}
+              {deadline && (
+                <span
+                  className={`mt-0.5 block text-[10px] font-medium ${
+                    deadline.state === "overdue"
+                      ? "text-destructive"
+                      : deadline.state === "due-today" || deadline.state === "due-soon"
+                        ? "text-amber-700"
+                        : "text-muted-foreground"
+                  }`}
+                >
+                  {deadline.label}
                 </span>
               )}
             </span>

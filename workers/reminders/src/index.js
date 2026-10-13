@@ -133,7 +133,7 @@ async function listCollection(env, collection, token) {
     for (const document of body.documents ?? []) {
       items.push({
         id: decodeURIComponent(document.name.split("/").at(-1)),
-        name: document.name,
+        documentName: document.name,
         ...decodeDocument(document),
       });
     }
@@ -252,6 +252,42 @@ function oldestOutstandingAgeDays(group, memberId, now) {
   return (now.getTime() - Math.min(...timestamps)) / 86_400_000;
 }
 
+function deadlineSummary(group, memberId, todayKey) {
+  const allocated = {};
+  for (const payment of group.payments ?? []) {
+    if (payment.fromMemberId !== memberId || !["pending", "confirmed"].includes(payment.status)) continue;
+    for (const item of payment.allocations ?? []) {
+      if (item.expenseId) allocated[item.expenseId] = (allocated[item.expenseId] ?? 0) + Number(item.amount || 0);
+    }
+  }
+  for (const offset of group.balanceOffsets ?? []) {
+    if (!["pending", "confirmed"].includes(offset.status)) continue;
+    const items = offset.requesterMemberId === memberId
+      ? offset.debitAllocations
+      : offset.counterpartyMemberId === memberId
+        ? offset.creditAllocations
+        : [];
+    for (const item of items ?? []) {
+      if (item.expenseId) allocated[item.expenseId] = (allocated[item.expenseId] ?? 0) + Number(item.amount || 0);
+    }
+  }
+  const result = { nearestDueDate: undefined, overdueAmount: 0, dueTodayAmount: 0, dueSoonAmount: 0 };
+  const today = Date.parse(`${todayKey}T00:00:00Z`);
+  for (const expense of group.expenses ?? []) {
+    if (!expense.dueDate || expense.paidBy === memberId) continue;
+    const split = (expense.splits ?? []).find((item) => item.memberId === memberId);
+    if (!split || ["pending", "confirmed"].includes(split.paymentStatus)) continue;
+    const remaining = Math.max(0, Number(split.amount || 0) - Number(allocated[expense.id] ?? 0));
+    if (remaining <= 0.005) continue;
+    const days = Math.round((Date.parse(`${expense.dueDate}T00:00:00Z`) - today) / 86_400_000);
+    if (days < 0) result.overdueAmount += remaining;
+    else if (days === 0) result.dueTodayAmount += remaining;
+    else if (days <= 3) result.dueSoonAmount += remaining;
+    if (!result.nearestDueDate || expense.dueDate < result.nearestDueDate) result.nearestDueDate = expense.dueDate;
+  }
+  return result;
+}
+
 export function buildUserSummary(user, groups, now = new Date()) {
   const settings = preferences(user.paymentReminderPreferences);
   const muted = new Set(settings.mutedGroupIds);
@@ -264,7 +300,12 @@ export function buildUserSummary(user, groups, now = new Date()) {
     );
     if (!member) return [];
     const net = projectedBalance(group, member.id);
-    if (net >= -0.005 || oldestOutstandingAgeDays(group, member.id, now) < 3) return [];
+    let local;
+    try { local = localDateParts(now, settings.timeZone || "Asia/Manila"); }
+    catch { local = localDateParts(now, "Asia/Manila"); }
+    const deadlines = deadlineSummary(group, member.id, local.dateKey);
+    const hasDeadlineAttention = deadlines.overdueAmount > 0 || deadlines.dueTodayAmount > 0 || deadlines.dueSoonAmount > 0;
+    if (net >= -0.005 || (!hasDeadlineAttention && oldestOutstandingAgeDays(group, member.id, now) < 3)) return [];
     const pendingPaymentAmount = (group.payments ?? [])
       .filter((payment) => payment.fromMemberId === member.id && payment.status === "pending")
       .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
@@ -274,8 +315,22 @@ export function buildUserSummary(user, groups, now = new Date()) {
       amount: Math.round(-net * 100) / 100,
       currency: group.currency || "PHP",
       pendingPaymentAmount: Math.round(pendingPaymentAmount * 100) / 100,
+      ...(deadlines.nearestDueDate ? { nearestDueDate: deadlines.nearestDueDate } : {}),
+      ...(deadlines.overdueAmount > 0 ? { overdueAmount: Math.round(deadlines.overdueAmount * 100) / 100 } : {}),
+      ...(deadlines.dueTodayAmount > 0 ? { dueTodayAmount: Math.round(deadlines.dueTodayAmount * 100) / 100 } : {}),
+      ...(deadlines.dueSoonAmount > 0 ? { dueSoonAmount: Math.round(deadlines.dueSoonAmount * 100) / 100 } : {}),
     }];
   });
+}
+
+export function deadlineReminderKey(summaries) {
+  const parts = summaries.flatMap((summary) => {
+    if (summary.overdueAmount > 0) return [`${summary.groupId}:overdue:${summary.nearestDueDate}`];
+    if (summary.dueTodayAmount > 0) return [`${summary.groupId}:today:${summary.nearestDueDate}`];
+    if (summary.dueSoonAmount > 0) return [`${summary.groupId}:soon:${summary.nearestDueDate}`];
+    return [];
+  });
+  return parts.length > 0 ? parts.sort().join("|") : undefined;
 }
 
 function money(amount, currency) {
@@ -286,6 +341,13 @@ function totalsByCurrency(groups) {
   const totals = {};
   for (const group of groups) totals[group.currency] = (totals[group.currency] ?? 0) + group.amount;
   return totals;
+}
+
+export function userDisplayName(user) {
+  const name = typeof user.name === "string" ? user.name.trim() : "";
+  if (name && !name.startsWith("projects/")) return name;
+  const email = typeof user.email === "string" ? user.email.trim() : "";
+  return email ? email.split("@")[0] : "there";
 }
 
 async function unsubscribeSignature(env, uid) {
@@ -307,6 +369,7 @@ async function buildEmail(env, user, summaries, digestId) {
     <tr><td style="padding:14px 0;border-bottom:1px solid #eee">
       <div style="font-weight:700;color:#17151f">${htmlEscape(summary.groupName)}</div>
       <div style="margin-top:4px;color:#686576">${htmlEscape(money(summary.amount, summary.currency))} left to settle${summary.pendingPaymentAmount > 0 ? ` · ${htmlEscape(money(summary.pendingPaymentAmount, summary.currency))} awaiting confirmation` : ""}</div>
+      ${summary.overdueAmount > 0 ? `<div style="margin-top:6px;font-weight:700;color:#c73535">${htmlEscape(money(summary.overdueAmount, summary.currency))} overdue</div>` : summary.dueTodayAmount > 0 ? `<div style="margin-top:6px;font-weight:700;color:#a65b00">${htmlEscape(money(summary.dueTodayAmount, summary.currency))} due today</div>` : summary.dueSoonAmount > 0 ? `<div style="margin-top:6px;font-weight:700;color:#a65b00">${htmlEscape(money(summary.dueSoonAmount, summary.currency))} due within 3 days</div>` : ""}
       <div style="margin-top:6px;font-size:13px;color:#686576">Settle in full or make a partial payment—kung ano ang works for you.</div>
       <a href="${appUrl}/?openGroup=${encodeURIComponent(summary.groupId)}&tab=settle" style="display:inline-block;margin-top:10px;color:#5b46f5;font-weight:700;text-decoration:none">Review &amp; pay →</a>
     </td></tr>`).join("");
@@ -321,15 +384,15 @@ async function buildEmail(env, user, summaries, digestId) {
     to: [user.email],
     reply_to: env.EMAIL_REPLY_TO,
     subject,
-    html: `<!doctype html><html><body style="margin:0;background:#f5f4fa;font-family:Arial,sans-serif;color:#17151f"><div style="display:none">A gentle BayadTayoOpo summary of balances that still need attention.</div><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:28px 12px"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:auto;background:#fff;border-radius:22px;overflow:hidden"><tr><td style="padding:26px;background:#5b46f5;color:#fff"><img src="${appUrl}/icons/icon-192.png" width="42" height="42" alt="BayadTayoOpo" style="border-radius:12px;vertical-align:middle"><span style="margin-left:10px;font-size:20px;font-weight:800;vertical-align:middle">BayadTayoOpo</span></td></tr><tr><td style="padding:28px"><div style="font-size:13px;color:#7a758b">PAYMENT REMINDER</div><h1 style="font-size:26px;line-height:1.2;margin:8px 0 10px">May balances ka pang kailangang ayusin</h1><p style="margin:0;color:#686576;line-height:1.6">Hi ${htmlEscape(user.name || user.email.split("@")[0])}, here’s your gentle summary so nothing gets lost in the group chat.</p><div style="margin:22px 0;padding:18px;border-radius:16px;background:#f0edff"><div style="font-size:12px;color:#686576">TOTAL ACROSS ${summaries.length} ${summaries.length === 1 ? "GROUP" : "GROUPS"}</div><div style="margin-top:4px;font-size:24px;font-weight:800;color:#5b46f5">${htmlEscape(totalText)}</div></div><table width="100%" cellpadding="0" cellspacing="0">${rows}</table><a href="${appUrl}/" style="display:block;margin-top:24px;padding:14px;border-radius:14px;background:#5b46f5;color:#fff;font-weight:700;text-align:center;text-decoration:none">Open BayadTayoOpo</a><p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#888395">You’re receiving this because automatic payment reminders are enabled for your BayadTayoOpo account. <a href="${manage}" style="color:#5b46f5">Customize reminders</a> · <a href="${unsubscribe}" style="color:#5b46f5">Turn off email reminders</a></p></td></tr></table></td></tr></table></body></html>`,
-    text: `BayadTayoOpo payment reminder\n\nSettle in full or make a partial payment—kung ano ang works for you.\n\n${summaries.map((item) => `${item.groupName}: ${money(item.amount, item.currency)} left to settle\nReview & pay: ${appUrl}/?openGroup=${encodeURIComponent(item.groupId)}&tab=settle`).join("\n\n")}\n\nCustomize reminders: ${manage}\nTurn off email reminders: ${unsubscribe}`,
+    html: `<!doctype html><html><body style="margin:0;background:#f5f4fa;font-family:Arial,sans-serif;color:#17151f"><div style="display:none">A gentle BayadTayoOpo summary of balances that still need attention.</div><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:28px 12px"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:auto;background:#fff;border-radius:22px;overflow:hidden"><tr><td style="padding:26px;background:#5b46f5;color:#fff"><img src="${appUrl}/icons/icon-192.png" width="42" height="42" alt="BayadTayoOpo" style="border-radius:12px;vertical-align:middle"><span style="margin-left:10px;font-size:20px;font-weight:800;vertical-align:middle">BayadTayoOpo</span></td></tr><tr><td style="padding:28px"><div style="font-size:13px;color:#7a758b">PAYMENT REMINDER</div><h1 style="font-size:26px;line-height:1.2;margin:8px 0 10px">May balances ka pang kailangang ayusin</h1><p style="margin:0;color:#686576;line-height:1.6">Hi ${htmlEscape(userDisplayName(user))}, here’s your gentle summary so nothing gets lost in the group chat.</p><div style="margin:22px 0;padding:18px;border-radius:16px;background:#f0edff"><div style="font-size:12px;color:#686576">TOTAL ACROSS ${summaries.length} ${summaries.length === 1 ? "GROUP" : "GROUPS"}</div><div style="margin-top:4px;font-size:24px;font-weight:800;color:#5b46f5">${htmlEscape(totalText)}</div></div><table width="100%" cellpadding="0" cellspacing="0">${rows}</table><a href="${appUrl}/" style="display:block;margin-top:24px;padding:14px;border-radius:14px;background:#5b46f5;color:#fff;font-weight:700;text-align:center;text-decoration:none">Open BayadTayoOpo</a><p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#888395">You’re receiving this because automatic payment reminders are enabled for your BayadTayoOpo account. <a href="${manage}" style="color:#5b46f5">Customize reminders</a> · <a href="${unsubscribe}" style="color:#5b46f5">Turn off email reminders</a></p></td></tr></table></td></tr></table></body></html>`,
+    text: `BayadTayoOpo payment reminder\n\nSettle in full or make a partial payment—kung ano ang works for you.\n\n${summaries.map((item) => `${item.groupName}: ${money(item.amount, item.currency)} left to settle${item.overdueAmount > 0 ? `\n${money(item.overdueAmount, item.currency)} overdue` : item.dueTodayAmount > 0 ? `\n${money(item.dueTodayAmount, item.currency)} due today` : item.dueSoonAmount > 0 ? `\n${money(item.dueSoonAmount, item.currency)} due within 3 days` : ""}\nReview & pay: ${appUrl}/?openGroup=${encodeURIComponent(item.groupId)}&tab=settle`).join("\n\n")}\n\nCustomize reminders: ${manage}\nTurn off email reminders: ${unsubscribe}`,
     headers: { "X-Entity-Ref-ID": digestId },
   };
 }
 
 async function commitReminderUpdates(env, token, updates) {
   if (updates.length === 0) return;
-  const writes = updates.map(({ user, digest, settings, emailSent }) => {
+  const writes = updates.map(({ user, digest, settings, emailSent, deadlineKey }) => {
     const fields = {
       lastPaymentReminderAt: encodeValue(digest.createdAt),
       lastPaymentReminderKey: encodeValue(digest.id),
@@ -339,6 +402,10 @@ async function commitReminderUpdates(env, token, updates) {
     if (emailSent) {
       fields.lastPaymentReminderEmailAt = encodeValue(digest.createdAt);
       fieldPaths.push("lastPaymentReminderEmailAt");
+    }
+    if (deadlineKey) {
+      fields.lastDeadlineReminderKey = encodeValue(deadlineKey);
+      fieldPaths.push("lastDeadlineReminderKey");
     }
     return ({
     update: {
@@ -385,9 +452,23 @@ async function runReminders(env, now = new Date()) {
   ).length;
   let remainingEmailCapacity = Math.max(0, dailyLimit - sentToday);
   const due = users
-    .filter((user) => reminderIsDue(user, now))
-    .map((user) => ({ user, settings: preferences(user.paymentReminderPreferences), summaries: buildUserSummary(user, groups, now) }))
-    .filter((item) => item.summaries.length > 0);
+    .map((user) => {
+      const settings = preferences(user.paymentReminderPreferences);
+      const summaries = buildUserSummary(user, groups, now);
+      const deadlineKey = deadlineReminderKey(summaries);
+      const deadlineIsDue =
+        !!deadlineKey &&
+        deadlineKey !== user.lastDeadlineReminderKey &&
+        (settings.emailEnabled || settings.inAppEnabled);
+      return {
+        user,
+        settings,
+        summaries,
+        deadlineKey: deadlineIsDue ? deadlineKey : undefined,
+        isDue: reminderIsDue(user, now) || deadlineIsDue,
+      };
+    })
+    .filter((item) => item.isDue && item.summaries.length > 0);
   const updates = [];
   const emails = [];
   for (const item of due) {
@@ -400,7 +481,7 @@ async function runReminders(env, now = new Date()) {
     const emailSent = hasReminderEmail(item.user)
       && item.settings.emailEnabled
       && remainingEmailCapacity > 0;
-    updates.push({ user: item.user, digest, settings: item.settings, emailSent });
+    updates.push({ user: item.user, digest, settings: item.settings, emailSent, deadlineKey: item.deadlineKey });
     if (emailSent) {
       emails.push(await buildEmail(env, item.user, item.summaries, digest.id));
       remainingEmailCapacity -= 1;

@@ -60,6 +60,7 @@ export function AddExpenseModal({
     group.members.map((member) => member.id),
   );
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dueDate, setDueDate] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
@@ -83,6 +84,7 @@ export function AddExpenseModal({
       setCategory(editExpense.category);
       setCategoryDetail(editExpense.categoryDetail ?? "");
       setDate(editExpense.date);
+      setDueDate(editExpense.dueDate ?? "");
 
       setIncludedMemberIds(editExpense.splits.map((split) => split.memberId));
       setCustomOverrides(
@@ -106,6 +108,7 @@ export function AddExpenseModal({
       setCategory("food");
       setCategoryDetail("");
       setDate(new Date().toISOString().slice(0, 10));
+      setDueDate("");
       setCustomOverrides({});
       setIncludedMemberIds(group.members.map((member) => member.id));
     }
@@ -146,6 +149,9 @@ export function AddExpenseModal({
       errs.originalAmount = "Enter the amount that was originally paid";
     }
     if (!paidBy) errs.paidBy = "Choose who paid the expense";
+    if (dueDate && dueDate < date) {
+      errs.dueDate = "Deadline cannot be earlier than the expense date";
+    }
     if (category === "other" && !categoryDetail.trim()) {
       errs.categoryDetail = "Specify what kind of expense this is";
     }
@@ -244,6 +250,7 @@ export function AddExpenseModal({
           splitType,
           splits,
           date,
+          dueDate: dueDate || undefined,
           category,
           categoryDetail: category === "other" ? categoryDetail.trim() : undefined,
           receipts: editExpense?.receipts,
@@ -471,6 +478,26 @@ export function AddExpenseModal({
                 onChange={(e) => setDate(e.target.value)}
                 className="block w-full min-w-0 max-w-full box-border px-4 py-3 rounded-xl bg-input-background border border-border text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
+            </div>
+
+            {/* Category */}
+            <div className="w-full min-w-0 overflow-hidden">
+              <label className="block text-sm text-muted-foreground mb-1.5">
+                Payment deadline <span className="text-xs">(optional)</span>
+              </label>
+              <input
+                type="date"
+                min={date}
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
+                className="block w-full min-w-0 max-w-full box-border px-4 py-3 rounded-xl bg-input-background border border-border text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+              />
+              <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                Members with an unpaid share can be reminded as this date approaches.
+              </p>
+              {errors.dueDate && (
+                <p className="mt-1 text-xs text-destructive">{errors.dueDate}</p>
+              )}
             </div>
 
             {/* Category */}

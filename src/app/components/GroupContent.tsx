@@ -35,6 +35,7 @@ import { GroupPayments } from "./GroupPayments";
 import { parseChatMentions } from "./chatMentions";
 import { buildBalanceShareMessage } from "./balanceShareMessage";
 import { ensureRequiredShareLinks } from "./requiredShareLinks";
+import { getExpenseDeadlineState } from "./expenseDeadline";
 import {
   canDirectlyConfirmSplit,
   CATEGORY_ICONS,
@@ -492,6 +493,9 @@ export function GroupContent({
                       const isCreator =
                         currentMember?.id === (exp.createdBy ?? exp.paidBy);
                       const settled = isExpenseSettled(group, exp);
+                      const deadline = settled
+                        ? undefined
+                        : getExpenseDeadlineState(exp.dueDate);
                       const deletionRequest = group.expenseDeletionRequests?.find(
                         (request) =>
                           request.expenseId === exp.id && request.status === "pending",
@@ -545,6 +549,21 @@ export function GroupContent({
                               <p className="mt-1.5 line-clamp-2 whitespace-pre-line text-xs leading-relaxed text-foreground/75">
                                 {exp.notes}
                               </p>
+                            )}
+                            {deadline && (
+                              <span
+                                className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                  deadline.state === "overdue"
+                                    ? "bg-destructive/10 text-destructive"
+                                    : deadline.state === "due-today"
+                                      ? "bg-amber-100 text-amber-800"
+                                      : deadline.state === "due-soon"
+                                        ? "bg-orange-100 text-orange-700"
+                                        : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                {deadline.label}
+                              </span>
                             )}
                             {(exp.receipts?.length ?? 0) > 0 && (
                               <div className="flex flex-wrap gap-1.5 mt-2">
