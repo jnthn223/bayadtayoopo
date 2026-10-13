@@ -22,6 +22,7 @@ import {
   buildBalanceOffsetPreview,
   canAdminApproveBalanceOffset,
   canAdminConfirmPayment,
+  canAdminRecordPaymentBetweenTemporaryMembers,
   createBalanceOffset,
   formatCurrency,
   generateId,
@@ -55,6 +56,7 @@ interface PaymentDraft {
   expenseDescription?: string;
   payment?: GroupPayment;
   confirmImmediately?: boolean;
+  restrictToRecipientExpenses?: boolean;
 }
 
 function paymentStatusLabel(
@@ -188,6 +190,7 @@ export function GroupPayments({
     new Set(),
   );
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
+  const [temporaryBalancesOpen, setTemporaryBalancesOpen] = useState(false);
   const [reversalDraft, setReversalDraft] = useState<GroupPayment | null>(null);
   const [reversalReason, setReversalReason] = useState("");
   const [reversalError, setReversalError] = useState("");
@@ -297,6 +300,37 @@ export function GroupPayments({
   const balancesOwedToYou = settlements.filter(
     (settlement) => settlement.to === memberId,
   );
+  const directTemporaryMemberBalances = useMemo(() => {
+    const balances = new Map<string, Settlement>();
+    for (const sender of group.members) {
+      if (sender.uid || sender.removedAt) continue;
+      for (const share of getOutstandingExpenseShares(group, sender.id)) {
+        if (!share.expenseId) continue;
+        const expense = group.expenses.find(
+          (candidate) => candidate.id === share.expenseId,
+        );
+        if (!expense) continue;
+        const recipient = getMemberById(group, getExpensePayerId(expense));
+        if (!recipient || recipient.uid || recipient.removedAt) continue;
+        const key = `${sender.id}:${recipient.id}`;
+        const existing = balances.get(key);
+        balances.set(key, {
+          from: sender.id,
+          fromName: sender.name,
+          to: recipient.id,
+          toName: recipient.name,
+          amount: (existing?.amount ?? 0) + share.amount,
+        });
+      }
+    }
+    return [...balances.values()].filter((settlement) =>
+      canAdminRecordPaymentBetweenTemporaryMembers(
+        group,
+        settlement,
+        currentMember,
+      ),
+    );
+  }, [currentMember, group]);
 
   const draftAmount = Math.round((parseFloat(amountInput) || 0) * 100) / 100;
   const draftAllocations = useMemo(
@@ -307,17 +341,38 @@ export function GroupPayments({
             draft.fromMemberId,
             draftAmount,
             chooseExpenses ? [...selectedExpenseIds] : undefined,
+            draft.restrictToRecipientExpenses
+              ? draft.toMemberId
+              : undefined,
           )
         : [],
     [chooseExpenses, draft, draftAmount, group, selectedExpenseIds],
   );
   const outstandingExpenseShares = useMemo(
-    () => (draft ? getOutstandingExpenseShares(group, draft.fromMemberId) : []),
+    () =>
+      draft
+        ? getOutstandingExpenseShares(group, draft.fromMemberId).filter(
+            (share) => {
+              if (!draft.restrictToRecipientExpenses || !share.expenseId) {
+                return true;
+              }
+              const expense = group.expenses.find(
+                (candidate) => candidate.id === share.expenseId,
+              );
+              return !!expense && getExpensePayerId(expense) === draft.toMemberId;
+            },
+          )
+        : [],
     [draft, group],
   );
   const draftRecipient = draft
     ? getMemberById(group, draft.toMemberId)
     : undefined;
+  const draftSender = draft
+    ? getMemberById(group, draft.fromMemberId)
+    : undefined;
+  const isAdminProxyPayment =
+    !!draft?.confirmImmediately && draft.toMemberId !== memberId;
   const hasSimplifiedRouting = useMemo(
     () =>
       !!draft &&
@@ -499,6 +554,7 @@ export function GroupPayments({
     settlement: Settlement,
     confirmImmediately = false,
     useFullAmount = true,
+    restrictToRecipientExpenses = false,
   ) {
     const recipient = getMemberById(group, settlement.to);
     setDraft({
@@ -507,6 +563,7 @@ export function GroupPayments({
       maximumAmount: settlement.amount,
       flow: useFullAmount ? "full" : "custom",
       confirmImmediately,
+      restrictToRecipientExpenses,
     });
     setAmountInput(useFullAmount ? settlement.amount.toFixed(2) : "");
     setMethod(
@@ -731,6 +788,10 @@ export function GroupPayments({
         submittedBy: currentMember.id,
         reviewedAt: draft.confirmImmediately ? now : undefined,
         reviewedBy: draft.confirmImmediately ? currentMember.id : undefined,
+        reviewedOnBehalfOfMemberId:
+          draft.confirmImmediately && draft.toMemberId !== currentMember.id
+            ? draft.toMemberId
+            : undefined,
       };
 
       await onUpdate({
@@ -1395,22 +1456,59 @@ export function GroupPayments({
             "These balances are unpaid. Record a payment only after you receive the money.",
           items: balancesOwedToYou,
         },
+        {
+          id: "temporary-member-balances",
+          title: "Temporary member balances",
+          description:
+            "Record payments between members who have not joined yet. The payment is confirmed by you as group admin.",
+          items: directTemporaryMemberBalances,
+          collapsible: true,
+        },
       ].map((section) =>
         section.items.length > 0 ? (
         <section key={section.id} className="space-y-4">
-          <div>
-            <p className="text-sm font-medium text-foreground">
-              {section.title}
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              {section.description}
-            </p>
-          </div>
-          {section.items.map((settlement) => {
+          {section.collapsible ? (
+            <button
+              type="button"
+              onClick={() => setTemporaryBalancesOpen((open) => !open)}
+              aria-expanded={temporaryBalancesOpen}
+              className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-foreground">
+                  {section.title}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {section.items.length} {section.items.length === 1 ? "balance" : "balances"} · {section.description}
+                </p>
+              </div>
+              {temporaryBalancesOpen ? (
+                <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+            </button>
+          ) : (
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {section.title}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {section.description}
+              </p>
+            </div>
+          )}
+          {(!section.collapsible || temporaryBalancesOpen) && section.items.map((settlement) => {
             const fromMember = getMemberById(group, settlement.from);
             const toMember = getMemberById(group, settlement.to);
             const isSender = settlement.from === memberId;
             const isRecipient = settlement.to === memberId;
+            const adminCanRecordForTemporaryMembers =
+              canAdminRecordPaymentBetweenTemporaryMembers(
+                group,
+                settlement,
+                currentMember,
+              );
             const confirmedInstallments = (group.payments ?? [])
               .filter(
                 (payment) =>
@@ -1519,6 +1617,15 @@ export function GroupPayments({
                     className="w-full rounded-xl border border-green-600 bg-green-50 py-2.5 text-sm font-semibold text-green-700"
                   >
                     Record money I received
+                  </button>
+                )}
+                {!isSender && !isRecipient && adminCanRecordForTemporaryMembers && (
+                  <button
+                    type="button"
+                    onClick={() => openPayment(settlement, true, true, true)}
+                    className="w-full rounded-xl border border-primary bg-primary/5 py-2.5 text-sm font-semibold text-primary"
+                  >
+                    Record payment from {settlement.fromName} to {settlement.toName}
                   </button>
                 )}
               </article>
@@ -1819,7 +1926,9 @@ export function GroupPayments({
               <div>
                 <Dialog.Title className="text-lg font-semibold text-foreground">
                   {draft?.confirmImmediately
-                    ? "Confirm money received"
+                    ? isAdminProxyPayment
+                      ? `Record payment: ${draftSender?.name ?? "Payer"} → ${draftRecipient?.name ?? "recipient"}`
+                      : "Confirm money received"
                     : draft?.payment
                       ? "Correct payment"
                       : draft?.flow === "expense"
@@ -1828,7 +1937,9 @@ export function GroupPayments({
                 </Dialog.Title>
                 <Dialog.Description className="text-xs text-muted-foreground mt-1">
                   {draft?.confirmImmediately
-                    ? `Use this only if ${getMemberById(group, draft.fromMemberId)?.name ?? "this member"} has already paid you outside BayadTayoOpo.`
+                    ? isAdminProxyPayment
+                      ? `Use this only if ${draftSender?.name ?? "The payer"} has already paid ${draftRecipient?.name ?? "the recipient"} outside BayadTayoOpo. You’re recording it as group admin.`
+                      : `Use this only if ${draftSender?.name ?? "this member"} has already paid you outside BayadTayoOpo.`
                     : draft?.flow === "expense"
                     ? `Pay the exact remaining amount to ${draftRecipient?.name ?? "the expense payer"}. You can attach one proof.`
                     : "Enter how much you sent. We’ll show which unpaid expenses this payment covers."}
@@ -1888,7 +1999,9 @@ export function GroupPayments({
                 <div>
                   <label className="mb-1.5 block text-sm text-muted-foreground">
                     {draft.confirmImmediately
-                      ? "Amount you received"
+                      ? isAdminProxyPayment
+                        ? `Amount ${draftRecipient?.name ?? "the recipient"} received`
+                        : "Amount you received"
                       : "Amount you paid"}
                   </label>
                   <input
@@ -1931,7 +2044,9 @@ export function GroupPayments({
                 <div>
                   <label className="mb-1.5 block text-sm text-muted-foreground">
                     {draft.confirmImmediately
-                      ? "How they paid you"
+                      ? isAdminProxyPayment
+                        ? `How ${draftSender?.name ?? "the payer"} paid ${draftRecipient?.name ?? "the recipient"}`
+                        : "How they paid you"
                       : "How you paid"}
                   </label>
                   <input
@@ -1953,7 +2068,9 @@ export function GroupPayments({
                   onChange={(event) => setNote(event.target.value)}
                   placeholder={
                     draft.confirmImmediately
-                      ? "Note about the payment received (optional)"
+                      ? isAdminProxyPayment
+                        ? `Note about ${draftSender?.name ?? "the payer"}’s payment (optional)`
+                        : "Note about the payment received (optional)"
                       : "Note to the recipient (optional)"
                   }
                   className="min-h-20 w-full resize-none rounded-xl border border-border bg-input-background px-4 py-3 text-sm outline-none focus:border-primary"
@@ -1989,7 +2106,9 @@ export function GroupPayments({
                         {hasSimplifiedRouting
                           ? "How this affects the simplified group balance"
                           : draft.confirmImmediately
-                            ? "What this received payment settles"
+                            ? isAdminProxyPayment
+                              ? `What ${draftSender?.name ?? "the payer"}’s payment settles`
+                              : "What this received payment settles"
                             : "What this payment covers"}
                       </p>
                       <span className="text-xs text-muted-foreground">
@@ -2089,7 +2208,9 @@ export function GroupPayments({
                     <span className="text-muted-foreground">
                       {draft.flow === "expense"
                         ? draft.confirmImmediately
-                          ? "Still owed to you for this expense"
+                          ? isAdminProxyPayment
+                            ? `Still owed to ${draftRecipient?.name ?? "the recipient"} for this expense`
+                            : "Still owed to you for this expense"
                           : "You’ll still owe for this expense"
                         : "Remaining simplified balance"}
                     </span>
@@ -2115,7 +2236,9 @@ export function GroupPayments({
                   {saving
                     ? "Saving…"
                     : draft.confirmImmediately
-                      ? "Yes, record money received"
+                      ? isAdminProxyPayment
+                        ? `Record payment to ${draftRecipient?.name ?? "recipient"}`
+                        : "Yes, record money received"
                       : draft.payment
                         ? "Resubmit payment"
                         : "Submit payment"}

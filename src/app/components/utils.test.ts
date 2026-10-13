@@ -6,6 +6,7 @@ import {
   archiveGroupMember,
   canAdminApproveBalanceOffset,
   canAdminConfirmPayment,
+  canAdminRecordPaymentBetweenTemporaryMembers,
   canDirectlyConfirmSplit,
   computeBalances,
   computeProjectedBalances,
@@ -68,6 +69,81 @@ const group: Group = {
 };
 
 describe("expense business logic", () => {
+  it("lets an admin record a settlement between two active temporary members", () => {
+    const withTemporaryMembers: Group = {
+      ...group,
+      members: [
+        ...group.members,
+        { id: "temp-sender", name: "Sender", color: "#444444" },
+        { id: "temp-recipient", name: "Recipient", color: "#555555" },
+      ],
+    };
+    const settlement = {
+      from: "temp-sender",
+      fromName: "Sender",
+      to: "temp-recipient",
+      toName: "Recipient",
+      amount: 50,
+    };
+
+    expect(
+      canAdminRecordPaymentBetweenTemporaryMembers(
+        withTemporaryMembers,
+        settlement,
+        group.members[0],
+      ),
+    ).toBe(true);
+    expect(
+      canAdminRecordPaymentBetweenTemporaryMembers(
+        withTemporaryMembers,
+        settlement,
+        group.members[1],
+      ),
+    ).toBe(false);
+    expect(
+      canAdminRecordPaymentBetweenTemporaryMembers(
+        {
+          ...withTemporaryMembers,
+          members: withTemporaryMembers.members.map((member) =>
+            member.id === "temp-sender"
+              ? { ...member, uid: "joined-sender" }
+              : member,
+          ),
+        },
+        settlement,
+        group.members[0],
+      ),
+    ).toBe(false);
+  });
+
+  it("restricts a direct payment to expenses paid by its recipient", () => {
+    const directGroup: Group = {
+      ...group,
+      expenses: group.expenses.map((expense) =>
+        expense.id === "expense-2"
+          ? {
+              ...expense,
+              splits: expense.splits.map((split) =>
+                split.memberId === "carol"
+                  ? { ...split, paymentStatus: undefined }
+                  : split,
+              ),
+            }
+          : expense,
+      ),
+    };
+
+    expect(
+      allocatePaymentToExpenses(directGroup, "carol", 20, undefined, "bob"),
+    ).toEqual([
+      {
+        expenseId: "expense-2",
+        expenseDescription: "Taxi",
+        amount: 20,
+      },
+    ]);
+  });
+
   it("lets an admin confirm only for an unlinked or inactive recipient", () => {
     const payment = {
       id: "pending-payment",

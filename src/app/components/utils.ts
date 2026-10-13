@@ -84,6 +84,24 @@ export function canAdminApproveBalanceOffset(
   return !counterparty?.uid || !!counterparty.removedAt;
 }
 
+export function canAdminRecordPaymentBetweenTemporaryMembers(
+  group: Group,
+  settlement: Settlement,
+  member?: Member,
+): boolean {
+  if (!isGroupAdmin(group, member)) return false;
+  const sender = getMemberById(group, settlement.from);
+  const recipient = getMemberById(group, settlement.to);
+  return (
+    !!sender &&
+    !!recipient &&
+    !sender.uid &&
+    !recipient.uid &&
+    !sender.removedAt &&
+    !recipient.removedAt
+  );
+}
+
 export function isExpenseSettled(group: Group, expense: Expense): boolean {
   const payerId = getExpensePayerId(expense);
   const confirmedAllocationsByMember = new Map<string, number>();
@@ -531,6 +549,7 @@ export function allocatePaymentToExpenses(
   fromMemberId: string,
   amount: number,
   selectedExpenseIds?: string[],
+  recipientMemberId?: string,
 ): PaymentAllocation[] {
   let remainingCents = Math.max(0, Math.round(amount * 100));
   if (remainingCents === 0) return [];
@@ -542,8 +561,15 @@ export function allocatePaymentToExpenses(
     group,
     fromMemberId,
   ).filter(
-    (allocation) =>
-      !selectedIds || (!!allocation.expenseId && selectedIds.has(allocation.expenseId)),
+    (allocation) => {
+      if (!allocation.expenseId) return false;
+      if (selectedIds && !selectedIds.has(allocation.expenseId)) return false;
+      if (!recipientMemberId) return true;
+      const expense = group.expenses.find(
+        (candidate) => candidate.id === allocation.expenseId,
+      );
+      return !!expense && getExpensePayerId(expense) === recipientMemberId;
+    },
   );
   const allocations: PaymentAllocation[] = [];
 
