@@ -39,6 +39,7 @@ import { getExpenseDeadlineState } from "./expenseDeadline";
 import {
   canDirectlyConfirmSplit,
   CATEGORY_ICONS,
+  computeDirectExpenseSettlements,
   formatCurrency,
   getExpensePayerId,
   getMemberBalanceDetails,
@@ -120,6 +121,31 @@ export function GroupContent({
   onReplyToMessage,
 }: Props) {
   const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false);
+  const settlementModeKey = `bayadtayoopo:settlement-mode:${group.id}:${currentMember?.uid ?? currentMember?.id ?? "guest"}`;
+  const [settlementMode, setSettlementMode] = useState<"simplified" | "direct">("simplified");
+  const [settlementModeRemembered, setSettlementModeRemembered] = useState(false);
+
+  useEffect(() => {
+    const storedMode = localStorage.getItem(settlementModeKey);
+    setSettlementMode(storedMode === "direct" ? "direct" : "simplified");
+    setSettlementModeRemembered(
+      storedMode === "direct" || storedMode === "simplified",
+    );
+  }, [settlementModeKey]);
+
+  const changeSettlementModePreference = (
+    mode: "simplified" | "direct",
+    remember: boolean,
+  ) => {
+    setSettlementMode(remember ? mode : "simplified");
+    setSettlementModeRemembered(remember);
+    if (remember) localStorage.setItem(settlementModeKey, mode);
+    else localStorage.removeItem(settlementModeKey);
+  };
+  const directSettlements = useMemo(
+    () => computeDirectExpenseSettlements(group),
+    [group],
+  );
   const [categoryFilter, setCategoryFilter] = useState<Category | "all">("all");
   const [payerFilter, setPayerFilter] = useState("all");
   const [settlementFilter, setSettlementFilter] =
@@ -698,7 +724,23 @@ export function GroupContent({
             ) : (
               <>
                 {activeBalances.map((b) => {
-                  const isSettled = Math.abs(b.net) < 0.01;
+                  const directOutgoing = directSettlements.filter(
+                    (settlement) => settlement.from === b.memberId,
+                  );
+                  const directIncoming = directSettlements.filter(
+                    (settlement) => settlement.to === b.memberId,
+                  );
+                  const directOwed = directOutgoing.reduce(
+                    (sum, settlement) => sum + settlement.amount,
+                    0,
+                  );
+                  const directReceivable = directIncoming.reduce(
+                    (sum, settlement) => sum + settlement.amount,
+                    0,
+                  );
+                  const isSettled = settlementMode === "direct"
+                    ? directOutgoing.length === 0 && directIncoming.length === 0
+                    : Math.abs(b.net) < 0.01;
                   const isExpanded = expandedBalanceIds.has(b.memberId);
                   const balanceDetails = balanceDetailsByMember.get(b.memberId) ?? [];
                   const displayName = displayMemberName(b.memberId, b.memberName);
@@ -733,6 +775,8 @@ export function GroupContent({
                               className={`mt-0.5 text-xs ${
                                 isSettled
                                   ? "text-muted-foreground"
+                                  : settlementMode === "direct" && directOwed > 0 && directReceivable > 0
+                                    ? "text-primary"
                                   : b.net > 0
                                     ? "text-green-600"
                                     : "text-destructive"
@@ -740,6 +784,12 @@ export function GroupContent({
                             >
                               {isSettled
                                 ? "Nothing left to settle"
+                                : settlementMode === "direct"
+                                  ? directOwed > 0 && directReceivable > 0
+                                    ? `Owes ${formatCurrency(directOwed, group.currency)} · Should receive ${formatCurrency(directReceivable, group.currency)}`
+                                    : directOwed > 0
+                                      ? `Owes ${formatCurrency(directOwed, group.currency)}`
+                                      : `Should receive ${formatCurrency(directReceivable, group.currency)}`
                                 : b.net > 0
                                   ? `Should receive ${formatCurrency(b.net, group.currency)}`
                                   : `Owes ${formatCurrency(Math.abs(b.net), group.currency)}`}
@@ -763,13 +813,40 @@ export function GroupContent({
                           className="border-t border-border px-4 pb-4 pt-3"
                         >
                           <p className="text-xs font-semibold text-foreground">
-                            Balance breakdown
+                            {settlementMode === "direct"
+                              ? "Direct payment breakdown"
+                              : "Balance breakdown"}
                           </p>
                           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                            This builds the member’s overall group balance. Negative expense shares show who originally paid; they are not necessarily direct debts to you.
+                            {settlementMode === "direct"
+                              ? "These payments follow the member who originally paid each expense. Incoming and outgoing amounts do not cancel each other."
+                              : "This builds the member’s overall group balance. Negative expense shares show who originally paid; they are not necessarily direct debts to you."}
                           </p>
                           <div className="mt-3 space-y-2.5">
-                            {balanceDetails.map((detail) => (
+                            {settlementMode === "direct" ? (
+                              <>
+                                {directOutgoing.map((settlement) => (
+                                  <div key={`out-${settlement.to}`} className="flex items-start justify-between gap-3 text-xs">
+                                    <p className="min-w-0 leading-relaxed text-foreground/85">
+                                      Owes {settlement.toName}
+                                    </p>
+                                    <span className="shrink-0 font-semibold text-destructive">
+                                      −{formatCurrency(settlement.amount, group.currency)}
+                                    </span>
+                                  </div>
+                                ))}
+                                {directIncoming.map((settlement) => (
+                                  <div key={`in-${settlement.from}`} className="flex items-start justify-between gap-3 text-xs">
+                                    <p className="min-w-0 leading-relaxed text-foreground/85">
+                                      {settlement.fromName} owes {displayName}
+                                    </p>
+                                    <span className="shrink-0 font-semibold text-green-600">
+                                      +{formatCurrency(settlement.amount, group.currency)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </>
+                            ) : balanceDetails.map((detail) => (
                               <div
                                 key={detail.id}
                                 className="flex items-start justify-between gap-3 text-xs"
@@ -792,17 +869,17 @@ export function GroupContent({
                           </div>
                           <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs font-semibold">
                             <span className="text-foreground">
-                              Final balance
+                              {settlementMode === "direct" ? "Overall net position" : "Final balance"}
                             </span>
-                            <span className={b.net > 0 ? "text-green-600" : "text-destructive"}>
-                              {b.net > 0 ? "+" : "−"}
+                            <span className={b.net > 0.005 ? "text-green-600" : b.net < -0.005 ? "text-destructive" : "text-muted-foreground"}>
+                              {b.net > 0.005 ? "+" : b.net < -0.005 ? "−" : ""}
                               {formatCurrency(Math.abs(b.net), group.currency)}
                             </span>
                           </div>
                         </div>
                       )}
 
-                      {b.memberId !== currentMember?.id && !isSettled && (
+                      {b.memberId !== currentMember?.id && !isSettled && Math.abs(b.net) >= 0.01 && (
                         <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
                           {balanceShareStatus?.memberId === b.memberId ? (
                             <p
@@ -887,7 +964,7 @@ export function GroupContent({
                 </div>
               </button>
             )}
-            {settlements.length === 0 &&
+            {(settlementMode === "direct" ? directSettlements.length === 0 : settlements.length === 0) &&
             paymentItems.length === 0 &&
             !hasRelevantGroupPayments &&
             !hasExpensePaymentOptions ? (
@@ -1115,6 +1192,9 @@ export function GroupContent({
                     currentMember={currentMember}
                     isAdmin={isAdmin}
                     settlements={settlements}
+                    settlementMode={settlementMode}
+                    settlementModeRemembered={settlementModeRemembered}
+                    onSettlementModePreferenceChange={changeSettlementModePreference}
                     focusedPaymentId={focusedPaymentId}
                     onUpdate={onUpdate}
                     viewPaymentImage={viewPaymentImage}

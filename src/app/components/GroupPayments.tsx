@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  CircleHelp,
   Clock3,
   Paperclip,
   RotateCcw,
@@ -23,6 +24,8 @@ import {
   canAdminApproveBalanceOffset,
   canAdminConfirmPayment,
   canAdminRecordPaymentBetweenTemporaryMembers,
+  canReversePayment,
+  computeDirectExpenseSettlements,
   createBalanceOffset,
   formatCurrency,
   generateId,
@@ -43,6 +46,12 @@ interface Props {
   currentMember?: Member;
   isAdmin: boolean;
   settlements: Settlement[];
+  settlementMode: "simplified" | "direct";
+  settlementModeRemembered: boolean;
+  onSettlementModePreferenceChange: (
+    mode: "simplified" | "direct",
+    remember: boolean,
+  ) => void;
   focusedPaymentId?: string;
   onUpdate: (group: Group) => Promise<void> | void;
   viewPaymentImage: (imageId: string, title: string) => void;
@@ -166,11 +175,56 @@ function offsetTimestamp(offset: BalanceOffset) {
   return { label: "Requested", value: offset.requestedAt };
 }
 
+function paymentRouteDetails(payment: GroupPayment, group: Group) {
+  const payerName = getMemberById(group, payment.fromMemberId)?.name ?? "The payer";
+  const recipientName =
+    getMemberById(group, payment.toMemberId)?.name ?? "the recipient";
+  const routedToDifferentPayee = payment.allocations.some((allocation) => {
+    if (!allocation.expenseId) return false;
+    const expense = group.expenses.find(
+      (candidate) => candidate.id === allocation.expenseId,
+    );
+    return !!expense && getExpensePayerId(expense) !== payment.toMemberId;
+  });
+  const route = payment.settlementRoute ??
+    (routedToDifferentPayee ? "fewer-transfers" : undefined);
+
+  if (route === "fewer-transfers") {
+    return {
+      label: "Fewer transfers",
+      explanation:
+        `${payerName} paid ${recipientName} because the group combined everyone’s balances to reduce the number of transfers. Some expenses listed below may have originally been paid by someone else.`,
+    };
+  }
+  if (route === "original-payees") {
+    return {
+      label: "Original payees",
+      explanation:
+        `${payerName} paid ${recipientName} directly because ${recipientName} originally covered the expenses listed below.`,
+    };
+  }
+  if (route === "specific-expenses") {
+    return {
+      label: "Specific expenses",
+      explanation:
+        `${payerName} chose the expenses listed below. This payment only reduced the unpaid amounts for those expenses.`,
+    };
+  }
+  return {
+    label: "Payment details",
+    explanation:
+      `This is an older payment, so its payment route was not labeled. Open “See what this payment covered” below to see exactly where the amount was applied.`,
+  };
+}
+
 export function GroupPayments({
   group,
   currentMember,
   isAdmin,
   settlements,
+  settlementMode,
+  settlementModeRemembered,
+  onSettlementModePreferenceChange,
   focusedPaymentId,
   onUpdate,
   viewPaymentImage,
@@ -190,7 +244,11 @@ export function GroupPayments({
   const [expandedPaymentIds, setExpandedPaymentIds] = useState<Set<string>>(
     new Set(),
   );
+  const [explainedHistoryIds, setExplainedHistoryIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
+  const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
   const [temporaryBalancesOpen, setTemporaryBalancesOpen] = useState(false);
   const [reversalDraft, setReversalDraft] = useState<GroupPayment | null>(null);
   const [reversalReason, setReversalReason] = useState("");
@@ -232,12 +290,12 @@ export function GroupPayments({
   const activePayments = relevantPayments.filter(
     (payment) => payment.status === "pending" || payment.status === "rejected",
   );
-  const historicalPayments = relevantPayments.filter(
+  const historicalPayments = [...(group.payments ?? [])].filter(
     (payment) =>
       payment.status === "confirmed" ||
       payment.status === "cancelled" ||
       payment.status === "reversed",
-  );
+  ).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
   const relevantOffsets = useMemo(
     () =>
       [...(group.balanceOffsets ?? [])]
@@ -264,9 +322,9 @@ export function GroupPayments({
   const activeOffsets = relevantOffsets.filter(
     (offset) => offset.status === "pending" || offset.status === "rejected",
   );
-  const historicalOffsets = relevantOffsets.filter(
+  const historicalOffsets = [...(group.balanceOffsets ?? [])].filter(
     (offset) => offset.status === "confirmed" || offset.status === "cancelled",
-  );
+  ).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
   const focusedPaymentIsHistorical = !!focusedPaymentId &&
     [...historicalPayments, ...historicalOffsets].some(
       (item) => item.id === focusedPaymentId,
@@ -295,43 +353,30 @@ export function GroupPayments({
         : [],
     [group, memberId],
   );
-  const balancesYouOwe = settlements.filter(
+  const directSettlements = useMemo(
+    () => computeDirectExpenseSettlements(group),
+    [group],
+  );
+  const effectiveSettlementMode = settlementMode;
+  const displayedSettlements = effectiveSettlementMode === "direct"
+    ? directSettlements
+    : settlements;
+  const balancesYouOwe = displayedSettlements.filter(
     (settlement) => settlement.from === memberId,
   );
-  const balancesOwedToYou = settlements.filter(
+  const balancesOwedToYou = displayedSettlements.filter(
     (settlement) => settlement.to === memberId,
   );
-  const directTemporaryMemberBalances = useMemo(() => {
-    const balances = new Map<string, Settlement>();
-    for (const sender of group.members) {
-      if (sender.uid || sender.removedAt) continue;
-      for (const share of getOutstandingExpenseShares(group, sender.id)) {
-        if (!share.expenseId) continue;
-        const expense = group.expenses.find(
-          (candidate) => candidate.id === share.expenseId,
-        );
-        if (!expense) continue;
-        const recipient = getMemberById(group, getExpensePayerId(expense));
-        if (!recipient || recipient.uid || recipient.removedAt) continue;
-        const key = `${sender.id}:${recipient.id}`;
-        const existing = balances.get(key);
-        balances.set(key, {
-          from: sender.id,
-          fromName: sender.name,
-          to: recipient.id,
-          toName: recipient.name,
-          amount: (existing?.amount ?? 0) + share.amount,
-        });
-      }
-    }
-    return [...balances.values()].filter((settlement) =>
+  const directTemporaryMemberBalances = useMemo(
+    () => directSettlements.filter((settlement) =>
       canAdminRecordPaymentBetweenTemporaryMembers(
         group,
         settlement,
         currentMember,
       ),
-    );
-  }, [currentMember, group]);
+    ),
+    [currentMember, directSettlements, group],
+  );
 
   const draftAmount = Math.round((parseFloat(amountInput) || 0) * 100) / 100;
   const draftAllocations = useMemo(
@@ -686,18 +731,18 @@ export function GroupPayments({
   }
 
   function reversePayment(payment: GroupPayment) {
-    if (
-      !currentMember ||
-      payment.toMemberId !== currentMember.id ||
-      payment.status !== "confirmed"
-    ) return;
+    if (!canReversePayment(group, payment, currentMember)) return;
     setReversalDraft(payment);
     setReversalReason("");
     setReversalError("");
   }
 
   function confirmPaymentReversal() {
-    if (!currentMember || !reversalDraft) return;
+    if (
+      !currentMember ||
+      !reversalDraft ||
+      !canReversePayment(group, reversalDraft, currentMember)
+    ) return;
     const reason = reversalReason.trim();
     if (!reason) {
       setReversalError("Enter a reason for undoing this confirmation.");
@@ -708,6 +753,10 @@ export function GroupPayments({
       status: "reversed",
       reversedAt: new Date().toISOString(),
       reversedBy: currentMember.id,
+      reversedOnBehalfOfMemberId:
+        reversalDraft.toMemberId !== currentMember.id
+          ? reversalDraft.toMemberId
+          : undefined,
       reversalReason: reason,
     }));
     setReversalDraft(null);
@@ -784,6 +833,13 @@ export function GroupPayments({
         note: note.trim() || undefined,
         proofImageId: newProofImageId ?? previous?.proofImageId,
         allocations: draftAllocations,
+        settlementRoute:
+          previous?.settlementRoute ??
+          (draft.flow === "expense"
+            ? "specific-expenses"
+            : draft.restrictToRecipientExpenses
+              ? "original-payees"
+              : "fewer-transfers"),
         status: draft.confirmImmediately ? "confirmed" : "pending",
         submittedAt: now,
         submittedBy: currentMember.id,
@@ -833,34 +889,93 @@ export function GroupPayments({
     });
   }
 
+  function toggleHistoryExplanation(recordId: string) {
+    setExplainedHistoryIds((current) => {
+      const next = new Set(current);
+      if (next.has(recordId)) next.delete(recordId);
+      else next.add(recordId);
+      return next;
+    });
+  }
+
   return (
     <div className="space-y-7 pb-2">
       {settlementHistoryCount > 0 && (
-        <section className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex justify-end">
           <button
             type="button"
-            onClick={() => setPaymentHistoryOpen((current) => !current)}
-            className="flex w-full items-center justify-between px-4 py-4 text-left"
-            aria-expanded={paymentHistoryOpen}
+            onClick={() => setPaymentHistoryOpen(true)}
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
           >
-            <span>
-              <span className="block text-sm font-medium text-foreground">
-                Settlement history
-              </span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">
-                {settlementHistoryCount} completed or closed{" "}
-                {settlementHistoryCount === 1 ? "record" : "records"}
-              </span>
+            <Clock3 size={16} className="text-primary" />
+            History
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {settlementHistoryCount}
             </span>
-            {paymentHistoryOpen ? (
-              <ChevronUp size={17} className="text-muted-foreground" />
-            ) : (
-              <ChevronDown size={17} className="text-muted-foreground" />
-            )}
           </button>
+        </div>
+      )}
 
-          {paymentHistoryOpen && (
-            <div className="space-y-5 border-t border-border bg-muted/20 p-4">
+      {settlementHistoryCount > 0 && (
+        <>
+          <Dialog.Root
+            open={paymentHistoryOpen}
+            onOpenChange={(open) => {
+              setPaymentHistoryOpen(open);
+              if (!open) setHistoryHelpOpen(false);
+            }}
+          >
+            <Dialog.Portal>
+              <Dialog.Overlay className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[1px]" />
+              <Dialog.Content className="fixed inset-0 z-50 flex flex-col bg-background sm:inset-x-1/2 sm:inset-y-8 sm:max-w-2xl sm:-translate-x-1/2 sm:overflow-hidden sm:rounded-3xl sm:border sm:border-border sm:shadow-2xl">
+                <header className="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-4">
+                  <Dialog.Close asChild>
+                    <button
+                      type="button"
+                      className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-muted text-foreground"
+                      aria-label="Close settlement history"
+                    >
+                      <X size={20} />
+                    </button>
+                  </Dialog.Close>
+                  <div className="min-w-0 flex-1">
+                    <Dialog.Title className="text-base font-semibold text-foreground">
+                      Settlement history
+                    </Dialog.Title>
+                    <Dialog.Description className="mt-0.5 text-xs text-muted-foreground">
+                      {settlementHistoryCount} completed or closed{" "}
+                      {settlementHistoryCount === 1 ? "record" : "records"}
+                    </Dialog.Description>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryHelpOpen((open) => !open)}
+                    className={`grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors ${
+                      historyHelpOpen
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                    aria-label="Explain settlement history"
+                    aria-expanded={historyHelpOpen}
+                  >
+                    <CircleHelp size={19} />
+                  </button>
+                </header>
+
+                {historyHelpOpen && (
+                  <aside className="shrink-0 border-b border-primary/15 bg-accent px-4 py-3 text-xs leading-relaxed text-foreground">
+                    <p className="font-semibold">How settlement history works</p>
+                    <p className="mt-1.5 text-muted-foreground">
+                      Expenses and balances are shared by the whole group, but each payer can choose how to settle their balance. A payment may use fewer transfers, go to original payees, or cover specific expenses.
+                    </p>
+                    <p className="mt-1.5 text-muted-foreground">
+                      The recipient, amount, status, and “See what this payment covered” details record what actually happened. Changing your payment route later never rewrites these records.
+                    </p>
+                  </aside>
+                )}
+
+                <div className="flex-1 overflow-y-auto bg-muted/20 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                  <div className="space-y-5">
               {historicalOffsets.length > 0 && (
                 <div className="space-y-3">
                   <div>
@@ -876,6 +991,7 @@ export function GroupPayments({
                     const counterparty = getMemberById(group, offset.counterpartyMemberId);
                     const offsetOpen = expandedPaymentIds.has(offset.id);
                     const timestamp = offsetTimestamp(offset);
+                    const explanationOpen = explainedHistoryIds.has(offset.id);
                     return (
                       <article
                         key={offset.id}
@@ -894,10 +1010,29 @@ export function GroupPayments({
                               {timestamp.label} · {formatPaymentDateTime(timestamp.value)}
                             </time>
                           </div>
-                          <p className="shrink-0 text-sm font-semibold text-foreground">
-                            {formatCurrency(offset.amount, group.currency)}
-                          </p>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <p className="text-sm font-semibold text-foreground">
+                              {formatCurrency(offset.amount, group.currency)}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => toggleHistoryExplanation(offset.id)}
+                              className="grid h-7 w-7 place-items-center rounded-full bg-muted text-muted-foreground"
+                              aria-label="Explain this balance offset"
+                              aria-expanded={explanationOpen}
+                            >
+                              <CircleHelp size={15} />
+                            </button>
+                          </div>
                         </div>
+                        {explanationOpen && (
+                          <div className="rounded-xl bg-accent p-3 text-xs leading-relaxed text-muted-foreground">
+                            <p className="font-semibold text-foreground">Why no money was sent</p>
+                            <p className="mt-1">
+                              {requester?.name ?? "One member"} and {counterparty?.name ?? "the other member"} owed each other. Instead of sending money both ways, the approved amount was subtracted from both balances.
+                            </p>
+                          </div>
+                        )}
                         {offset.reviewedOnBehalfOfMemberId && offset.reviewedBy && (
                           <p className="rounded-xl bg-green-50 px-3 py-2 text-xs text-green-800">
                             Approved by {getMemberById(group, offset.reviewedBy)?.name ?? "a group admin"}
@@ -937,6 +1072,13 @@ export function GroupPayments({
                     const isRecipient = payment.toMemberId === memberId;
                     const allocationsOpen = expandedPaymentIds.has(payment.id);
                     const timestamp = paymentActivityTimestamp(payment);
+                    const routeDetails = paymentRouteDetails(payment, group);
+                    const explanationOpen = explainedHistoryIds.has(payment.id);
+                    const canReverse = canReversePayment(
+                      group,
+                      payment,
+                      currentMember,
+                    );
                     return (
                       <article
                         key={payment.id}
@@ -954,14 +1096,33 @@ export function GroupPayments({
                             </time>
                           </div>
                           <div className="shrink-0 text-right">
-                            <p className="text-sm font-semibold text-foreground">
-                              {formatCurrency(payment.amount, group.currency)}
-                            </p>
+                            <div className="flex items-center justify-end gap-2">
+                              <p className="text-sm font-semibold text-foreground">
+                                {formatCurrency(payment.amount, group.currency)}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => toggleHistoryExplanation(payment.id)}
+                                className="grid h-7 w-7 place-items-center rounded-full bg-muted text-muted-foreground"
+                                aria-label="Explain this payment route"
+                                aria-expanded={explanationOpen}
+                              >
+                                <CircleHelp size={15} />
+                              </button>
+                            </div>
                             <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${paymentStatusClass(payment.status)}`}>
                               {paymentStatusLabel(payment, memberId)}
                             </span>
                           </div>
                         </div>
+                        {explanationOpen && (
+                          <div className="rounded-xl bg-accent p-3 text-xs leading-relaxed text-muted-foreground">
+                            <p className="font-semibold text-foreground">
+                              How it was paid: {routeDetails.label}
+                            </p>
+                            <p className="mt-1">{routeDetails.explanation}</p>
+                          </div>
+                        )}
                         {payment.reviewedOnBehalfOfMemberId && payment.reviewedBy && (
                           <p className="rounded-xl bg-green-50 px-3 py-2 text-xs text-green-800">
                             Confirmed by{" "}
@@ -989,9 +1150,12 @@ export function GroupPayments({
                             recipientMemberId={payment.toMemberId}
                           />
                         )}
-                        {payment.status === "confirmed" && isRecipient && (
+                        {canReverse && (
                           <button type="button" onClick={() => reversePayment(payment)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-muted py-2.5 text-sm font-medium text-muted-foreground">
-                            <RotateCcw size={14} /> Undo confirmation
+                            <RotateCcw size={14} />
+                            {isRecipient
+                              ? "Undo confirmation"
+                              : `Undo for ${toMember?.name ?? "recipient"}`}
                           </button>
                         )}
                       </article>
@@ -999,9 +1163,12 @@ export function GroupPayments({
                   })}
                 </div>
               )}
-            </div>
-          )}
-        </section>
+                  </div>
+                </div>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
+        </>
       )}
 
       {visibleOffsets.length > 0 && (
@@ -1499,6 +1666,69 @@ export function GroupPayments({
               </p>
             </div>
           )}
+          {section.id === "owed-by-you" && (
+            <div
+              className={`rounded-2xl border bg-accent/50 p-4 ${
+                settlementModeRemembered
+                  ? "border-primary/20"
+                  : "border-primary ring-2 ring-primary/15"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    How should this balance be paid?
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    Choose a route before paying toward your overall balance.
+                  </p>
+                </div>
+                {!settlementModeRemembered && (
+                  <span className="shrink-0 rounded-full bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground">
+                    New
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-card p-1.5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSettlementModePreferenceChange("simplified", true)
+                  }
+                  className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
+                    effectiveSettlementMode === "simplified"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  Fewer transfers
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSettlementModePreferenceChange("direct", true)
+                  }
+                  className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
+                    effectiveSettlementMode === "direct"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  Original payees
+                </button>
+              </div>
+
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                {effectiveSettlementMode === "simplified"
+                  ? "Recommended · Combines group balances to reduce transfers. The recipient may not be the original payer."
+                  : "Pays each member who originally covered an expense. This may require more transfers."}
+              </p>
+              <p className="mt-2 text-[11px] font-medium text-primary">
+                This setting does not affect paying a specific expense.
+              </p>
+            </div>
+          )}
           {(!section.collapsible || temporaryBalancesOpen) && section.items.map((settlement) => {
             const fromMember = getMemberById(group, settlement.from);
             const toMember = getMemberById(group, settlement.to);
@@ -1597,14 +1827,28 @@ export function GroupPayments({
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <button
                       type="button"
-                      onClick={() => openPayment(settlement)}
+                      onClick={() =>
+                        openPayment(
+                          settlement,
+                          false,
+                          true,
+                          effectiveSettlementMode === "direct",
+                        )
+                      }
                       className="rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground"
                     >
                       Pay full balance
                     </button>
                     <button
                       type="button"
-                      onClick={() => openPayment(settlement, false, false)}
+                      onClick={() =>
+                        openPayment(
+                          settlement,
+                          false,
+                          false,
+                          effectiveSettlementMode === "direct",
+                        )
+                      }
                       className="rounded-xl border border-primary py-2.5 text-sm font-semibold text-primary"
                     >
                       Enter another amount
@@ -1612,9 +1856,16 @@ export function GroupPayments({
                   </div>
                 )}
                 {isRecipient && (
-                  <button
-                    type="button"
-                    onClick={() => openPayment(settlement, true)}
+                    <button
+                      type="button"
+                    onClick={() =>
+                      openPayment(
+                        settlement,
+                        true,
+                        true,
+                        effectiveSettlementMode === "direct",
+                      )
+                    }
                     className="w-full rounded-xl border border-green-600 bg-green-50 py-2.5 text-sm font-semibold text-green-700"
                   >
                     Record money I received
@@ -1849,7 +2100,10 @@ export function GroupPayments({
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground">
-                        {getMemberById(group, reversalDraft.fromMemberId)?.name ?? "A member"} paid you
+                        {getMemberById(group, reversalDraft.fromMemberId)?.name ?? "A member"} paid{" "}
+                        {reversalDraft.toMemberId === memberId
+                          ? "you"
+                          : getMemberById(group, reversalDraft.toMemberId)?.name ?? "the recipient"}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {reversalDraft.method}
@@ -2194,8 +2448,10 @@ export function GroupPayments({
                         Simplified group payment
                       </p>
                       <p className="mt-1">
-                        Some expenses below were originally paid by other members.
-                        BayadTayoOpo routes this payment to {draftRecipient?.name ?? "the recipient"} to settle the group’s net balances with fewer transfers.
+                        Some expenses below were originally paid by other members. Your debt to them and their balances elsewhere form a payment chain, so BayadTayoOpo skips the intermediate transfers and sends the combined amount to {draftRecipient?.name ?? "the recipient"}.
+                      </p>
+                      <p className="mt-1.5 font-medium text-foreground">
+                        Prefer separate repayments? Close this payment and choose “Pay original payees” in Settle Up.
                       </p>
                     </div>
                   )}
@@ -2213,7 +2469,9 @@ export function GroupPayments({
                             ? `Still owed to ${draftRecipient?.name ?? "the recipient"} for this expense`
                             : "Still owed to you for this expense"
                           : "You’ll still owe for this expense"
-                        : "Remaining simplified balance"}
+                        : draft.restrictToRecipientExpenses
+                          ? `Still owed to ${draftRecipient?.name ?? "the original payee"}`
+                          : "Remaining simplified balance"}
                     </span>
                     <span className="font-semibold text-foreground">
                       {formatCurrency(

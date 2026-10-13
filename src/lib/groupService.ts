@@ -194,6 +194,18 @@ export async function saveGroup(group: Group, uid: string): Promise<void> {
   await finishFirestoreWrite(batch.commit());
 }
 
+/**
+ * Update an existing shared group without rewriting the current user's
+ * profile document. Membership references are registered during create/join;
+ * coupling every payment update to an unrelated profile write can make a
+ * valid group update fail when a legacy profile needs repair.
+ */
+export async function updateGroup(group: Group): Promise<void> {
+  await finishFirestoreWrite(
+    setDoc(doc(db, "groups", group.id), packGroup(group)),
+  );
+}
+
 /** Load all groups the current user is a member of. */
 export async function loadUserGroups(uid: string): Promise<Group[]> {
   const groupIds = await getUserGroupIds(uid);

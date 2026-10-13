@@ -8,7 +8,9 @@ import {
   canAdminConfirmPayment,
   canAdminRecordPaymentBetweenTemporaryMembers,
   canDirectlyConfirmSplit,
+  canReversePayment,
   computeBalances,
+  computeDirectExpenseSettlements,
   computeProjectedBalances,
   computeSettlements,
   createBalanceOffset,
@@ -69,6 +71,25 @@ const group: Group = {
 };
 
 describe("expense business logic", () => {
+  it("groups direct obligations by the member who originally paid", () => {
+    expect(computeDirectExpenseSettlements(group)).toEqual([
+      {
+        from: "bob",
+        fromName: "Bob",
+        to: "alice",
+        toName: "Alice",
+        amount: 30,
+      },
+      {
+        from: "carol",
+        fromName: "Carol",
+        to: "alice",
+        toName: "Alice",
+        amount: 30,
+      },
+    ]);
+  });
+
   it("lets an admin record a settlement between two active temporary members", () => {
     const withTemporaryMembers: Group = {
       ...group,
@@ -184,6 +205,39 @@ describe("expense business logic", () => {
         group.members[0],
       ),
     ).toBe(false);
+  });
+
+  it("allows reversal only by the recipient or an admin acting for a temporary recipient", () => {
+    const confirmedPayment = {
+      id: "confirmed-payment",
+      fromMemberId: "bob",
+      toMemberId: "carol",
+      amount: 25,
+      method: "Cash",
+      allocations: [],
+      status: "confirmed" as const,
+      submittedAt: "2026-10-07T00:00:00.000Z",
+      submittedBy: "bob",
+    };
+
+    expect(canReversePayment(group, confirmedPayment, group.members[2])).toBe(true);
+    expect(canReversePayment(group, confirmedPayment, group.members[0])).toBe(false);
+    expect(canReversePayment(group, confirmedPayment, group.members[1])).toBe(false);
+
+    const temporaryRecipientGroup: Group = {
+      ...group,
+      members: [
+        ...group.members,
+        { id: "pending-reva", name: "Reva", color: "#444444" },
+      ],
+    };
+    expect(
+      canReversePayment(
+        temporaryRecipientGroup,
+        { ...confirmedPayment, toMemberId: "pending-reva" },
+        group.members[0],
+      ),
+    ).toBe(true);
   });
 
   it("lets an admin approve an offset only for a temporary counterparty", () => {

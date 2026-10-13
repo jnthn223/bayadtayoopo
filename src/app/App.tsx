@@ -24,6 +24,7 @@ import {
 } from "../lib/auth";
 import {
   saveGroup,
+  updateGroup,
   loadUserGroups,
   joinGroup,
   deleteGroup,
@@ -376,7 +377,7 @@ export default function App() {
       ? mergeGroupChanges(base, changed, latest)
       : compactGroupHistory(changed);
 
-    await saveGroup(groupToSave, session.uid);
+    await updateGroup(groupToSave);
     return groupToSave;
   }
 

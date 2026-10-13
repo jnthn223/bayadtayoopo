@@ -73,6 +73,23 @@ export function canAdminConfirmPayment(
   return !recipient?.uid || !!recipient.removedAt;
 }
 
+export function canReversePayment(
+  group: Group,
+  payment: GroupPayment,
+  member?: Member,
+): boolean {
+  if (!member || payment.status !== "confirmed") return false;
+  if (
+    payment.toMemberId === member.id ||
+    (!!member.uid && payment.toMemberId === member.uid)
+  ) {
+    return true;
+  }
+  if (!isGroupAdmin(group, member)) return false;
+  const recipient = getMemberById(group, payment.toMemberId);
+  return !recipient?.uid || !!recipient.removedAt;
+}
+
 export function canAdminApproveBalanceOffset(
   group: Group,
   offset: BalanceOffset,
@@ -438,6 +455,32 @@ export function getOutstandingExpenseShares(
         ]
       : [];
   });
+}
+
+export function computeDirectExpenseSettlements(group: Group): Settlement[] {
+  const settlements = new Map<string, Settlement>();
+  for (const sender of group.members) {
+    if (sender.removedAt) continue;
+    for (const share of getOutstandingExpenseShares(group, sender.id)) {
+      if (!share.expenseId) continue;
+      const expense = group.expenses.find(
+        (candidate) => candidate.id === share.expenseId,
+      );
+      if (!expense) continue;
+      const recipient = getMemberById(group, getExpensePayerId(expense));
+      if (!recipient || recipient.removedAt || recipient.id === sender.id) continue;
+      const key = `${sender.id}:${recipient.id}`;
+      const existing = settlements.get(key);
+      settlements.set(key, {
+        from: sender.id,
+        fromName: sender.name,
+        to: recipient.id,
+        toName: recipient.name,
+        amount: Math.round(((existing?.amount ?? 0) + share.amount) * 100) / 100,
+      });
+    }
+  }
+  return [...settlements.values()];
 }
 
 function directOutstandingShares(

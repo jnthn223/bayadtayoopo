@@ -61,6 +61,10 @@ export interface GroupPayment {
   note?: string;
   proofImageId?: string;
   allocations: PaymentAllocation[];
+  settlementRoute?:
+    | "fewer-transfers"
+    | "original-payees"
+    | "specific-expenses";
   status: GroupPaymentStatus;
   submittedAt: string;
   submittedBy: string;
@@ -73,6 +77,7 @@ export interface GroupPayment {
   cancelledBy?: string;
   reversedAt?: string;
   reversedBy?: string;
+  reversedOnBehalfOfMemberId?: string;
   reversalReason?: string;
 }
 
