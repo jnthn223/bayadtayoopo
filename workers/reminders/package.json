@@ -7,5 +7,8 @@
     "dev:staging": "../push/node_modules/.bin/wrangler dev --config wrangler.staging.toml",
     "deploy:staging": "../push/node_modules/.bin/wrangler deploy --config wrangler.staging.toml",
     "deploy:production": "../push/node_modules/.bin/wrangler deploy --config wrangler.production.toml"
+  },
+  "dependencies": {
+    "jose": "^6.1.0"
   }
 }

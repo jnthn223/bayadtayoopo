@@ -1,5 +1,10 @@
+import { createRemoteJWKSet, jwtVerify } from "jose";
+
 const encoder = new TextEncoder();
 let cachedAccessToken;
+const firebaseJwks = createRemoteJWKSet(
+  new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),
+);
 
 const DEFAULT_PREFERENCES = {
   emailEnabled: true,
@@ -569,12 +574,198 @@ async function unsubscribe(request, env) {
   return new Response(`<!doctype html><html><body style="font-family:Arial,sans-serif;background:#f5f4fa;padding:40px"><main style="max-width:480px;margin:auto;background:#fff;padding:32px;border-radius:20px"><h1 style="color:#5b46f5">Email reminders are off</h1><p>You won’t receive automatic BayadTayoOpo payment emails. In-app reminders are unchanged.</p><a href="${env.APP_URL}/?screen=profile&settings=notifications">Manage notification settings</a></main></body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
+function supportCorsHeaders(request, env) {
+  const origin = request.headers.get("origin") ?? "";
+  const allowedOrigin = new URL(env.APP_URL).origin;
+  const developmentOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  return {
+    "Access-Control-Allow-Origin": origin === allowedOrigin || developmentOrigin
+      ? origin
+      : allowedOrigin,
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+  };
+}
+
+function supportJson(request, env, body, status = 200) {
+  return Response.json(body, {
+    status,
+    headers: { ...supportCorsHeaders(request, env), "Cache-Control": "no-store" },
+  });
+}
+
+async function verifiedSupportUser(request, env) {
+  const authorization = request.headers.get("authorization") ?? "";
+  if (!authorization.startsWith("Bearer ")) throw new Error("UNAUTHORIZED");
+  const token = authorization.slice(7);
+  const { payload } = await jwtVerify(token, firebaseJwks, {
+    audience: env.FIREBASE_PROJECT_ID,
+    issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`,
+  });
+  if (!payload.sub || typeof payload.email !== "string") {
+    throw new Error("UNAUTHORIZED");
+  }
+  return { uid: payload.sub, email: payload.email, name: payload.name };
+}
+
+function supportReference(now = new Date()) {
+  const date = now.toISOString().slice(0, 10).replace(/-/g, "");
+  const random = crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
+  return `BTO-${date}-${random}`;
+}
+
+function cleanSupportText(value, maximum) {
+  return typeof value === "string" ? value.trim().slice(0, maximum) : "";
+}
+
+function supportScreenshot(value) {
+  if (typeof value !== "string" || !value) return undefined;
+  const match = value.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
+  if (!match || match[2].length > 1_500_000) throw new Error("INVALID_SCREENSHOT");
+  return {
+    filename: `bayadtayoopo-report.${match[1] === "jpeg" ? "jpg" : match[1]}`,
+    content: match[2],
+  };
+}
+
+async function enforceSupportRateLimit(env, uid, now = new Date()) {
+  const token = await serviceAccessToken(env);
+  const documentUrl = `${firestoreRoot(env)}/documents/supportRateLimits/${encodeURIComponent(uid)}`;
+  const response = await fetch(documentUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  let windowStart = now.toISOString();
+  let count = 0;
+  if (response.ok) {
+    const existing = decodeDocument(await response.json());
+    const previousStart = Date.parse(existing.windowStart ?? "");
+    if (Number.isFinite(previousStart) && now.getTime() - previousStart < 3_600_000) {
+      windowStart = existing.windowStart;
+      count = Number(existing.count ?? 0);
+    }
+  } else if (response.status !== 404) {
+    throw new Error("RATE_LIMIT_UNAVAILABLE");
+  }
+  if (count >= 3) throw new Error("RATE_LIMITED");
+  return async () => {
+    const url = new URL(documentUrl);
+    url.searchParams.append("updateMask.fieldPaths", "windowStart");
+    url.searchParams.append("updateMask.fieldPaths", "count");
+    url.searchParams.append("updateMask.fieldPaths", "updatedAt");
+    const update = await fetch(url, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: {
+        windowStart: encodeValue(windowStart),
+        count: encodeValue(count + 1),
+        updatedAt: encodeValue(now.toISOString()),
+      } }),
+    });
+    if (!update.ok) throw new Error("RATE_LIMIT_SAVE_FAILED");
+  };
+}
+
+async function submitSupportReport(request, env) {
+  const origin = request.headers.get("origin") ?? "";
+  const allowedOrigin = new URL(env.APP_URL).origin;
+  if (origin && origin !== allowedOrigin && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    return supportJson(request, env, { error: "Origin not allowed" }, 403);
+  }
+
+  let user;
+  try {
+    user = await verifiedSupportUser(request, env);
+  } catch {
+    return supportJson(request, env, { error: "Sign in again before sending your report." }, 401);
+  }
+
+  const contentLength = Number(request.headers.get("content-length") ?? 0);
+  if (contentLength > 2_000_000) {
+    return supportJson(request, env, { error: "The screenshot is too large." }, 413);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return supportJson(request, env, { error: "Invalid report." }, 400);
+  }
+  const type = body.type === "feedback" ? "feedback" : "bug";
+  const subject = cleanSupportText(body.subject, 120);
+  const description = cleanSupportText(body.description, 5000);
+  if (!subject || description.length < 10) {
+    return supportJson(request, env, { error: "Add a subject and a little more detail." }, 400);
+  }
+
+  let attachment;
+  try {
+    attachment = supportScreenshot(body.screenshotDataUrl);
+  } catch {
+    return supportJson(request, env, { error: "That screenshot is too large or unsupported." }, 400);
+  }
+
+  let recordRateLimit;
+  try {
+    recordRateLimit = await enforceSupportRateLimit(env, user.uid);
+  } catch (error) {
+    if (error instanceof Error && error.message === "RATE_LIMITED") {
+      return supportJson(request, env, { error: "You’ve sent several reports recently. Please try again in an hour." }, 429);
+    }
+    return supportJson(request, env, { error: "Support is temporarily unavailable." }, 503);
+  }
+
+  const reference = supportReference();
+  const context = body.context && typeof body.context === "object" ? body.context : {};
+  const contextRows = [
+    ["User ID", user.uid],
+    ["Account email", user.email],
+    ["App version", cleanSupportText(context.appVersion, 100) || "Unknown"],
+    ["Page", cleanSupportText(context.page, 500) || "Unknown"],
+    ["Device/browser", cleanSupportText(context.userAgent, 500) || "Unknown"],
+    ["Group", cleanSupportText(context.groupName, 150) || "Not included"],
+    ["Group ID", cleanSupportText(context.groupId, 150) || "Not included"],
+    ["Reported at", new Date().toISOString()],
+  ];
+  const email = {
+    from: env.EMAIL_FROM,
+    to: [env.SUPPORT_EMAIL || env.EMAIL_REPLY_TO],
+    reply_to: user.email,
+    subject: `[${reference}] ${type === "bug" ? "Bug report" : "Feedback"}: ${subject}`,
+    html: `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#17151f"><div style="max-width:680px;margin:auto"><div style="padding:22px;border-radius:18px 18px 0 0;background:#5b46f5;color:white"><strong style="font-size:20px">BayadTayoOpo support</strong><div style="margin-top:6px">${htmlEscape(reference)}</div></div><div style="padding:24px;border:1px solid #e5e2ec;border-top:0;border-radius:0 0 18px 18px"><div style="font-size:12px;color:#686576;text-transform:uppercase">${htmlEscape(type)}</div><h1 style="font-size:22px">${htmlEscape(subject)}</h1><p style="white-space:pre-wrap;line-height:1.6">${htmlEscape(description)}</p><h2 style="margin-top:28px;font-size:16px">Technical context shared by the user</h2><table style="width:100%;border-collapse:collapse">${contextRows.map(([label, value]) => `<tr><td style="padding:8px;border-bottom:1px solid #eee;color:#686576">${htmlEscape(label)}</td><td style="padding:8px;border-bottom:1px solid #eee;word-break:break-word">${htmlEscape(value)}</td></tr>`).join("")}</table></div></div></body></html>`,
+    text: `${reference}\n${type === "bug" ? "Bug report" : "Feedback"}: ${subject}\n\n${description}\n\n${contextRows.map(([label, value]) => `${label}: ${value}`).join("\n")}`,
+    ...(attachment ? { attachments: [attachment] } : {}),
+    headers: { "X-Entity-Ref-ID": reference },
+  };
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `support/${reference}`,
+    },
+    body: JSON.stringify(email),
+  });
+  if (!response.ok) {
+    console.error("Resend rejected support report", response.status, await response.text());
+    return supportJson(request, env, { error: "We couldn’t send the report. Please try again." }, 502);
+  }
+  await recordRateLimit();
+  return supportJson(request, env, { ok: true, reference });
+}
+
 export default {
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil(runReminders(env));
   },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/support-report" && request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: supportCorsHeaders(request, env) });
+    }
+    if (url.pathname === "/support-report" && request.method === "POST") {
+      return submitSupportReport(request, env);
+    }
     if (url.pathname === "/stats" && request.method === "GET") {
       return publicStatsResponse(request, env, ctx);
     }

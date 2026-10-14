@@ -10,6 +10,7 @@ APP_URL = "https://bayadtayoopo.web.app"
 WORKER_PUBLIC_URL = "https://bayadtayoopo-reminders.bayadtayoopo.workers.dev"
 EMAIL_FROM = "BayadTayoOpo <reminders@bayadtayoopo.whythough.space>"
 EMAIL_REPLY_TO = "support@whythough.space"
+SUPPORT_EMAIL = "support@whythough.space"
 MAX_EMAILS_PER_DAY = "95"
 
 [triggers]

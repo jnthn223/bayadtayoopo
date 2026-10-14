@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink, Bell, Camera, ImageOff } from "lucide-react";
+import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink, Bell, Camera, ImageOff, MessageCircleQuestion, Bug, Lightbulb, Paperclip, Trash2, Send, CheckCircle2 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { CurrentUser, Group, NotificationPreferences, PaymentReminderPreferences } from "./types";
 import { MEMBER_COLORS } from "./utils";
@@ -16,6 +16,10 @@ import {
   deleteProfileImage,
   saveProfileImage,
 } from "../../lib/profileImageService";
+import {
+  submitSupportReport,
+  type SupportReportType,
+} from "../../lib/supportReportService";
 
 interface Props {
   user: CurrentUser;
@@ -49,6 +53,53 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
   const [pushSaving, setPushSaving] = useState(false);
   const [photoSaving, setPhotoSaving] = useState(false);
   const [photoError, setPhotoError] = useState("");
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportType, setSupportType] = useState<SupportReportType>("bug");
+  const [supportSubject, setSupportSubject] = useState("");
+  const [supportDescription, setSupportDescription] = useState("");
+  const [supportGroupId, setSupportGroupId] = useState("");
+  const [supportScreenshot, setSupportScreenshot] = useState<File>();
+  const [supportSending, setSupportSending] = useState(false);
+  const [supportError, setSupportError] = useState("");
+  const [supportReference, setSupportReference] = useState("");
+
+  function openSupport() {
+    setSupportType("bug");
+    setSupportSubject("");
+    setSupportDescription("");
+    setSupportGroupId("");
+    setSupportScreenshot(undefined);
+    setSupportError("");
+    setSupportReference("");
+    setSupportOpen(true);
+  }
+
+  async function handleSupportSubmit() {
+    if (supportSending) return;
+    setSupportError("");
+    if (!supportSubject.trim() || supportDescription.trim().length < 10) {
+      setSupportError("Add a subject and a little more detail so I can investigate it.");
+      return;
+    }
+    setSupportSending(true);
+    try {
+      const group = groups.find((candidate) => candidate.id === supportGroupId);
+      const reference = await submitSupportReport({
+        type: supportType,
+        subject: supportSubject.trim(),
+        description: supportDescription.trim(),
+        screenshot: supportScreenshot,
+        group: group ? { id: group.id, name: group.name } : undefined,
+      });
+      setSupportReference(reference);
+    } catch (error) {
+      setSupportError(
+        error instanceof Error ? error.message : "We couldn’t send your report. Please try again.",
+      );
+    } finally {
+      setSupportSending(false);
+    }
+  }
 
   function handleSaveName() {
     if (!nameInput.trim()) return;
@@ -294,6 +345,20 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
         {/* Optional support */}
         <div>
           <p className="text-xs text-muted-foreground font-medium mb-2 px-1">Support</p>
+          <button
+            type="button"
+            onClick={openSupport}
+            className="mb-3 flex w-full items-center gap-4 rounded-2xl border border-border bg-card px-4 py-3.5 text-left transition-colors hover:bg-muted active:bg-muted/80"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-accent">
+              <MessageCircleQuestion size={15} className="text-accent-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground">Help &amp; feedback</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Report a problem or send a suggestion</p>
+            </div>
+            <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
+          </button>
           <div className="bg-card rounded-2xl border border-border p-4">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center shrink-0">
@@ -367,6 +432,12 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
               <span className="block">
                 Your data is used only to provide app features. We do not sell
                 your personal data.
+              </span>
+              <span className="block">
+                When you contact support in the app, your report includes your
+                account email, user ID, app version, current page, device/browser,
+                and timestamp. A selected group and screenshot are included only
+                when you choose to attach them.
               </span>
               <span className="block">
                 You can update your display name, avatar, and profile color from this
@@ -583,6 +654,169 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
                 Save notification settings
               </button>
             </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root open={supportOpen} onOpenChange={setSupportOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[92vh] overflow-y-auto rounded-t-3xl bg-card shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 pb-3 pt-5">
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">
+                  Help &amp; feedback
+                </Dialog.Title>
+                <Dialog.Description className="mt-0.5 text-xs text-muted-foreground">
+                  Your message goes to support@whythough.space.
+                </Dialog.Description>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSupportOpen(false)}
+                className="rounded-full p-2 hover:bg-muted"
+                aria-label="Close support"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {supportReference ? (
+              <div className="p-5 pb-10 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-green-100 text-green-700">
+                  <CheckCircle2 size={28} />
+                </div>
+                <h2 className="mt-4 text-lg font-semibold text-foreground">Message sent</h2>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+                  Thanks for helping improve BayadTayoOpo. I’ll reply to {user.email} if I need more details.
+                </p>
+                <div className="mx-auto mt-4 max-w-sm rounded-2xl bg-muted px-4 py-3">
+                  <p className="text-xs text-muted-foreground">Reference number</p>
+                  <p className="mt-1 font-semibold text-foreground">{supportReference}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSupportOpen(false)}
+                  className="mt-6 w-full max-w-sm rounded-2xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4 p-5 pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
+                <div className="grid grid-cols-2 gap-2 rounded-2xl bg-muted p-1.5">
+                  {([
+                    { type: "bug" as const, label: "Report a problem", icon: Bug },
+                    { type: "feedback" as const, label: "Send feedback", icon: Lightbulb },
+                  ]).map((option) => (
+                    <button
+                      key={option.type}
+                      type="button"
+                      onClick={() => setSupportType(option.type)}
+                      className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold transition-colors ${
+                        supportType === option.type
+                          ? "bg-card text-foreground shadow-sm"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      <option.icon size={15} />
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Subject</span>
+                  <input
+                    value={supportSubject}
+                    onChange={(event) => setSupportSubject(event.target.value)}
+                    maxLength={120}
+                    placeholder={supportType === "bug" ? "What isn’t working?" : "What would you like to suggest?"}
+                    className="w-full rounded-xl border border-border bg-input-background px-3 py-3 text-sm text-foreground outline-none focus:border-primary"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Details</span>
+                  <textarea
+                    value={supportDescription}
+                    onChange={(event) => setSupportDescription(event.target.value)}
+                    maxLength={5000}
+                    rows={5}
+                    placeholder={supportType === "bug" ? "Tell me what you expected and what happened instead." : "Tell me how this could make BayadTayoOpo better."}
+                    className="w-full resize-none rounded-xl border border-border bg-input-background px-3 py-3 text-sm text-foreground outline-none focus:border-primary"
+                  />
+                </label>
+
+                {groups.length > 0 && (
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Related group (optional)</span>
+                    <select
+                      value={supportGroupId}
+                      onChange={(event) => setSupportGroupId(event.target.value)}
+                      className="w-full rounded-xl border border-border bg-input-background px-3 py-3 text-sm text-foreground outline-none focus:border-primary"
+                    >
+                      <option value="">No group selected</option>
+                      {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                    </select>
+                  </label>
+                )}
+
+                <div className="rounded-2xl border border-dashed border-border p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent">
+                      <Paperclip size={16} className="text-accent-foreground" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">Screenshot (optional)</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {supportScreenshot ? supportScreenshot.name : "PNG, JPG, or WebP · compressed before sending"}
+                      </p>
+                    </div>
+                    {supportScreenshot ? (
+                      <button type="button" onClick={() => setSupportScreenshot(undefined)} className="rounded-xl p-2 text-destructive" aria-label="Remove screenshot">
+                        <Trash2 size={17} />
+                      </button>
+                    ) : (
+                      <label className="cursor-pointer rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground">
+                        Choose
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="sr-only"
+                          onChange={(event) => {
+                            setSupportScreenshot(event.target.files?.[0]);
+                            event.target.value = "";
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl bg-accent/60 p-4 text-xs leading-relaxed text-muted-foreground">
+                  <strong className="block text-foreground">Included to help investigate</strong>
+                  Your account email and ID, app version, current page, device/browser, and timestamp. No expenses, balances, chats, or payment details are attached automatically. A group and screenshot are included only if you choose them.
+                </div>
+
+                {supportError && (
+                  <div className="rounded-xl bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+                    {supportError}{" "}
+                    <a href="mailto:support@whythough.space" className="font-semibold underline">Email support instead</a>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={supportSending}
+                  onClick={() => void handleSupportSubmit()}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                >
+                  <Send size={16} />
+                  {supportSending ? "Sending…" : "Send to support"}
+                </button>
+              </div>
+            )}
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

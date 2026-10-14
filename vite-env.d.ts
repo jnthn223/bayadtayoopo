@@ -15,6 +15,10 @@ interface ImportMetaEnv {
 
   readonly VITE_KOFI_URL?: string;
 
+  readonly VITE_SUPPORT_API_URL?: string;
+
+  readonly VITE_PUBLIC_STATS_API_URL?: string;
+
 }
 
 interface ImportMeta {
