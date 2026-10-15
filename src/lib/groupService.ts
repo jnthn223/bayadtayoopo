@@ -119,6 +119,12 @@ export async function loadOrCreateUserProfile(uid: string, verifiedEmail?: strin
       user.paymentReminderDigest !== null
         ? (user.paymentReminderDigest as UserProfile["paymentReminderDigest"])
         : undefined,
+    productUpdateEmailsEnabled: user.productUpdateEmailsEnabled === true,
+    seenAnnouncementIds: Array.isArray(user.seenAnnouncementIds)
+      ? user.seenAnnouncementIds.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : [],
   };
 }
 

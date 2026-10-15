@@ -22,6 +22,8 @@ service cloud.firestore {
           'email',
           'paymentReminderPreferences',
           'paymentReminderDigest',
+          'productUpdateEmailsEnabled',
+          'seenAnnouncementIds',
           'lastPaymentReminderAt',
           'lastPaymentReminderKey',
           'lastDeadlineReminderKey',
@@ -53,6 +55,11 @@ service cloud.firestore {
           || request.resource.data.lastPaymentReminderEmailAt is string)
         && (!request.resource.data.keys().hasAny(['paymentReminderDigest'])
           || request.resource.data.paymentReminderDigest is map)
+        && (!request.resource.data.keys().hasAny(['productUpdateEmailsEnabled'])
+          || request.resource.data.productUpdateEmailsEnabled is bool)
+        && (!request.resource.data.keys().hasAny(['seenAnnouncementIds'])
+          || (request.resource.data.seenAnnouncementIds is list
+            && request.resource.data.seenAnnouncementIds.size() <= 50))
         && (!request.resource.data.keys().hasAny(['paymentReminderPreferences'])
           || (request.resource.data.paymentReminderPreferences is map
             && request.resource.data.paymentReminderPreferences.keys().hasOnly([

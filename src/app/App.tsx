@@ -46,6 +46,7 @@ import {
 } from "./components/LoginScreen";
 import { ProfileScreen } from "./components/ProfileScreen";
 import { SystemAlertsPrompt } from "./components/SystemAlertsPrompt";
+import { ReleaseAnnouncementPrompt } from "./components/ReleaseAnnouncements";
 import { SimilarMemberPrompt } from "./components/SimilarMemberPrompt";
 import { findSimilarPendingMember } from "./components/memberNameMatch";
 import { shouldShowSystemAlertsPrompt } from "./components/systemAlertsPromptRules";
@@ -355,6 +356,8 @@ export default function App() {
               notificationPreferences: profile.notificationPreferences,
               paymentReminderPreferences: profile.paymentReminderPreferences,
               paymentReminderDigest: profile.paymentReminderDigest,
+              productUpdateEmailsEnabled: profile.productUpdateEmailsEnabled,
+              seenAnnouncementIds: profile.seenAnnouncementIds,
             }
           : user,
       );
@@ -684,6 +687,8 @@ export default function App() {
         notificationReadAt: updated.notificationReadAt,
         notificationPreferences: updated.notificationPreferences,
         paymentReminderPreferences: updated.paymentReminderPreferences,
+        productUpdateEmailsEnabled: updated.productUpdateEmailsEnabled,
+        seenAnnouncementIds: updated.seenAnnouncementIds,
       }).catch((err) => {
         showBanner(errorMessage(err, "Unable to save profile"), "error");
       });
@@ -1297,6 +1302,17 @@ export default function App() {
                 onOpenProfile={() => setScreen("profile")}
               />
             )}
+            <ReleaseAnnouncementPrompt
+              user={currentUser}
+              enabled={
+                screen === "home" &&
+                profileLoaded &&
+                !new URLSearchParams(window.location.search).has("joinGroupId") &&
+                !new URLSearchParams(window.location.search).has("claimMemberId") &&
+                !localStorage.getItem("pendingJoinGroupId")
+              }
+              onUpdateUser={handleUpdateUser}
+            />
             </>
           )
         )}

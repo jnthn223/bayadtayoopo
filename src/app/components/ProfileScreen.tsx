@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink, Bell, Camera, ImageOff, MessageCircleQuestion, Bug, Lightbulb, Paperclip, Trash2, Send, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink, Bell, Camera, ImageOff, MessageCircleQuestion, Bug, Lightbulb, Paperclip, Trash2, Send, CheckCircle2, Sparkles } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { CurrentUser, Group, NotificationPreferences, PaymentReminderPreferences } from "./types";
 import { MEMBER_COLORS } from "./utils";
@@ -20,6 +20,11 @@ import {
   submitSupportReport,
   type SupportReportType,
 } from "../../lib/supportReportService";
+import {
+  announcementIsAvailable,
+  CURRENT_RELEASE_ANNOUNCEMENT,
+  ReleaseAnnouncementBody,
+} from "./ReleaseAnnouncements";
 
 interface Props {
   user: CurrentUser;
@@ -42,12 +47,16 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
   const [notificationsOpen, setNotificationsOpen] = useState(
     () => new URLSearchParams(window.location.search).get("settings") === "notifications",
   );
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [notificationDraft, setNotificationDraft] =
     useState<NotificationPreferences>(() =>
       normalizeNotificationPreferences(user.notificationPreferences),
     );
   const [reminderDraft, setReminderDraft] = useState(() =>
     normalizePaymentReminderPreferences(user.paymentReminderPreferences),
+  );
+  const [productUpdateDraft, setProductUpdateDraft] = useState(
+    user.productUpdateEmailsEnabled === true,
   );
   const [notificationError, setNotificationError] = useState("");
   const [pushSaving, setPushSaving] = useState(false);
@@ -167,10 +176,19 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
             setReminderDraft(
               normalizePaymentReminderPreferences(user.paymentReminderPreferences),
             );
+            setProductUpdateDraft(user.productUpdateEmailsEnabled === true);
             setNotificationError("");
             setNotificationsOpen(true);
           },
         },
+        ...(announcementIsAvailable(CURRENT_RELEASE_ANNOUNCEMENT, user.email)
+          ? [{
+              icon: Sparkles,
+              label: "What’s new",
+              value: CURRENT_RELEASE_ANNOUNCEMENT.publishedLabel,
+              action: () => setWhatsNewOpen(true),
+            }]
+          : []),
         {
           icon: Shield,
           label: "Privacy",
@@ -569,6 +587,16 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
               />
 
               <div className="rounded-2xl border border-border p-4">
+                <NotificationToggle
+                  label="Product updates by email"
+                  detail="Occasional BayadTayoOpo feature announcements. Separate from payment reminders."
+                  checked={productUpdateDraft}
+                  bordered={false}
+                  onChange={setProductUpdateDraft}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-border p-4">
                 <div className="flex items-start gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent">
                     <Bell size={16} className="text-accent-foreground" />
@@ -646,6 +674,7 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
                     ...user,
                     notificationPreferences: notificationDraft,
                     paymentReminderPreferences: reminderDraft,
+                    productUpdateEmailsEnabled: productUpdateDraft,
                   });
                   setNotificationsOpen(false);
                 }}
@@ -653,6 +682,36 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
               >
                 Save notification settings
               </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root open={whatsNewOpen} onOpenChange={setWhatsNewOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-0 z-50 flex flex-col bg-background sm:inset-x-auto sm:inset-y-8 sm:left-1/2 sm:w-[calc(100%-4rem)] sm:max-w-2xl sm:-translate-x-1/2 sm:overflow-hidden sm:rounded-3xl sm:border sm:border-border sm:shadow-2xl">
+            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-5 pb-3 pt-[max(1rem,env(safe-area-inset-top))] sm:py-4">
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">What’s new</Dialog.Title>
+                <Dialog.Description className="mt-0.5 text-xs text-muted-foreground">
+                  Latest BayadTayoOpo improvements
+                </Dialog.Description>
+              </div>
+              <Dialog.Close className="rounded-full bg-muted p-2" aria-label="Close what’s new">
+                <X size={18} />
+              </Dialog.Close>
+            </header>
+            <div className="flex-1 overflow-y-auto p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              <h2 className="mb-4 text-xl font-bold text-foreground">
+                {CURRENT_RELEASE_ANNOUNCEMENT.title}
+              </h2>
+              <ReleaseAnnouncementBody
+                announcement={CURRENT_RELEASE_ANNOUNCEMENT}
+                emailOptIn={user.productUpdateEmailsEnabled === true}
+                onEmailOptInChange={() => {}}
+                showEmailPreference={false}
+              />
             </div>
           </Dialog.Content>
         </Dialog.Portal>

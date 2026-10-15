@@ -276,6 +276,8 @@ export interface CurrentUser {
   notificationPreferences?: NotificationPreferences;
   paymentReminderPreferences?: PaymentReminderPreferences;
   paymentReminderDigest?: PaymentReminderDigest;
+  productUpdateEmailsEnabled?: boolean;
+  seenAnnouncementIds?: string[];
 }
 
 export interface UserProfile {
@@ -288,6 +290,8 @@ export interface UserProfile {
   notificationPreferences?: NotificationPreferences;
   paymentReminderPreferences?: PaymentReminderPreferences;
   paymentReminderDigest?: PaymentReminderDigest;
+  productUpdateEmailsEnabled?: boolean;
+  seenAnnouncementIds?: string[];
 }
 
 export type NotificationType =
