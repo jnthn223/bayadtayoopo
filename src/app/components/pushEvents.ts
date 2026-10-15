@@ -135,5 +135,31 @@ export function collectPushEvents(
     }
   }
 
+  const oldSchedules = new Map(
+    (before.paymentSchedules ?? []).map((schedule) => [schedule.id, schedule]),
+  );
+  for (const schedule of after.paymentSchedules ?? []) {
+    const previous = oldSchedules.get(schedule.id);
+    if (!previous && actorIds.has(schedule.createdBy)) {
+      add("payment_schedule_proposed", schedule.id, schedule.updatedAt);
+      continue;
+    }
+    if (!previous) continue;
+    const latest = schedule.activity.at(-1);
+    if (!latest || !actorIds.has(latest.actorMemberId)) continue;
+    if (previous.status === schedule.status && previous.updatedAt !== schedule.updatedAt && latest.type === "edited") {
+      add("payment_schedule_updated", schedule.id, latest.at);
+      continue;
+    }
+    if (previous.status === schedule.status) continue;
+    if (schedule.status === "active" && latest.type === "accepted") {
+      add("payment_schedule_accepted", schedule.id, latest.at);
+    } else if (schedule.status === "declined") {
+      add("payment_schedule_declined", schedule.id, latest.at);
+    } else {
+      add("payment_schedule_updated", schedule.id, latest.at);
+    }
+  }
+
   return events;
 }

@@ -331,6 +331,64 @@ export function validateAndBuild(group, event, actorUid) {
     };
   }
 
+  if (event.type.startsWith("payment_schedule_")) {
+    const schedule = (group.paymentSchedules ?? []).find(
+      (item) => item.id === event.entityId,
+    );
+    if (!schedule) throw new Error("Payment schedule event does not match the saved group");
+    const payee = getMember(group, schedule.payeeMemberId);
+    const debtor = getMember(group, schedule.debtorMemberId);
+    const installment = formatCurrency(schedule.installmentAmount, group.currency);
+    const scheduleUrl = notificationUrl(group.id, "balances", { payment: schedule.id });
+    if (
+      event.type === "payment_schedule_proposed" &&
+      actorMatches(actor, schedule.createdBy) &&
+      schedule.status === "proposed" &&
+      exactTime(schedule.updatedAt)
+    ) {
+      return {
+        recipients: debtor?.uid && debtor.uid !== actorUid ? [debtor] : [],
+        preference: "payments",
+        title: "Payment schedule suggested",
+        body: `${payee?.name ?? actor.name} suggested ${installment} installments`,
+        url: scheduleUrl,
+      };
+    }
+    const latest = schedule.activity?.at(-1);
+    if (!latest || !actorMatches(actor, latest.actorMemberId) || !exactTime(latest.at)) {
+      throw new Error("Payment schedule event does not match the saved group");
+    }
+    if (event.type === "payment_schedule_accepted" && latest.type === "accepted") {
+      return {
+        recipients: payee?.uid && payee.uid !== actorUid ? [payee] : [],
+        preference: "payments",
+        title: "Payment schedule accepted",
+        body: `${debtor?.name ?? actor.name} accepted the ${installment} schedule`,
+        url: scheduleUrl,
+      };
+    }
+    if (event.type === "payment_schedule_declined" && latest.type === "declined") {
+      return {
+        recipients: payee?.uid && payee.uid !== actorUid ? [payee] : [],
+        preference: "payments",
+        title: "Payment schedule declined",
+        body: `${debtor?.name ?? actor.name} declined the proposed schedule`,
+        url: scheduleUrl,
+      };
+    }
+    if (event.type === "payment_schedule_updated") {
+      const other = schedule.payeeMemberId === actor.id ? debtor : payee;
+      return {
+        recipients: other?.uid && other.uid !== actorUid ? [other] : [],
+        preference: "payments",
+        title: "Payment schedule updated",
+        body: `${actor.name} changed the payment schedule`,
+        url: scheduleUrl,
+      };
+    }
+    throw new Error("Payment schedule event does not match the saved group");
+  }
+
   if (event.type.startsWith("balance_offset_")) {
     const offset = (group.balanceOffsets ?? []).find(
       (item) => item.id === event.entityId,

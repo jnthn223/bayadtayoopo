@@ -122,4 +122,30 @@ describe("payment reminder worker", () => {
     expect(reminderIsDue(user, new Date("2026-10-02T07:00:00.000Z"))).toBe(false);
     expect(deadlineReminderKey(summaries)).toBe("trip:today:2026-10-02");
   });
+
+  it("includes an accepted payment schedule only on its recurring date", () => {
+    const scheduledGroup = {
+      ...group,
+      paymentSchedules: [{
+        id: "schedule-1",
+        payeeMemberId: "payer",
+        debtorMemberId: "debtor",
+        coverage: [{ expenseId: "food", expenseDescription: "Food", amount: 500 }],
+        installmentAmount: 125,
+        frequency: "monthly",
+        firstPaymentDate: "2026-10-02",
+        status: "active",
+      }],
+    };
+    const due = buildUserSummary(user, [scheduledGroup], new Date("2026-10-02T01:00:00.000Z"));
+    expect(due[0]).toMatchObject({
+      scheduledPaymentAmount: 125,
+      scheduledPaymentCount: 1,
+      scheduledExpenseNames: ["Food"],
+    });
+    expect(deadlineReminderKey(due)).toContain("schedule:trip:2026-10-02:schedule-1");
+
+    const notDue = buildUserSummary(user, [scheduledGroup], new Date("2026-10-03T01:00:00.000Z"));
+    expect(notDue[0].scheduledPaymentAmount).toBeUndefined();
+  });
 });

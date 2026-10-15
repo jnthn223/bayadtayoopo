@@ -841,7 +841,9 @@ export default function App() {
               groupId: group.id,
               groupName: group.name,
               title: `Payment reminder · ${group.name}`,
-              body: `${new Intl.NumberFormat("en-PH", {
+              body: `${(summary.scheduledPaymentAmount ?? 0) > 0
+                ? `${new Intl.NumberFormat("en-PH", { style: "currency", currency: summary.currency }).format(summary.scheduledPaymentAmount)} suggested today${(summary.scheduledPaymentCount ?? 0) > 1 ? ` across ${summary.scheduledPaymentCount} schedules` : ""}. `
+                : ""}${new Intl.NumberFormat("en-PH", {
                 style: "currency",
                 currency: summary.currency,
               }).format(-currentBalance.net)} left to settle.${

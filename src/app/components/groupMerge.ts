@@ -129,6 +129,11 @@ export function mergeGroupChanges(
       changed.balanceOffsets,
       latest.balanceOffsets,
     ),
+    paymentSchedules: mergeById(
+      base.paymentSchedules,
+      changed.paymentSchedules,
+      latest.paymentSchedules,
+    ),
     memberClaimRequests: mergeById(
       base.memberClaimRequests,
       changed.memberClaimRequests,

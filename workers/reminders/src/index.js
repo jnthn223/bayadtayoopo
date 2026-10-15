@@ -293,6 +293,69 @@ function deadlineSummary(group, memberId, todayKey) {
   return result;
 }
 
+function scheduleOccursOn(schedule, todayKey) {
+  if (schedule.status !== "active" || !/^\d{4}-\d{2}-\d{2}$/.test(schedule.firstPaymentDate ?? "")) return false;
+  const first = new Date(`${schedule.firstPaymentDate}T00:00:00Z`);
+  const today = new Date(`${todayKey}T00:00:00Z`);
+  if (today < first) return false;
+  const days = Math.round((today.getTime() - first.getTime()) / 86_400_000);
+  if (schedule.frequency === "weekly") return days % 7 === 0;
+  if (schedule.frequency === "biweekly") return days % 14 === 0;
+  if (schedule.frequency !== "monthly") return false;
+  const targetDay = first.getUTCDate();
+  const lastDay = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0)).getUTCDate();
+  return today.getUTCDate() === Math.min(targetDay, lastDay);
+}
+
+function allocatedForMember(group, memberId) {
+  const allocated = {};
+  for (const payment of group.payments ?? []) {
+    if (payment.fromMemberId !== memberId || !["pending", "confirmed"].includes(payment.status)) continue;
+    for (const item of payment.allocations ?? []) {
+      if (item.expenseId) allocated[item.expenseId] = (allocated[item.expenseId] ?? 0) + Number(item.amount || 0);
+    }
+  }
+  for (const offset of group.balanceOffsets ?? []) {
+    if (!["pending", "confirmed"].includes(offset.status)) continue;
+    const items = offset.requesterMemberId === memberId
+      ? offset.debitAllocations
+      : offset.counterpartyMemberId === memberId
+        ? offset.creditAllocations
+        : [];
+    for (const item of items ?? []) {
+      if (item.expenseId) allocated[item.expenseId] = (allocated[item.expenseId] ?? 0) + Number(item.amount || 0);
+    }
+  }
+  return allocated;
+}
+
+function scheduleSummary(group, memberId, todayKey) {
+  const allocated = allocatedForMember(group, memberId);
+  const due = [];
+  for (const schedule of group.paymentSchedules ?? []) {
+    if (schedule.debtorMemberId !== memberId || !scheduleOccursOn(schedule, todayKey)) continue;
+    let remaining = 0;
+    for (const item of schedule.coverage ?? []) {
+      const expense = (group.expenses ?? []).find((candidate) => candidate.id === item.expenseId);
+      const split = expense?.splits?.find((candidate) => candidate.memberId === memberId);
+      if (!expense || !split || ["pending", "confirmed"].includes(split.paymentStatus)) continue;
+      remaining += Math.max(0, Math.min(Number(item.amount || 0), Number(split.amount || 0)) - Number(allocated[item.expenseId] ?? 0));
+    }
+    if (remaining <= 0.005) continue;
+    due.push({
+      id: schedule.id,
+      amount: Math.min(remaining, Number(schedule.installmentAmount || 0)),
+      names: (schedule.coverage ?? []).map((item) => item.expenseDescription).filter(Boolean),
+    });
+  }
+  return {
+    amount: due.reduce((sum, item) => sum + item.amount, 0),
+    count: due.length,
+    names: [...new Set(due.flatMap((item) => item.names))].slice(0, 3),
+    key: due.length > 0 ? `${group.id}:${todayKey}:${due.map((item) => item.id).sort().join(",")}` : undefined,
+  };
+}
+
 export function buildUserSummary(user, groups, now = new Date()) {
   const settings = preferences(user.paymentReminderPreferences);
   const muted = new Set(settings.mutedGroupIds);
@@ -309,8 +372,9 @@ export function buildUserSummary(user, groups, now = new Date()) {
     try { local = localDateParts(now, settings.timeZone || "Asia/Manila"); }
     catch { local = localDateParts(now, "Asia/Manila"); }
     const deadlines = deadlineSummary(group, member.id, local.dateKey);
+    const scheduled = scheduleSummary(group, member.id, local.dateKey);
     const hasDeadlineAttention = deadlines.overdueAmount > 0 || deadlines.dueTodayAmount > 0 || deadlines.dueSoonAmount > 0;
-    if (net >= -0.005 || (!hasDeadlineAttention && oldestOutstandingAgeDays(group, member.id, now) < 3)) return [];
+    if (net >= -0.005 || (!hasDeadlineAttention && scheduled.count === 0 && oldestOutstandingAgeDays(group, member.id, now) < 3)) return [];
     const pendingPaymentAmount = (group.payments ?? [])
       .filter((payment) => payment.fromMemberId === member.id && payment.status === "pending")
       .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
@@ -324,12 +388,19 @@ export function buildUserSummary(user, groups, now = new Date()) {
       ...(deadlines.overdueAmount > 0 ? { overdueAmount: Math.round(deadlines.overdueAmount * 100) / 100 } : {}),
       ...(deadlines.dueTodayAmount > 0 ? { dueTodayAmount: Math.round(deadlines.dueTodayAmount * 100) / 100 } : {}),
       ...(deadlines.dueSoonAmount > 0 ? { dueSoonAmount: Math.round(deadlines.dueSoonAmount * 100) / 100 } : {}),
+      ...(scheduled.count > 0 ? {
+        scheduledPaymentAmount: Math.round(scheduled.amount * 100) / 100,
+        scheduledPaymentCount: scheduled.count,
+        scheduledExpenseNames: scheduled.names,
+        scheduleReminderKey: scheduled.key,
+      } : {}),
     }];
   });
 }
 
 export function deadlineReminderKey(summaries) {
   const parts = summaries.flatMap((summary) => {
+    if (summary.scheduleReminderKey) return [`schedule:${summary.scheduleReminderKey}`];
     if (summary.overdueAmount > 0) return [`${summary.groupId}:overdue:${summary.nearestDueDate}`];
     if (summary.dueTodayAmount > 0) return [`${summary.groupId}:today:${summary.nearestDueDate}`];
     if (summary.dueSoonAmount > 0) return [`${summary.groupId}:soon:${summary.nearestDueDate}`];
@@ -374,6 +445,7 @@ async function buildEmail(env, user, summaries, digestId) {
     <tr><td style="padding:14px 0;border-bottom:1px solid #eee">
       <div style="font-weight:700;color:#17151f">${htmlEscape(summary.groupName)}</div>
       <div style="margin-top:4px;color:#686576">${htmlEscape(money(summary.amount, summary.currency))} left to settle${summary.pendingPaymentAmount > 0 ? ` · ${htmlEscape(money(summary.pendingPaymentAmount, summary.currency))} awaiting confirmation` : ""}</div>
+      ${summary.scheduledPaymentAmount > 0 ? `<div style="margin-top:8px;padding:10px;border-radius:10px;background:#f0edff;color:#4d38dc"><strong>${htmlEscape(money(summary.scheduledPaymentAmount, summary.currency))} suggested today</strong>${summary.scheduledPaymentCount > 1 ? ` across ${summary.scheduledPaymentCount} schedules` : ""}${summary.scheduledExpenseNames?.length ? `<div style="margin-top:3px;font-size:12px">${htmlEscape(summary.scheduledExpenseNames.join(", "))}</div>` : ""}</div>` : ""}
       ${summary.overdueAmount > 0 ? `<div style="margin-top:6px;font-weight:700;color:#c73535">${htmlEscape(money(summary.overdueAmount, summary.currency))} overdue</div>` : summary.dueTodayAmount > 0 ? `<div style="margin-top:6px;font-weight:700;color:#a65b00">${htmlEscape(money(summary.dueTodayAmount, summary.currency))} due today</div>` : summary.dueSoonAmount > 0 ? `<div style="margin-top:6px;font-weight:700;color:#a65b00">${htmlEscape(money(summary.dueSoonAmount, summary.currency))} due within 3 days</div>` : ""}
       <div style="margin-top:6px;font-size:13px;color:#686576">Settle in full or make a partial payment—kung ano ang works for you.</div>
       <a href="${appUrl}/?openGroup=${encodeURIComponent(summary.groupId)}&tab=settle" style="display:inline-block;margin-top:10px;color:#5b46f5;font-weight:700;text-decoration:none">Review &amp; pay →</a>
@@ -390,7 +462,7 @@ async function buildEmail(env, user, summaries, digestId) {
     reply_to: env.EMAIL_REPLY_TO,
     subject,
     html: `<!doctype html><html><body style="margin:0;background:#f5f4fa;font-family:Arial,sans-serif;color:#17151f"><div style="display:none">A gentle BayadTayoOpo summary of balances that still need attention.</div><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:28px 12px"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:auto;background:#fff;border-radius:22px;overflow:hidden"><tr><td style="padding:26px;background:#5b46f5;color:#fff"><img src="${appUrl}/icons/icon-192.png" width="42" height="42" alt="BayadTayoOpo" style="border-radius:12px;vertical-align:middle"><span style="margin-left:10px;font-size:20px;font-weight:800;vertical-align:middle">BayadTayoOpo</span></td></tr><tr><td style="padding:28px"><div style="font-size:13px;color:#7a758b">PAYMENT REMINDER</div><h1 style="font-size:26px;line-height:1.2;margin:8px 0 10px">May balances ka pang kailangang ayusin</h1><p style="margin:0;color:#686576;line-height:1.6">Hi ${htmlEscape(userDisplayName(user))}, here’s your gentle summary so nothing gets lost in the group chat.</p><div style="margin:22px 0;padding:18px;border-radius:16px;background:#f0edff"><div style="font-size:12px;color:#686576">TOTAL ACROSS ${summaries.length} ${summaries.length === 1 ? "GROUP" : "GROUPS"}</div><div style="margin-top:4px;font-size:24px;font-weight:800;color:#5b46f5">${htmlEscape(totalText)}</div></div><table width="100%" cellpadding="0" cellspacing="0">${rows}</table><a href="${appUrl}/" style="display:block;margin-top:24px;padding:14px;border-radius:14px;background:#5b46f5;color:#fff;font-weight:700;text-align:center;text-decoration:none">Open BayadTayoOpo</a><p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#888395">You’re receiving this because automatic payment reminders are enabled for your BayadTayoOpo account. <a href="${manage}" style="color:#5b46f5">Customize reminders</a> · <a href="${unsubscribe}" style="color:#5b46f5">Turn off email reminders</a></p></td></tr></table></td></tr></table></body></html>`,
-    text: `BayadTayoOpo payment reminder\n\nSettle in full or make a partial payment—kung ano ang works for you.\n\n${summaries.map((item) => `${item.groupName}: ${money(item.amount, item.currency)} left to settle${item.overdueAmount > 0 ? `\n${money(item.overdueAmount, item.currency)} overdue` : item.dueTodayAmount > 0 ? `\n${money(item.dueTodayAmount, item.currency)} due today` : item.dueSoonAmount > 0 ? `\n${money(item.dueSoonAmount, item.currency)} due within 3 days` : ""}\nReview & pay: ${appUrl}/?openGroup=${encodeURIComponent(item.groupId)}&tab=settle`).join("\n\n")}\n\nCustomize reminders: ${manage}\nTurn off email reminders: ${unsubscribe}`,
+    text: `BayadTayoOpo payment reminder\n\nSettle in full or make a partial payment—kung ano ang works for you.\n\n${summaries.map((item) => `${item.groupName}: ${money(item.amount, item.currency)} left to settle${item.scheduledPaymentAmount > 0 ? `\n${money(item.scheduledPaymentAmount, item.currency)} suggested today${item.scheduledExpenseNames?.length ? ` for ${item.scheduledExpenseNames.join(", ")}` : ""}` : ""}${item.overdueAmount > 0 ? `\n${money(item.overdueAmount, item.currency)} overdue` : item.dueTodayAmount > 0 ? `\n${money(item.dueTodayAmount, item.currency)} due today` : item.dueSoonAmount > 0 ? `\n${money(item.dueSoonAmount, item.currency)} due within 3 days` : ""}\nReview & pay: ${appUrl}/?openGroup=${encodeURIComponent(item.groupId)}&tab=settle`).join("\n\n")}\n\nCustomize reminders: ${manage}\nTurn off email reminders: ${unsubscribe}`,
     headers: { "X-Entity-Ref-ID": digestId },
   };
 }

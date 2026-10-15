@@ -853,6 +853,23 @@ export function mergeGroupMember(
         ? replace(offset.cancelledBy)
         : undefined,
     })),
+    paymentSchedules: group.paymentSchedules?.map((schedule) => ({
+      ...schedule,
+      payeeMemberId: replace(schedule.payeeMemberId),
+      debtorMemberId: replace(schedule.debtorMemberId),
+      createdBy: replace(schedule.createdBy),
+      proposedBy: schedule.proposedBy ? replace(schedule.proposedBy) : undefined,
+      awaitingMemberId: schedule.awaitingMemberId
+        ? replace(schedule.awaitingMemberId)
+        : undefined,
+      respondedBy: schedule.respondedBy
+        ? replace(schedule.respondedBy)
+        : undefined,
+      activity: schedule.activity.map((item) => ({
+        ...item,
+        actorMemberId: replace(item.actorMemberId),
+      })),
+    })),
     messages: group.messages?.map((message) => ({
       ...message,
       memberId: replace(message.memberId),

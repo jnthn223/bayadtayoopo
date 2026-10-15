@@ -52,6 +52,59 @@ export function deriveNotifications(
     };
 
     if (settings.payments) {
+      for (const schedule of group.paymentSchedules ?? []) {
+        const payee = getMemberById(group, schedule.payeeMemberId);
+        const debtor = getMemberById(group, schedule.debtorMemberId);
+        const installment = formatCurrency(schedule.installmentAmount, group.currency);
+        if (
+          schedule.status === "proposed" &&
+          (schedule.awaitingMemberId ?? schedule.debtorMemberId) === currentMemberId &&
+          (schedule.proposedBy ?? schedule.createdBy) !== currentMemberId
+        ) {
+          const proposer = getMemberById(group, schedule.proposedBy ?? schedule.createdBy);
+          add({
+            id: `${group.id}:schedule:${schedule.id}:proposed:${schedule.updatedAt}`,
+            type: schedule.activity.at(-1)?.type === "edited" ? "payment_schedule_updated" : "payment_schedule_proposed",
+            title: schedule.activity.at(-1)?.type === "edited" ? "Payment schedule changes suggested" : "Payment schedule suggested",
+            body: `${proposer?.name ?? payee?.name ?? "Someone"} suggested ${installment} ${schedule.frequency === "monthly" ? "monthly" : schedule.frequency === "biweekly" ? "every two weeks" : "weekly"}`,
+            at: schedule.updatedAt,
+            actorId: schedule.proposedBy ?? schedule.createdBy,
+            destination: { tab: "balances", paymentId: schedule.id },
+          });
+        }
+        const latest = schedule.activity.at(-1);
+        if (
+          latest?.type === "accepted" &&
+          schedule.payeeMemberId === currentMemberId &&
+          latest.actorMemberId !== currentMemberId
+        ) {
+          add({
+            id: `${group.id}:schedule:${schedule.id}:accepted:${latest.at}`,
+            type: "payment_schedule_accepted",
+            title: "Payment schedule accepted",
+            body: `${debtor?.name ?? "The recipient"} accepted the ${installment} schedule`,
+            at: latest.at,
+            actorId: latest.actorMemberId,
+            destination: { tab: "balances", paymentId: schedule.id },
+          });
+        }
+        if (
+          latest?.type === "declined" &&
+          schedule.payeeMemberId === currentMemberId &&
+          latest.actorMemberId !== currentMemberId
+        ) {
+          add({
+            id: `${group.id}:schedule:${schedule.id}:declined:${latest.at}`,
+            type: "payment_schedule_declined",
+            title: "Payment schedule declined",
+            body: `${debtor?.name ?? "The recipient"} declined the proposed schedule`,
+            at: latest.at,
+            actorId: latest.actorMemberId,
+            destination: { tab: "balances", paymentId: schedule.id },
+          });
+        }
+      }
+
       for (const payment of group.payments ?? []) {
         const from = getMemberById(group, payment.fromMemberId);
         const to = getMemberById(group, payment.toMemberId);

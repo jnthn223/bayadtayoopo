@@ -44,6 +44,53 @@ export interface PaymentAllocation {
   amount: number;
 }
 
+export type PaymentScheduleFrequency = "weekly" | "biweekly" | "monthly";
+export type PaymentScheduleStatus =
+  | "proposed"
+  | "active"
+  | "paused"
+  | "declined"
+  | "withdrawn"
+  | "ended"
+  | "completed";
+
+export interface PaymentScheduleCoverage {
+  expenseId: string;
+  expenseDescription: string;
+  /** Outstanding amount captured when this proposal was created. */
+  amount: number;
+}
+
+export interface PaymentScheduleActivity {
+  id: string;
+  type: "created" | "edited" | "accepted" | "declined" | "withdrawn" | "paused" | "resumed" | "ended";
+  actorMemberId: string;
+  at: string;
+  note?: string;
+}
+
+export interface PaymentSchedule {
+  id: string;
+  payeeMemberId: string;
+  debtorMemberId: string;
+  coverage: PaymentScheduleCoverage[];
+  installmentAmount: number;
+  frequency: PaymentScheduleFrequency;
+  firstPaymentDate: string;
+  message?: string;
+  status: PaymentScheduleStatus;
+  createdAt: string;
+  createdBy: string;
+  /** Member who sent the current proposal or counterproposal. */
+  proposedBy?: string;
+  /** Member who must accept, change, or decline the current proposal. */
+  awaitingMemberId?: string;
+  updatedAt: string;
+  respondedAt?: string;
+  respondedBy?: string;
+  activity: PaymentScheduleActivity[];
+}
+
 export type GroupPaymentStatus =
   | "pending"
   | "confirmed"
@@ -206,6 +253,10 @@ export interface PaymentReminderGroupSummary {
   overdueAmount?: number;
   dueTodayAmount?: number;
   dueSoonAmount?: number;
+  scheduledPaymentAmount?: number;
+  scheduledPaymentCount?: number;
+  scheduledExpenseNames?: string[];
+  scheduleReminderKey?: string;
 }
 
 export interface PaymentReminderDigest {
@@ -253,6 +304,10 @@ export type NotificationType =
   | "expense_updated"
   | "expense_deleted"
   | "payment_reminder"
+  | "payment_schedule_proposed"
+  | "payment_schedule_accepted"
+  | "payment_schedule_declined"
+  | "payment_schedule_updated"
   | "chat_message"
   | "member_joined";
 
@@ -291,6 +346,7 @@ export interface Group {
   expenses: Expense[];
   payments?: GroupPayment[];
   balanceOffsets?: BalanceOffset[];
+  paymentSchedules?: PaymentSchedule[];
   memberClaimRequests?: MemberClaimRequest[];
   deletedExpenses?: DeletedExpense[];
   expenseDeletionRequests?: ExpenseDeletionRequest[];

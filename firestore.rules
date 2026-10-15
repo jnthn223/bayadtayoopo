@@ -24,6 +24,7 @@ service cloud.firestore {
           'paymentReminderDigest',
           'lastPaymentReminderAt',
           'lastPaymentReminderKey',
+          'lastDeadlineReminderKey',
           'lastPaymentReminderEmailAt'
         ])
         && request.resource.data.groupIds is list
@@ -46,6 +47,8 @@ service cloud.firestore {
           || request.resource.data.lastPaymentReminderAt is string)
         && (!request.resource.data.keys().hasAny(['lastPaymentReminderKey'])
           || request.resource.data.lastPaymentReminderKey is string)
+        && (!request.resource.data.keys().hasAny(['lastDeadlineReminderKey'])
+          || request.resource.data.lastDeadlineReminderKey is string)
         && (!request.resource.data.keys().hasAny(['lastPaymentReminderEmailAt'])
           || request.resource.data.lastPaymentReminderEmailAt is string)
         && (!request.resource.data.keys().hasAny(['paymentReminderDigest'])

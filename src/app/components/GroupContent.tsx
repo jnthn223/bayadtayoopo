@@ -32,6 +32,7 @@ import { EXPENSE_CATEGORIES } from "./types";
 import type { GroupTab } from "./GroupHeader";
 import { UserAvatar } from "./UserAvatar";
 import { GroupPayments } from "./GroupPayments";
+import { PaymentScheduleManager } from "./PaymentScheduleManager";
 import { parseChatMentions } from "./chatMentions";
 import { buildBalanceShareMessage } from "./balanceShareMessage";
 import { ensureRequiredShareLinks } from "./requiredShareLinks";
@@ -738,9 +739,10 @@ export function GroupContent({
                     (sum, settlement) => sum + settlement.amount,
                     0,
                   );
-                  const isSettled = settlementMode === "direct"
+                  const hasDirectRelationship = directOutgoing.length > 0 || directIncoming.length > 0;
+                  const isSettled = (settlementMode === "direct"
                     ? directOutgoing.length === 0 && directIncoming.length === 0
-                    : Math.abs(b.net) < 0.01;
+                    : Math.abs(b.net) < 0.01) && !hasDirectRelationship;
                   const isExpanded = expandedBalanceIds.has(b.memberId);
                   const balanceDetails = balanceDetailsByMember.get(b.memberId) ?? [];
                   const displayName = displayMemberName(b.memberId, b.memberName);
@@ -879,32 +881,16 @@ export function GroupContent({
                         </div>
                       )}
 
-                      {b.memberId !== currentMember?.id && !isSettled && Math.abs(b.net) >= 0.01 && (
-                        <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
-                          {balanceShareStatus?.memberId === b.memberId ? (
-                            <p
-                              className={`text-[10px] ${
-                                balanceShareStatus.message.startsWith("Unable")
-                                  ? "text-destructive"
-                                  : "text-muted-foreground"
-                              }`}
-                              role="status"
-                            >
-                              {balanceShareStatus.message}
-                            </p>
-                          ) : (
-                            <span />
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => prepareMemberBalanceShare(b)}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/15 active:scale-[0.98]"
-                            aria-label={`Share ${b.memberName}'s balance update`}
-                          >
-                            <Share2 size={12} aria-hidden="true" />
-                            {b.net < 0 ? "Send reminder" : "Share update"}
-                          </button>
-                        </div>
+                      {currentMember && b.memberId !== currentMember.id && !isSettled && getMemberById(group, b.memberId) && (
+                        <PaymentScheduleManager
+                          group={group}
+                          currentMember={currentMember}
+                          balanceMember={getMemberById(group, b.memberId)!}
+                          balance={b}
+                          expanded={isExpanded}
+                          onUpdate={onUpdate}
+                          onSendNow={() => prepareMemberBalanceShare(b)}
+                        />
                       )}
                     </div>
                   );
