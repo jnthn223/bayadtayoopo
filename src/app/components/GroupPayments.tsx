@@ -179,7 +179,11 @@ function paymentRouteDetails(payment: GroupPayment, group: Group) {
   const payerName = getMemberById(group, payment.fromMemberId)?.name ?? "The payer";
   const recipientName =
     getMemberById(group, payment.toMemberId)?.name ?? "the recipient";
-  const routedToDifferentPayee = payment.allocations.some((allocation) => {
+  // Payments created before expense allocations were introduced do not have
+  // this field in Firestore. Treat those legacy records as having no saved
+  // allocations so opening settlement history cannot fail on old data.
+  const allocations = payment.allocations ?? [];
+  const routedToDifferentPayee = allocations.some((allocation) => {
     if (!allocation.expenseId) return false;
     const expense = group.expenses.find(
       (candidate) => candidate.id === allocation.expenseId,
@@ -927,7 +931,7 @@ export function GroupPayments({
           >
             <Dialog.Portal>
               <Dialog.Overlay className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[1px]" />
-              <Dialog.Content className="fixed inset-0 z-50 flex flex-col bg-background sm:inset-x-1/2 sm:inset-y-8 sm:max-w-2xl sm:-translate-x-1/2 sm:overflow-hidden sm:rounded-3xl sm:border sm:border-border sm:shadow-2xl">
+              <Dialog.Content className="fixed inset-0 z-50 flex flex-col bg-background sm:inset-x-auto sm:inset-y-8 sm:left-1/2 sm:w-[calc(100%-4rem)] sm:max-w-2xl sm:-translate-x-1/2 sm:overflow-hidden sm:rounded-3xl sm:border sm:border-border sm:shadow-2xl">
                 <header className="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-4">
                   <Dialog.Close asChild>
                     <button
@@ -1049,9 +1053,9 @@ export function GroupPayments({
                         </button>
                         {offsetOpen && (
                           <div className="space-y-3 rounded-xl bg-muted/50 p-3">
-                            <AllocationList allocations={offset.debitAllocations} currency={group.currency} />
+                            <AllocationList allocations={offset.debitAllocations ?? []} currency={group.currency} />
                             <div className="border-t border-border pt-3">
-                              <AllocationList allocations={offset.creditAllocations} currency={group.currency} />
+                              <AllocationList allocations={offset.creditAllocations ?? []} currency={group.currency} />
                             </div>
                           </div>
                         )}
@@ -1144,7 +1148,7 @@ export function GroupPayments({
                         </div>
                         {allocationsOpen && (
                           <AllocationList
-                            allocations={payment.allocations}
+                            allocations={payment.allocations ?? []}
                             currency={group.currency}
                             group={group}
                             recipientMemberId={payment.toMemberId}
