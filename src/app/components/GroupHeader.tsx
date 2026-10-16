@@ -11,6 +11,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { CurrentUser, Group } from "./types";
@@ -25,6 +26,7 @@ interface Props {
   group: Group;
   currentUser: CurrentUser;
   total: number;
+  unsettledTotal?: number;
   tab: GroupTab;
   tourTarget: GroupTourTarget | null;
   unreadChatCount: number;
@@ -40,6 +42,18 @@ interface Props {
   onShowGuide: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  directExpenseSummary?: {
+    direct: Array<{ currency: string; amount: number }>;
+    shared: Array<{ currency: string; amount: number }>;
+    all: Array<{ currency: string; amount: number }>;
+  };
+  directUnsettledExpenseSummary?: {
+    direct: Array<{ currency: string; amount: number }>;
+    shared: Array<{ currency: string; amount: number }>;
+    all: Array<{ currency: string; amount: number }>;
+  };
+  totalView?: "unsettled" | "all";
+  onTotalViewChange?: (view: "unsettled" | "all") => void;
 }
 
 const tabs = [
@@ -53,6 +67,7 @@ export function GroupHeader({
   group,
   currentUser,
   total,
+  unsettledTotal = total,
   tab,
   tourTarget,
   unreadChatCount,
@@ -68,7 +83,26 @@ export function GroupHeader({
   onShowGuide,
   onEdit,
   onDelete,
+  directExpenseSummary,
+  directUnsettledExpenseSummary,
+  totalView: controlledTotalView,
+  onTotalViewChange,
 }: Props) {
+  const [localTotalView, setLocalTotalView] = useState<"unsettled" | "all">("unsettled");
+  const totalView = controlledTotalView ?? localTotalView;
+  const setTotalView = (view: "unsettled" | "all") => {
+    setLocalTotalView(view);
+    onTotalViewChange?.(view);
+  };
+  const isDirect = group.kind === "direct";
+  const directPerson = isDirect
+    ? group.members.find(
+        (member) => member.uid !== currentUser.id && member.id !== currentUser.id,
+      )
+    : undefined;
+  const visibleDirectSummary = totalView === "unsettled"
+    ? (directUnsettledExpenseSummary ?? directExpenseSummary)
+    : directExpenseSummary;
   return (
     <>
       <div className="bg-card border-b border-border px-4 pt-12 pb-4">
@@ -82,23 +116,30 @@ export function GroupHeader({
           </button>
 
           <div className="flex items-center gap-1">
-            <HeaderAction
+            {isDirect && directPerson && !directPerson.uid && <HeaderAction
+              active={false}
+              label={`Invite ${directPerson.name} to claim`}
+              onClick={onShare}
+            >
+              <QrCode size={19} />
+            </HeaderAction>}
+            {!isDirect && <HeaderAction
               active={tourTarget === "members"}
               label={isAdmin ? "Manage members" : "View members"}
               onClick={onManageMembers}
               badge={isAdmin ? memberRequestCount : 0}
             >
               <Users size={19} />
-            </HeaderAction>
-            <HeaderAction
+            </HeaderAction>}
+            {!isDirect && <HeaderAction
               active={tourTarget === "share"}
               label="Share QR code"
               onClick={onShare}
             >
               <QrCode size={19} />
-            </HeaderAction>
+            </HeaderAction>}
 
-            <DropdownMenu.Root>
+            {!isDirect && <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
                 <button className="p-2 rounded-full hover:bg-muted transition-colors" aria-label="Group menu">
                   <MoreVertical size={19} className="text-foreground" />
@@ -130,21 +171,41 @@ export function GroupHeader({
                   )}
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>
-            </DropdownMenu.Root>
+            </DropdownMenu.Root>}
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <GroupAvatar
-            name={group.name}
-            seed={group.avatarSeed}
-            groupId={group.id}
-            photoVersion={group.groupImageVersion}
-            className="w-12 h-12 rounded-2xl shrink-0"
-          />
+          {directPerson ? (
+            <UserAvatar
+              name={directPerson.name}
+              color={directPerson.color}
+              seed={directPerson.avatarSeed}
+              uid={directPerson.uid}
+              photoVersion={directPerson.profileImageVersion}
+              className="w-12 h-12 rounded-full shrink-0"
+            />
+          ) : (
+            <GroupAvatar
+              name={group.name}
+              seed={group.avatarSeed}
+              groupId={group.id}
+              photoVersion={group.groupImageVersion}
+              className="w-12 h-12 rounded-2xl shrink-0"
+            />
+          )}
           <div className="min-w-0">
-            <h1 className="text-foreground mb-1 truncate">{group.name}</h1>
-            <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-foreground mb-1 truncate">{directPerson?.name ?? group.name}</h1>
+            {isDirect ? (
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                <TotalViewToggle value={totalView} onChange={setTotalView} />
+                <div className="space-y-0.5">
+                  <p>Direct <strong className="font-semibold text-foreground">{(visibleDirectSummary?.direct ?? [{ currency: group.currency, amount: totalView === "unsettled" ? unsettledTotal : total }]).map((item) => formatCurrency(item.amount, item.currency)).join(" / ")}</strong></p>
+                  <p>Across groups <strong className="font-semibold text-foreground">{visibleDirectSummary?.shared.length ? visibleDirectSummary.shared.map((item) => formatCurrency(item.amount, item.currency)).join(" / ") : formatCurrency(0, group.currency)}</strong></p>
+                  <p className="text-primary">Total <strong className="font-semibold">{visibleDirectSummary?.all.map((item) => formatCurrency(item.amount, item.currency)).join(" / ")}</strong></p>
+                </div>
+              </div>
+            ) : <div className="flex items-center gap-3 flex-wrap">
               <div className="flex -space-x-2">
                 {group.members.slice(0, 5).map((member) => (
                   <UserAvatar
@@ -167,14 +228,10 @@ export function GroupHeader({
                   />
                 ))}
               </div>
-              <span className="text-sm text-muted-foreground">
-                {group.members.length} members
-              </span>
-              <span className="text-sm text-muted-foreground">·</span>
-              <span className="text-sm font-medium text-foreground">
-                {formatCurrency(total, group.currency)} total
-              </span>
-            </div>
+              <span className="text-sm text-muted-foreground">{group.members.length} members</span>
+              <TotalViewToggle value={totalView} onChange={setTotalView} />
+              <span className="text-sm font-medium text-foreground">{formatCurrency(totalView === "unsettled" ? unsettledTotal : total, group.currency)}</span>
+            </div>}
           </div>
         </div>
       </div>
@@ -216,6 +273,15 @@ export function GroupHeader({
         })}
       </div>
     </>
+  );
+}
+
+function TotalViewToggle({ value, onChange }: { value: "unsettled" | "all"; onChange: (value: "unsettled" | "all") => void }) {
+  return (
+    <span className="inline-flex rounded-lg bg-muted p-0.5">
+      <button type="button" onClick={() => onChange("unsettled")} className={`rounded-md px-2 py-1 text-[10px] font-semibold ${value === "unsettled" ? "bg-card text-primary shadow-sm" : "text-muted-foreground"}`}>Unsettled</button>
+      <button type="button" onClick={() => onChange("all")} className={`rounded-md px-2 py-1 text-[10px] font-semibold ${value === "all" ? "bg-card text-primary shadow-sm" : "text-muted-foreground"}`}>All tracked</button>
+    </span>
   );
 }
 

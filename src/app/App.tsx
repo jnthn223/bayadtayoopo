@@ -34,7 +34,7 @@ import {
   loadOrCreateUserProfile,
   saveUserProfile,
 } from "../lib/groupService";
-import { computeProjectedBalances, MEMBER_COLORS } from "./components/utils";
+import { computeProjectedBalances, generateId, MEMBER_COLORS } from "./components/utils";
 import { compactGroupHistory, mergeGroupChanges } from "./components/groupMerge";
 import { HomeScreen } from "./components/HomeScreen";
 import { GroupScreen } from "./components/GroupScreen";
@@ -76,6 +76,7 @@ import {
   isQuickAddPath,
   upsertExpense,
 } from "./components/quickAddExpense";
+import { deletePaymentImage, savePaymentImage } from "../lib/paymentImageService";
 
 /* MARKER-MAKE-KIT-INVOKED */
 
@@ -804,6 +805,113 @@ export default function App() {
     await persistGroupUpdate(upsertExpense(base, expense), base);
   }
 
+  async function handleAddDirectExpense(
+    requestedGroup: Group,
+    expense: Expense,
+    receiptFiles: File[],
+  ) {
+    if (!session) throw new Error("Sign in again to save this expense.");
+    const existing = groups.find((group) => group.id === requestedGroup.id);
+    const restartingRequest =
+      existing && ["declined", "withdrawn"].includes(existing.directStatus ?? "");
+    const base = restartingRequest ? requestedGroup : (existing ?? requestedGroup);
+    const uploadedReceipts = [];
+
+    if (!existing) {
+      const compactGroup = compactGroupHistory(requestedGroup);
+      await saveGroup(compactGroup, session.uid);
+      setGroups((previous) => [compactGroup, ...previous]);
+    }
+
+    try {
+      for (const file of receiptFiles) {
+        const imageId = generateId();
+        await savePaymentImage(
+          base.id,
+          imageId,
+          currentUser?.id ?? session.uid,
+          "expense-receipt",
+          file,
+        );
+        uploadedReceipts.push({
+          imageId,
+          uploadedBy: currentUser?.id ?? session.uid,
+          uploadedAt: new Date().toISOString(),
+        });
+      }
+      const savedExpense = {
+        ...expense,
+        receipts: [...(expense.receipts ?? []), ...uploadedReceipts],
+      };
+      await persistGroupUpdate(
+        upsertExpense(base, savedExpense),
+        restartingRequest ? existing : base,
+      );
+      showBanner(`Added a direct expense with ${base.members.find((member) => member.uid !== session.uid)?.name ?? "your friend"}`);
+    } catch (error) {
+      uploadedReceipts.forEach((receipt) => {
+        deletePaymentImage(base.id, receipt.imageId).catch(() => {});
+      });
+      throw error;
+    }
+  }
+
+  async function handleCreateDirectTracker(requestedGroup: Group) {
+    if (!session) throw new Error("Sign in again to create this person view.");
+    const existing = groups.find((group) => group.id === requestedGroup.id);
+    try {
+      const tracker = existing ?? compactGroupHistory(requestedGroup);
+      if (!existing) {
+        await saveGroup(tracker, session.uid);
+        setGroups((previous) => [tracker, ...previous]);
+      }
+      setSelectedGroup(tracker);
+      setNotificationDestination(null);
+      setScreen("group");
+      showBanner(`Created a private person view for ${tracker.members.find((member) => member.id !== session.uid && member.uid !== session.uid)?.name ?? "this person"}`);
+    } catch (error) {
+      showBanner(errorMessage(error, "Unable to create the person view"), "error");
+      throw error;
+    }
+  }
+
+  async function handleRespondDirectRequest(
+    group: Group,
+    status: "active" | "declined" | "withdrawn",
+  ) {
+    if (!currentUser) throw new Error("Sign in again to respond.");
+    const requestedByMe = group.directRequestedBy === currentUser.id;
+    if (status === "active" && requestedByMe) {
+      throw new Error("The invited person must accept this request.");
+    }
+    if (status === "withdrawn" && !requestedByMe) {
+      throw new Error("Only the requester can withdraw this request.");
+    }
+    const updated: Group = {
+      ...group,
+      directStatus: status,
+      participantUids:
+        status === "active"
+          ? group.members.flatMap((member) => member.uid ? [member.uid] : []).sort()
+          : group.participantUids,
+      directReviewedBy: currentUser.id,
+      directReviewedAt: new Date().toISOString(),
+    };
+    try {
+      await persistGroupUpdate(updated, group);
+      showBanner(
+        status === "active"
+          ? "Direct expense request accepted"
+          : status === "declined"
+            ? "Direct expense request declined"
+            : "Direct expense request withdrawn",
+      );
+    } catch (error) {
+      showBanner(errorMessage(error, "Unable to update the request"), "error");
+      throw error;
+    }
+  }
+
   async function handleDeleteGroup(groupId: string) {
     if (!session) return;
     try {
@@ -1107,7 +1215,9 @@ export default function App() {
     <div className="size-full flex justify-center bg-background sm:bg-muted overflow-hidden">
       <div
         className={`w-full h-full relative overflow-hidden bg-background flex flex-col transition-[max-width] duration-300 ${
-          authState === "unauthenticated" ? "max-w-none" : "sm:max-w-sm sm:shadow-2xl"
+          authState === "unauthenticated"
+            ? "max-w-none"
+            : "sm:max-w-2xl sm:shadow-2xl md:max-w-none md:shadow-none 2xl:max-w-6xl 2xl:shadow-2xl"
         }`}
       >
         {/* Banner */}
@@ -1281,6 +1391,12 @@ export default function App() {
                 }}
                 onUpdate={handleUpdateGroup}
                 onDelete={handleDeleteGroup}
+                allGroups={groups}
+                onOpenGroup={(group) => {
+                  setSelectedGroup(groups.find((candidate) => candidate.id === group.id) ?? group);
+                  setNotificationDestination(null);
+                  setScreen("group");
+                }}
               />
             )}
             {screen === "home" && (
@@ -1299,6 +1415,9 @@ export default function App() {
                   setScreen("group");
                 }}
                 onCreateGroup={handleCreateGroup}
+                onAddDirectExpense={handleAddDirectExpense}
+                onCreateDirectTracker={handleCreateDirectTracker}
+                onRespondDirectRequest={handleRespondDirectRequest}
                 onOpenProfile={() => setScreen("profile")}
               />
             )}

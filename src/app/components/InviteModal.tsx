@@ -238,7 +238,7 @@ export function InviteModal({
     <Dialog.Root open={open} onOpenChange={(v) => !v && handleClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
-        <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 bg-card rounded-t-3xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[90vh] overflow-y-auto rounded-t-3xl bg-card shadow-2xl md:inset-x-auto md:bottom-auto md:left-1/2 md:top-1/2 md:w-[min(92vw,44rem)] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-3xl md:border md:border-border">
           <div className="w-10 h-1 bg-border rounded-full mx-auto mt-4 mb-5" />
           <div className="flex items-center justify-between px-5 mb-5">
             <Dialog.Title className="text-lg font-semibold text-foreground">

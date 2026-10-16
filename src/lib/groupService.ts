@@ -6,10 +6,14 @@
 import {
   arrayRemove,
   arrayUnion,
+  collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
+  query,
   setDoc,
+  where,
   writeBatch,
 } from "firebase/firestore";
 import { db, finishFirestoreWrite } from "./firebase";
@@ -215,12 +219,11 @@ export async function updateGroup(group: Group): Promise<void> {
 /** Load all groups the current user is a member of. */
 export async function loadUserGroups(uid: string): Promise<Group[]> {
   const groupIds = await getUserGroupIds(uid);
-  if (groupIds.length === 0) return [];
 
   // A deleted group can remain in another member's user document. Firestore
   // correctly rejects that group's read, but it must not prevent the user's
   // other groups from loading.
-  const snapshots = await Promise.all(
+  const referencedSnapshots = await Promise.all(
     groupIds.map(async (id) => {
       try {
         return { id, snapshot: await getDoc(doc(db, "groups", id)) };
@@ -230,6 +233,35 @@ export async function loadUserGroups(uid: string): Promise<Group[]> {
       }
     }),
   );
+  let discoveredSnapshots: { id: string; snapshot: Awaited<ReturnType<typeof getDoc>> }[] = [];
+  try {
+    const discovered = await getDocs(
+      query(collection(db, "groups"), where("memberIds", "array-contains", uid)),
+    );
+    discoveredSnapshots = discovered.docs.map((snapshot) => ({
+      id: snapshot.id,
+      snapshot,
+    }));
+  } catch (error) {
+    // Referenced groups can still load if an older rules deployment does not
+    // yet permit membership discovery queries.
+    console.warn("Unable to discover shared groups", error);
+  }
+  const snapshots = [...new Map(
+    [...referencedSnapshots, ...discoveredSnapshots].map((item) => [item.id, item]),
+  ).values()];
+  const discoveredGroupIds = discoveredSnapshots
+    .map(({ id }) => id)
+    .filter((id) => !groupIds.includes(id));
+  if (discoveredGroupIds.length > 0) {
+    void finishFirestoreWrite(
+      setDoc(
+        doc(db, "users", uid),
+        { groupIds: arrayUnion(...discoveredGroupIds) },
+        { merge: true },
+      ),
+    ).catch((error) => console.warn("Unable to repair discovered group references", error));
+  }
 
   const staleGroupIds = snapshots.flatMap(({ id, snapshot }) => {
     // Do not remove a reference after a transient network/cache failure.
@@ -321,6 +353,13 @@ export async function joinGroup(
             }
           : member,
       );
+      if (group.kind === "direct" && group.directStatus === "draft") {
+        group.directStatus = "pending";
+        group.directRequestedAt = joinedAt;
+        group.participantUids = [
+          ...new Set([...(group.participantUids ?? []), uid]),
+        ].sort();
+      }
     } else {
       const joinedAt = new Date().toISOString();
       const requestedPendingMember = requestedPendingMemberId

@@ -117,4 +117,43 @@ describe("push event collection", () => {
       "balance_offset_confirmed",
     );
   });
+
+  it("collects direct request and correction lifecycle events", () => {
+    const pending: Group = {
+      ...base,
+      kind: "direct",
+      directStatus: "pending",
+      directRequestedBy: "alice",
+      directRequestedAt: "2026-07-02T01:00:00.000Z",
+      expenses: [{
+        id: "dinner", description: "Dinner", amount: 500,
+        paidBy: "alice-member", createdBy: "alice-member", splitType: "equal",
+        splits: [{ memberId: "alice-member", amount: 250 }, { memberId: "bob-member", amount: 250 }],
+        date: "2026-07-02", category: "food", createdAt: "2026-07-02T01:00:01.000Z",
+      }],
+    };
+    expect(collectPushEvents({ ...pending, expenses: [] }, pending, "alice")[0]?.type)
+      .toBe("direct_request");
+
+    const active = {
+      ...pending,
+      directStatus: "active" as const,
+      directReviewedBy: "bob",
+      directReviewedAt: "2026-07-02T02:00:00.000Z",
+    };
+    expect(collectPushEvents(pending, active, "bob")[0]?.type)
+      .toBe("direct_request_accepted");
+
+    const correction = {
+      ...active,
+      expenseCorrectionRequests: [{
+        id: "fix", expenseId: "dinner", reason: "Wrong amount",
+        proposedExpense: { ...active.expenses[0], amount: 450 },
+        requestedBy: "alice-member", requestedAt: "2026-07-02T03:00:00.000Z",
+        status: "pending" as const,
+      }],
+    };
+    expect(collectPushEvents(active, correction, "alice")[0]?.type)
+      .toBe("direct_correction_requested");
+  });
 });

@@ -108,6 +108,29 @@ export function mergeGroupChanges(
         : latest.groupImageVersion,
     currency:
       base.currency !== changed.currency ? changed.currency : latest.currency,
+    directStatus:
+      base.directStatus !== changed.directStatus ? changed.directStatus : latest.directStatus,
+    directRequestedBy:
+      base.directRequestedBy !== changed.directRequestedBy ? changed.directRequestedBy : latest.directRequestedBy,
+    directRequestedAt:
+      base.directRequestedAt !== changed.directRequestedAt ? changed.directRequestedAt : latest.directRequestedAt,
+    directReviewedBy:
+      base.directReviewedBy !== changed.directReviewedBy ? changed.directReviewedBy : latest.directReviewedBy,
+    directReviewedAt:
+      base.directReviewedAt !== changed.directReviewedAt ? changed.directReviewedAt : latest.directReviewedAt,
+    directHistoryReviewedBy:
+      base.directHistoryReviewedBy !== changed.directHistoryReviewedBy
+        ? changed.directHistoryReviewedBy
+        : latest.directHistoryReviewedBy,
+    directHistoryReviewedAt:
+      base.directHistoryReviewedAt !== changed.directHistoryReviewedAt
+        ? changed.directHistoryReviewedAt
+        : latest.directHistoryReviewedAt,
+    directHistoryDisputes: mergeById(
+      base.directHistoryDisputes,
+      changed.directHistoryDisputes,
+      latest.directHistoryDisputes,
+    ),
     adminId: base.adminId !== changed.adminId ? changed.adminId : latest.adminId,
     adminIds: !sameValue(base.adminIds, changed.adminIds)
       ? changed.adminIds
@@ -133,6 +156,11 @@ export function mergeGroupChanges(
       base.paymentSchedules,
       changed.paymentSchedules,
       latest.paymentSchedules,
+    ),
+    expenseCorrectionRequests: mergeById(
+      base.expenseCorrectionRequests,
+      changed.expenseCorrectionRequests,
+      latest.expenseCorrectionRequests,
     ),
     memberClaimRequests: mergeById(
       base.memberClaimRequests,

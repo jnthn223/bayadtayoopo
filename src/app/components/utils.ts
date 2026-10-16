@@ -696,7 +696,27 @@ export function archiveGroupMember(group: Group, memberId: string): Group {
 }
 
 export function getTotalExpenses(group: Group): number {
+  if (group.kind === "direct" && group.directStatus !== "active") return 0;
   return group.expenses.reduce((sum, e) => sum + e.amount, 0);
+}
+
+/** Remaining net amount that still needs to move after confirmed payments. */
+export function getUnsettledTotal(
+  group: Group,
+  options: { includeProvisionalDirect?: boolean } = {},
+): number {
+  const accountingGroup =
+    options.includeProvisionalDirect &&
+    group.kind === "direct" &&
+    group.directStatus !== "active"
+      ? { ...group, directStatus: "active" as const }
+      : group;
+  return Math.round(
+    computeSettlements(computeBalances(accountingGroup)).reduce(
+      (sum, settlement) => sum + settlement.amount,
+      0,
+    ) * 100,
+  ) / 100;
 }
 
 export function getUnsettledPaymentSummary(group: Group, userId: string) {

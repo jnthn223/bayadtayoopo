@@ -51,6 +51,102 @@ export function deriveNotifications(
       });
     };
 
+    if (group.kind === "direct") {
+      const requester = group.members.find(
+        (member) =>
+          member.id === group.directRequestedBy || member.uid === group.directRequestedBy,
+      );
+      const otherPerson = group.members.find((member) => member.id !== currentMember.id);
+      const firstExpense = group.expenses[0];
+      if (
+        group.directStatus === "pending" &&
+        group.directRequestedBy !== currentMember.id &&
+        group.directRequestedBy !== currentMember.uid &&
+        firstExpense
+      ) {
+        add({
+          id: `${group.id}:direct-request:${group.directRequestedAt}`,
+          type: "direct_request",
+          title: `${requester?.name ?? "Someone"} sent a direct expense request`,
+          body: `${firstExpense.description} · ${formatCurrency(firstExpense.amount, group.currency)} — review before it affects your balance`,
+          at: group.directRequestedAt ?? firstExpense.createdAt ?? group.createdAt,
+          actorId: requester?.id,
+          destination: { tab: "expenses", expenseId: firstExpense.id },
+        });
+      }
+      if (
+        group.directReviewedAt &&
+        group.directRequestedBy &&
+        (group.directRequestedBy === currentMember.id || group.directRequestedBy === currentMember.uid)
+      ) {
+        const outcome = group.directStatus === "active"
+          ? { type: "direct_request_accepted" as const, title: "Direct expense request accepted", body: `${otherPerson?.name ?? "Your friend"} accepted your direct expense request` }
+          : group.directStatus === "declined"
+            ? { type: "direct_request_declined" as const, title: "Direct expense request declined", body: `${otherPerson?.name ?? "Your friend"} declined your direct expense request` }
+            : null;
+        if (outcome) add({
+          id: `${group.id}:${outcome.type}:${group.directReviewedAt}`,
+          ...outcome,
+          at: group.directReviewedAt,
+          actorId: group.directReviewedBy,
+          destination: { tab: "expenses", expenseId: firstExpense?.id },
+        });
+      }
+      if (
+        group.directStatus === "withdrawn" &&
+        group.directReviewedAt &&
+        group.directRequestedBy !== currentMember.id &&
+        group.directRequestedBy !== currentMember.uid
+      ) {
+        add({
+          id: `${group.id}:direct-request-withdrawn:${group.directReviewedAt}`,
+          type: "direct_request_withdrawn",
+          title: "Direct expense request withdrawn",
+          body: `${requester?.name ?? "The requester"} withdrew the direct expense request`,
+          at: group.directReviewedAt,
+          actorId: group.directReviewedBy,
+          destination: { tab: "expenses", expenseId: firstExpense?.id },
+        });
+      }
+
+      for (const request of group.expenseCorrectionRequests ?? []) {
+        const requestedByMe = request.requestedBy === currentMember.id;
+        if (request.status === "pending" && !requestedByMe) {
+          add({
+            id: `${group.id}:direct-correction:${request.id}:pending`,
+            type: "direct_correction_requested",
+            title: "Expense correction needs your review",
+            body: `${request.proposedExpense.description}: ${request.reason}`,
+            at: request.requestedAt,
+            actorId: request.requestedBy,
+            destination: { tab: "expenses", expenseId: request.expenseId },
+          });
+        } else if (requestedByMe && request.reviewedAt && request.status === "approved") {
+          add({
+            id: `${group.id}:direct-correction:${request.id}:approved`,
+            type: "direct_correction_approved",
+            title: "Expense correction approved",
+            body: `${otherPerson?.name ?? "Your friend"} approved your correction`,
+            at: request.reviewedAt,
+            actorId: request.reviewedBy,
+            destination: { tab: "expenses", expenseId: request.expenseId },
+          });
+        } else if (requestedByMe && request.reviewedAt && request.status === "rejected") {
+          add({
+            id: `${group.id}:direct-correction:${request.id}:rejected`,
+            type: "direct_correction_rejected",
+            title: "Expense correction rejected",
+            body: request.rejectionReason ?? `${otherPerson?.name ?? "Your friend"} rejected your correction`,
+            at: request.reviewedAt,
+            actorId: request.reviewedBy,
+            destination: { tab: "expenses", expenseId: request.expenseId },
+          });
+        }
+      }
+
+      if (group.directStatus !== "active") return items;
+    }
+
     if (settings.payments) {
       for (const schedule of group.paymentSchedules ?? []) {
         const payee = getMemberById(group, schedule.payeeMemberId);

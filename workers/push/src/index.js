@@ -224,6 +224,100 @@ export function validateAndBuild(group, event, actorUid) {
     (member) => member.uid && member.uid !== actorUid,
   );
 
+  if (event.type.startsWith("direct_request")) {
+    if (group.kind !== "direct") throw new Error("Direct request event does not match the saved ledger");
+    const requester = getMember(group, group.directRequestedBy);
+    if (
+      event.type === "direct_request" &&
+      group.directStatus === "pending" &&
+      actorMatches(actor, group.directRequestedBy) &&
+      exactTime(group.directRequestedAt)
+    ) {
+      const expense = group.expenses[0];
+      return {
+        recipients: allOthers,
+        preference: "expenses",
+        title: "Direct expense request",
+        body: expense
+          ? `${actor.name} added ${expense.description} · ${formatCurrency(expense.amount, group.currency)}`
+          : `${actor.name} wants to start a direct expense history`,
+        url: notificationUrl(group.id, "expenses", expense ? { expense: expense.id } : {}),
+      };
+    }
+    const expectedStatus = {
+      direct_request_accepted: "active",
+      direct_request_declined: "declined",
+      direct_request_withdrawn: "withdrawn",
+    }[event.type];
+    if (
+      expectedStatus &&
+      group.directStatus === expectedStatus &&
+      actorMatches(actor, group.directReviewedBy) &&
+      exactTime(group.directReviewedAt)
+    ) {
+      const recipients = event.type === "direct_request_withdrawn"
+        ? allOthers
+        : requester?.uid && requester.uid !== actorUid ? [requester] : [];
+      const action = expectedStatus === "active" ? "accepted" : expectedStatus;
+      return {
+        recipients,
+        preference: "expenses",
+        title: `Direct expense request ${action}`,
+        body: `${actor.name} ${action} the direct expense request`,
+        url: notificationUrl(group.id, "expenses"),
+      };
+    }
+    throw new Error("Direct request event does not match the saved ledger");
+  }
+
+  if (event.type.startsWith("direct_correction_")) {
+    if (group.kind !== "direct") throw new Error("Correction event does not match the saved ledger");
+    const request = (group.expenseCorrectionRequests ?? []).find(
+      (item) => item.id === event.entityId,
+    );
+    if (!request) throw new Error("Correction event does not match the saved ledger");
+    const requester = getMember(group, request.requestedBy);
+    if (
+      event.type === "direct_correction_requested" &&
+      request.status === "pending" &&
+      actorMatches(actor, request.requestedBy) &&
+      exactTime(request.requestedAt)
+    ) {
+      return {
+        recipients: allOthers,
+        preference: "expenses",
+        title: "Expense correction needs review",
+        body: `${actor.name}: ${request.reason}`,
+        url: notificationUrl(group.id, "expenses", { expense: request.expenseId }),
+      };
+    }
+    const expectedStatus = {
+      direct_correction_approved: "approved",
+      direct_correction_rejected: "rejected",
+      direct_correction_cancelled: "cancelled",
+    }[event.type];
+    if (
+      expectedStatus &&
+      request.status === expectedStatus &&
+      actorMatches(actor, request.reviewedBy) &&
+      exactTime(request.reviewedAt)
+    ) {
+      const recipients = expectedStatus === "cancelled"
+        ? allOthers
+        : requester?.uid && requester.uid !== actorUid ? [requester] : [];
+      return {
+        recipients,
+        preference: "expenses",
+        title: `Expense correction ${expectedStatus}`,
+        body: expectedStatus === "rejected" && request.rejectionReason
+          ? request.rejectionReason
+          : `${actor.name} ${expectedStatus} the expense correction`,
+        url: notificationUrl(group.id, "expenses", { expense: request.expenseId }),
+      };
+    }
+    throw new Error("Correction event does not match the saved ledger");
+  }
+
   if (event.type === "chat_message") {
     const message = (group.messages ?? []).find(
       (item) => item.id === event.entityId,

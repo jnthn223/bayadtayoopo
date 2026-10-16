@@ -215,6 +215,33 @@ export interface Expense {
   updatedBy?: string;
 }
 
+export interface ExpenseCorrectionRequest {
+  id: string;
+  expenseId: string;
+  reason: string;
+  proposedExpense: Expense;
+  requestedBy: string;
+  requestedAt: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+  dismissedByRequesterAt?: string;
+}
+
+export interface DirectHistoryDispute {
+  id: string;
+  entityType: "expense" | "payment";
+  entityId: string;
+  entityLabel: string;
+  reason: string;
+  raisedBy: string;
+  raisedAt: string;
+  status: "open" | "resolved";
+  resolvedBy?: string;
+  resolvedAt?: string;
+}
+
 export interface NotificationPreferences {
   payments: boolean;
   expenses: boolean;
@@ -313,7 +340,15 @@ export type NotificationType =
   | "payment_schedule_declined"
   | "payment_schedule_updated"
   | "chat_message"
-  | "member_joined";
+  | "member_joined"
+  | "direct_request"
+  | "direct_request_accepted"
+  | "direct_request_declined"
+  | "direct_request_withdrawn"
+  | "direct_correction_requested"
+  | "direct_correction_approved"
+  | "direct_correction_rejected"
+  | "direct_correction_cancelled";
 
 export interface NotificationDestination {
   tab: "expenses" | "balances" | "settle" | "chat";
@@ -338,6 +373,19 @@ export interface AppNotification {
 export interface Group {
   id: string;
   name: string;
+  /** Direct ledgers reuse the group accounting model but are presented person-first. */
+  kind?: "group" | "direct";
+  participantUids?: string[];
+  /** Known contact identity used for private cross-group context before they are invited. */
+  directContactUid?: string;
+  directStatus?: "draft" | "pending" | "active" | "declined" | "withdrawn";
+  directRequestedBy?: string;
+  directRequestedAt?: string;
+  directReviewedBy?: string;
+  directReviewedAt?: string;
+  directHistoryReviewedBy?: string;
+  directHistoryReviewedAt?: string;
+  directHistoryDisputes?: DirectHistoryDispute[];
   avatarSeed?: string;
   groupImageVersion?: string;
   adminId?: string;
@@ -354,6 +402,7 @@ export interface Group {
   memberClaimRequests?: MemberClaimRequest[];
   deletedExpenses?: DeletedExpense[];
   expenseDeletionRequests?: ExpenseDeletionRequest[];
+  expenseCorrectionRequests?: ExpenseCorrectionRequest[];
   messages?: ChatMessage[];
   createdAt: string;
   currency: string;

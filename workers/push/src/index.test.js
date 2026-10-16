@@ -106,4 +106,64 @@ describe("push worker event authorization", () => {
     expect(notification.recipients.map((member) => member.uid)).toEqual(["bob"]);
     expect(notification.title).toContain("approval");
   });
+
+  it("sends a direct expense request only to the other person", () => {
+    const direct = {
+      ...group,
+      kind: "direct",
+      members: group.members.slice(0, 2),
+      directStatus: "pending",
+      directRequestedBy: "alice",
+      directRequestedAt: "2026-07-28T01:00:00.000Z",
+      expenses: [{
+        id: "dinner",
+        description: "Dinner",
+        amount: 500,
+        createdBy: "alice-member",
+        paidBy: "alice-member",
+        splits: [],
+      }],
+    };
+    const notification = validateAndBuild(
+      direct,
+      {
+        type: "direct_request",
+        entityId: direct.id,
+        occurredAt: direct.directRequestedAt,
+      },
+      "alice",
+    );
+    expect(notification.recipients.map((member) => member.uid)).toEqual(["bob"]);
+    expect(notification.title).toBe("Direct expense request");
+    expect(notification.url).toContain("expense=dinner");
+  });
+
+  it("includes a direct correction rejection reason", () => {
+    const direct = {
+      ...group,
+      kind: "direct",
+      members: group.members.slice(0, 2),
+      expenseCorrectionRequests: [{
+        id: "fix",
+        expenseId: "expense",
+        reason: "Wrong amount",
+        requestedBy: "alice-member",
+        status: "rejected",
+        reviewedBy: "bob-member",
+        reviewedAt: "2026-07-28T02:00:00.000Z",
+        rejectionReason: "The receipt shows the original amount",
+      }],
+    };
+    const notification = validateAndBuild(
+      direct,
+      {
+        type: "direct_correction_rejected",
+        entityId: "fix",
+        occurredAt: "2026-07-28T02:00:00.000Z",
+      },
+      "bob",
+    );
+    expect(notification.recipients.map((member) => member.uid)).toEqual(["alice"]);
+    expect(notification.body).toBe("The receipt shows the original amount");
+  });
 });

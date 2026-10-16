@@ -39,6 +39,29 @@ export function collectPushEvents(
   const oldExpenses = new Map(
     before.expenses.map((expense) => [expense.id, expense]),
   );
+  if (
+    after.kind === "direct" &&
+    after.directStatus === "pending" &&
+    before.expenses.length === 0 &&
+    after.expenses.length > 0 &&
+    after.directRequestedBy &&
+    actorIds.has(after.directRequestedBy)
+  ) {
+    add("direct_request", after.id, after.directRequestedAt);
+  }
+  if (
+    after.kind === "direct" &&
+    before.directStatus !== after.directStatus &&
+    after.directReviewedBy &&
+    actorIds.has(after.directReviewedBy)
+  ) {
+    const type = {
+      active: "direct_request_accepted",
+      declined: "direct_request_declined",
+      withdrawn: "direct_request_withdrawn",
+    }[after.directStatus ?? ""] as NotificationType | undefined;
+    if (type) add(type, after.id, after.directReviewedAt);
+  }
   for (const expense of after.expenses) {
     const previous = oldExpenses.get(expense.id);
     if (
@@ -158,6 +181,26 @@ export function collectPushEvents(
       add("payment_schedule_declined", schedule.id, latest.at);
     } else {
       add("payment_schedule_updated", schedule.id, latest.at);
+    }
+  }
+
+  const oldCorrections = new Map(
+    (before.expenseCorrectionRequests ?? []).map((request) => [request.id, request]),
+  );
+  for (const request of after.expenseCorrectionRequests ?? []) {
+    const previous = oldCorrections.get(request.id);
+    if (!previous && actorIds.has(request.requestedBy)) {
+      add("direct_correction_requested", request.id, request.requestedAt);
+      continue;
+    }
+    if (!previous || previous.status === request.status) continue;
+    if (request.reviewedBy && actorIds.has(request.reviewedBy)) {
+      const type = {
+        approved: "direct_correction_approved",
+        rejected: "direct_correction_rejected",
+        cancelled: "direct_correction_cancelled",
+      }[request.status] as NotificationType | undefined;
+      if (type) add(type, request.id, request.reviewedAt);
     }
   }
 

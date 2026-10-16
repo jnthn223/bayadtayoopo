@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Check,
+  ChevronDown,
   Download,
   FileSpreadsheet,
   Plus,
@@ -38,10 +39,12 @@ import {
   formatCurrency,
   generateId,
   getExpensePayerId,
+  getOutstandingExpenseShares,
   getMemberById,
   isExpenseSettled,
   isGroupAdmin,
   getTotalExpenses,
+  getUnsettledTotal,
   MEMBER_COLORS,
   mergeGroupMember,
 } from "./utils";
@@ -49,12 +52,15 @@ import { upsertExpense } from "./quickAddExpense";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { QRModal } from "./QRModal";
 import { InviteModal } from "./InviteModal";
+import { DirectClaimInviteModal } from "./DirectClaimInviteModal";
 import { getGroupTourTarget, GroupTour } from "./GroupTour";
 import { MemberCatchUp } from "./MemberCatchUp";
+import { DirectHistoryReview } from "./DirectHistoryReview";
 import { GroupHeader } from "./GroupHeader";
 import type { GroupTab } from "./GroupHeader";
 import { GroupContent } from "./GroupContent";
 import { UserAvatar } from "./UserAvatar";
+import { buildOverallBalances } from "./overallBalances";
 import {
   findMentionRange,
   getMentionedMemberIds,
@@ -75,6 +81,8 @@ interface Props {
   onBack: () => void;
   onUpdate: (group: Group) => Promise<void> | void;
   onDelete: (groupId: string) => void;
+  allGroups?: Group[];
+  onOpenGroup?: (group: Group) => void;
 }
 
 export function GroupScreen({
@@ -84,6 +92,8 @@ export function GroupScreen({
   onBack,
   onUpdate,
   onDelete,
+  allGroups = [],
+  onOpenGroup,
 }: Props) {
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const chatReadKey = `bayadtayoopo:chat-read:${currentUser.id}:${group.id}`;
@@ -108,6 +118,7 @@ export function GroupScreen({
   const [tab, setTab] = useState<Tab>(destination?.tab ?? "expenses");
   const [groupTourStep, setGroupTourStep] = useState<number | null>(null);
   const [memberCatchUpOpen, setMemberCatchUpOpen] = useState(false);
+  const [directHistoryReviewOpen, setDirectHistoryReviewOpen] = useState(false);
   const [lastChatReadAt, setLastChatReadAt] = useState(
     initialChatReadAt,
   );
@@ -125,6 +136,9 @@ export function GroupScreen({
   const [addOpen, setAddOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [sharedGroupSummaryOpen, setSharedGroupSummaryOpen] = useState(true);
+  const [personExpenseScope, setPersonExpenseScope] = useState<"all" | "direct" | "shared">("all");
+  const [expenseTotalView, setExpenseTotalView] = useState<"unsettled" | "all">("unsettled");
   const [editGroupOpen, setEditGroupOpen] = useState(false);
   const [groupNameInput, setGroupNameInput] = useState(group.name);
   const [groupCurrencyInput, setGroupCurrencyInput] = useState(group.currency);
@@ -138,6 +152,13 @@ export function GroupScreen({
   const [groupPhotoError, setGroupPhotoError] = useState("");
   const [groupEditError, setGroupEditError] = useState("");
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
+  const [correctionReasonOpen, setCorrectionReasonOpen] = useState(false);
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [correctionReasonError, setCorrectionReasonError] = useState("");
+  const correctionReasonResolverRef = useRef<((reason: string) => void) | null>(null);
+  const [rejectCorrectionId, setRejectCorrectionId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [rejectionReasonError, setRejectionReasonError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteExpense, setDeleteExpense] = useState<Expense | null>(null);
   const [deleteReason, setDeleteReason] = useState("");
@@ -350,18 +371,37 @@ export function GroupScreen({
 
   useEffect(() => {
     setMemberCatchUpOpen(false);
+    if (group.kind === "direct") return;
     if (!currentMember?.claimedFromPlaceholder || !memberCatchUpKey) return;
     if (localStorage.getItem(memberCatchUpKey) === "complete") return;
     setMemberCatchUpOpen(true);
-  }, [currentMember?.claimedFromPlaceholder, memberCatchUpKey]);
+  }, [group.kind, currentMember?.claimedFromPlaceholder, memberCatchUpKey]);
+
+  useEffect(() => {
+    const shouldReview =
+      group.kind === "direct" &&
+      group.directStatus === "pending" &&
+      !!currentMember?.claimedFromPlaceholder &&
+      group.directRequestedBy !== currentMember.id &&
+      !group.directHistoryReviewedAt;
+    setDirectHistoryReviewOpen(shouldReview);
+  }, [
+    group.kind,
+    group.directStatus,
+    group.directRequestedBy,
+    group.directHistoryReviewedAt,
+    currentMember?.id,
+    currentMember?.claimedFromPlaceholder,
+  ]);
 
   useEffect(() => {
     setGroupTourStep(null);
+    if (group.kind === "direct") return;
     if (memberCatchUpOpen) return;
     if (localStorage.getItem(groupTourKey) === "complete") return;
     const timeout = window.setTimeout(() => setGroupTourStep(0), 700);
     return () => window.clearTimeout(timeout);
-  }, [groupTourKey, memberCatchUpOpen]);
+  }, [group.kind, groupTourKey, memberCatchUpOpen]);
 
   useEffect(() => {
     if (tab !== "chat") return;
@@ -397,12 +437,40 @@ export function GroupScreen({
     setMemberCatchUpOpen(false);
   }
 
+  async function resolveDirectHistoryDispute(disputeId: string) {
+    if (!currentMember) return;
+    const dispute = (group.directHistoryDisputes ?? []).find(
+      (candidate) => candidate.id === disputeId,
+    );
+    if (!dispute || dispute.raisedBy !== currentMember.id) return;
+    await onUpdate({
+      ...group,
+      directHistoryDisputes: (group.directHistoryDisputes ?? []).map((dispute) =>
+        dispute.id === disputeId
+          ? {
+              ...dispute,
+              status: "resolved" as const,
+              resolvedBy: currentMember.id,
+              resolvedAt: new Date().toISOString(),
+            }
+          : dispute,
+      ),
+    });
+  }
+
   async function handleAddExpense(expense: Expense, receiptFiles: File[]) {
     const existingExpense = group.expenses.find(
       (candidate) => candidate.id === expense.id,
     );
     if (existingExpense && isExpenseSettled(group, existingExpense)) {
-      throw new Error("Settled expenses cannot be edited.");
+      throw new Error("A settled direct expense needs a reversal request before it can be corrected.");
+    }
+    const directCorrectionReason =
+      existingExpense && group.kind === "direct" && group.directStatus === "active"
+        ? await requestCorrectionReason()
+        : undefined;
+    if (existingExpense && group.kind === "direct" && group.directStatus === "active" && !directCorrectionReason) {
+      throw new Error("CORRECTION_CANCELLED");
     }
     const uploadedReceipts = [];
     try {
@@ -425,6 +493,26 @@ export function GroupScreen({
         ...expense,
         receipts: [...(expense.receipts ?? []), ...uploadedReceipts],
       };
+      if (existingExpense && directCorrectionReason) {
+        await onUpdate({
+          ...group,
+          expenseCorrectionRequests: [
+            ...(group.expenseCorrectionRequests ?? []).filter(
+              (request) => request.expenseId !== expense.id || request.status !== "pending",
+            ),
+            {
+              id: generateId(),
+              expenseId: expense.id,
+              reason: directCorrectionReason,
+              proposedExpense: expenseWithReceipts,
+              requestedBy: currentMember?.id ?? currentUser.id,
+              requestedAt: new Date().toISOString(),
+              status: "pending",
+            },
+          ],
+        });
+        return;
+      }
       await onUpdate(upsertExpense(group, expenseWithReceipts));
     } catch (error) {
       uploadedReceipts.forEach((receipt) => {
@@ -432,6 +520,118 @@ export function GroupScreen({
       });
       throw error;
     }
+  }
+
+  function requestCorrectionReason(): Promise<string> {
+    setCorrectionReason("");
+    setCorrectionReasonError("");
+    setCorrectionReasonOpen(true);
+    return new Promise((resolve) => {
+      correctionReasonResolverRef.current = resolve;
+    });
+  }
+
+  function closeCorrectionReason(reason = "") {
+    correctionReasonResolverRef.current?.(reason);
+    correctionReasonResolverRef.current = null;
+    setCorrectionReasonOpen(false);
+    setCorrectionReasonError("");
+  }
+
+  function submitCorrectionReason() {
+    const reason = correctionReason.trim();
+    if (!reason) {
+      setCorrectionReasonError("Tell the other person what needs to be corrected.");
+      return;
+    }
+    closeCorrectionReason(reason);
+  }
+
+  async function reviewDirectCorrection(
+    requestId: string,
+    approve: boolean,
+    reason?: string,
+  ) {
+    if (!currentMember) return;
+    const request = (group.expenseCorrectionRequests ?? []).find(
+      (candidate) => candidate.id === requestId && candidate.status === "pending",
+    );
+    if (!request || request.requestedBy === currentMember.id) return;
+    const reviewedAt = new Date().toISOString();
+    const nextGroup = {
+      ...group,
+      expenses: approve
+        ? group.expenses.map((expense) =>
+            expense.id === request.expenseId ? request.proposedExpense : expense,
+          )
+        : group.expenses,
+      expenseCorrectionRequests: (group.expenseCorrectionRequests ?? []).map(
+        (candidate) => candidate.id === requestId
+          ? {
+              ...candidate,
+              status: approve ? "approved" as const : "rejected" as const,
+              reviewedBy: currentMember.id,
+              reviewedAt,
+              rejectionReason: approve ? undefined : reason,
+            }
+          : candidate,
+      ),
+    };
+    await onUpdate(nextGroup);
+  }
+
+  function openCorrectionRejection(requestId: string) {
+    setRejectCorrectionId(requestId);
+    setRejectionReason("");
+    setRejectionReasonError("");
+  }
+
+  function closeCorrectionRejection() {
+    setRejectCorrectionId(null);
+    setRejectionReason("");
+    setRejectionReasonError("");
+  }
+
+  async function submitCorrectionRejection() {
+    const reason = rejectionReason.trim();
+    if (!reason) {
+      setRejectionReasonError("Tell the requester why the correction was rejected.");
+      return;
+    }
+    if (!rejectCorrectionId) return;
+    const requestId = rejectCorrectionId;
+    closeCorrectionRejection();
+    await reviewDirectCorrection(requestId, false, reason);
+  }
+
+  async function cancelDirectCorrection(requestId: string) {
+    if (!currentMember) return;
+    await onUpdate({
+      ...group,
+      expenseCorrectionRequests: (group.expenseCorrectionRequests ?? []).map(
+        (request) => request.id === requestId && request.requestedBy === currentMember.id
+          ? {
+              ...request,
+              status: "cancelled" as const,
+              reviewedBy: currentMember.id,
+              reviewedAt: new Date().toISOString(),
+            }
+          : request,
+      ),
+    });
+  }
+
+  async function dismissRejectedCorrection(requestId: string) {
+    if (!currentMember) return;
+    await onUpdate({
+      ...group,
+      expenseCorrectionRequests: (group.expenseCorrectionRequests ?? []).map(
+        (request) =>
+          request.id === requestId && request.requestedBy === currentMember.id
+            ? { ...request, dismissedByRequesterAt: new Date().toISOString() }
+            : request,
+      ),
+    });
   }
 
   function openDeleteExpense(expense: Expense) {
@@ -1183,6 +1383,116 @@ export function GroupScreen({
   const sortedDates = Object.keys(expensesByDate).sort((a, b) =>
     b.localeCompare(a),
   );
+  const directPerson = group.kind === "direct"
+    ? group.members.find((member) => member.uid !== currentUser.id && member.id !== currentUser.id)
+    : undefined;
+  const directPersonUid = directPerson?.uid ?? group.directContactUid;
+  const sharedGroupBalances = directPersonUid
+    ? buildOverallBalances(allGroups.filter((candidate) => candidate.kind !== "direct"), currentUser)
+        .filter((balance) => balance.personUid === directPersonUid)
+    : [];
+  const sharedExpenseItems = directPersonUid
+    ? allGroups
+        .filter((candidate) => candidate.kind !== "direct")
+        .flatMap((candidate) => {
+          const me = candidate.members.find((member) => member.uid === currentUser.id || member.id === currentUser.id);
+          const person = candidate.members.find((member) => member.uid === directPersonUid);
+          if (!me || !person) return [];
+          return candidate.expenses
+            .filter((expense) => {
+              const participantIds = new Set([
+                getExpensePayerId(expense),
+                ...expense.splits.filter((split) => split.amount > 0).map((split) => split.memberId),
+              ]);
+              return participantIds.has(me.id) && participantIds.has(person.id);
+            })
+            .map((expense) => {
+              const payerId = getExpensePayerId(expense);
+              const relevantDebtorIds = [me.id, person.id].filter(
+                (memberId) =>
+                  memberId !== payerId &&
+                  expense.splits.some((split) => split.memberId === memberId && split.amount > 0.005),
+              );
+              const settled = relevantDebtorIds.length > 0 && relevantDebtorIds.every((memberId) =>
+                !getOutstandingExpenseShares(candidate, memberId).some(
+                  (allocation) => allocation.expenseId === expense.id && allocation.amount > 0.005,
+                ),
+              );
+              return { group: candidate, expense, settled };
+            });
+        })
+        .sort((a, b) => b.expense.date.localeCompare(a.expense.date))
+    : [];
+  const directExpenseTotal = group.expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const sharedExpenseTotals = sharedExpenseItems.reduce<Record<string, number>>((totals, item) => {
+    totals[item.group.currency] = (totals[item.group.currency] ?? 0) + item.expense.amount;
+    return totals;
+  }, {});
+  const allExpenseTotals = {
+    ...sharedExpenseTotals,
+    [group.currency]: (sharedExpenseTotals[group.currency] ?? 0) + directExpenseTotal,
+  };
+  const unsettledTotal = getUnsettledTotal(group, { includeProvisionalDirect: true });
+  const sharedUnsettledTotals = sharedGroupBalances.reduce<Record<string, number>>((totals, balance) => {
+    totals[balance.currency] = (totals[balance.currency] ?? 0) + Math.abs(balance.amount);
+    return totals;
+  }, {});
+  const allUnsettledTotals = {
+    ...sharedUnsettledTotals,
+    [group.currency]: (sharedUnsettledTotals[group.currency] ?? 0) + unsettledTotal,
+  };
+  const visibleSharedExpenseItems = expenseTotalView === "all"
+    ? sharedExpenseItems
+    : sharedExpenseItems.filter((item) => !item.settled);
+  const hiddenSettledSharedExpenseCount = sharedExpenseItems.length - visibleSharedExpenseItems.length;
+  const sharedPersonExpenseList = (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">From shared groups</p>
+        {expenseTotalView === "unsettled" && hiddenSettledSharedExpenseCount > 0 && <span className="text-[11px] text-muted-foreground">{hiddenSettledSharedExpenseCount} settled hidden</span>}
+      </div>
+      {visibleSharedExpenseItems.map(({ group: sourceGroup, expense, settled }) => (
+        <button
+          key={`${sourceGroup.id}:${expense.id}`}
+          type="button"
+          onClick={() => onOpenGroup?.(sourceGroup)}
+          className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-foreground">{expense.description}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{sourceGroup.name} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString()}</p>
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="block text-sm font-semibold text-foreground">{formatCurrency(expense.amount, sourceGroup.currency)}</span>
+            {settled && <span className="mt-0.5 block text-[10px] font-semibold uppercase text-emerald-600">Settled</span>}
+          </div>
+        </button>
+      ))}
+      {visibleSharedExpenseItems.length === 0 && (
+        <div className="rounded-xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
+          All shared-group expenses shown here are settled.
+        </div>
+      )}
+      <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">Shared-group expenses stay read-only here. Open the group to edit or settle them.</p>
+    </div>
+  );
+  const personExpensePrelude = group.kind === "direct" && sharedExpenseItems.length > 0 ? (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
+        {(["all", "direct", "shared"] as const).map((scope) => (
+          <button
+            key={scope}
+            type="button"
+            onClick={() => setPersonExpenseScope(scope)}
+            className={`rounded-lg px-2 py-2 text-xs font-semibold capitalize ${personExpenseScope === scope ? "bg-card text-primary shadow-sm" : "text-muted-foreground"}`}
+          >
+            {scope === "shared" ? "Groups" : scope}
+          </button>
+        ))}
+      </div>
+      {personExpenseScope === "shared" && sharedPersonExpenseList}
+    </div>
+  ) : undefined;
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -1190,6 +1500,7 @@ export function GroupScreen({
         group={group}
         currentUser={currentUser}
         total={total}
+        unsettledTotal={unsettledTotal}
         tab={tab}
         tourTarget={activeGroupTourTarget}
         unreadChatCount={unreadChatCount}
@@ -1200,7 +1511,7 @@ export function GroupScreen({
         onBack={onBack}
         onTabChange={handleTabChange}
         onManageMembers={() => setInviteOpen(true)}
-        onShare={() => setQrOpen(true)}
+        onShare={() => group.kind === "direct" ? setInviteOpen(true) : setQrOpen(true)}
         onCsvTools={() => {
           setCsvErrors([]);
           setCsvImportCount(null);
@@ -1210,7 +1521,175 @@ export function GroupScreen({
         onShowGuide={() => setGroupTourStep(0)}
         onEdit={openEditGroup}
         onDelete={() => setConfirmDelete(true)}
+        directExpenseSummary={group.kind === "direct" ? {
+          direct: [{ currency: group.currency, amount: directExpenseTotal }],
+          shared: Object.entries(sharedExpenseTotals).map(([currency, amount]) => ({ currency, amount })),
+          all: Object.entries(allExpenseTotals).map(([currency, amount]) => ({ currency, amount })),
+        } : undefined}
+        directUnsettledExpenseSummary={group.kind === "direct" ? {
+          direct: [{ currency: group.currency, amount: unsettledTotal }],
+          shared: Object.entries(sharedUnsettledTotals).map(([currency, amount]) => ({ currency, amount })),
+          all: Object.entries(allUnsettledTotals).map(([currency, amount]) => ({ currency, amount })),
+        } : undefined}
+        totalView={expenseTotalView}
+        onTotalViewChange={setExpenseTotalView}
       />
+      {group.kind === "direct" && group.directStatus === "pending" && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+          {directPerson?.uid
+            ? group.directRequestedBy === currentUser.id
+              ? `Waiting for ${directPerson.name} to review the provisional history. You can keep tracking while you wait.`
+              : "Review the history recorded before you joined. You can accept it or flag specific entries you don’t agree with."
+            : `${directPerson?.name ?? "This person"} has not claimed this history yet. Expenses and settlements are provisional until they review them.`}
+        </div>
+      )}
+      {group.kind === "direct" && group.directStatus === "draft" && (
+        <div className="border-b border-primary/15 bg-primary/5 px-4 py-3 text-xs leading-relaxed text-foreground">
+          This is your private draft. {directPerson?.name ?? "They"} does not need an account or approval yet, and nothing is shared until you send the personal invite.
+        </div>
+      )}
+      {group.kind === "direct" && (group.directHistoryDisputes ?? []).some((dispute) => dispute.status === "open") && (
+        <div className="space-y-3 border-b border-amber-200 bg-amber-50 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-amber-950">History items need discussion</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-amber-900/80">The history stays visible. Correct or reverse the underlying record if needed, then mark the flag resolved.</p>
+          </div>
+          {(group.directHistoryDisputes ?? []).filter((dispute) => dispute.status === "open").map((dispute) => (
+            <div key={dispute.id} className="rounded-2xl border border-amber-200 bg-card p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{dispute.entityLabel}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{dispute.reason}</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold uppercase text-amber-800">Flagged</span>
+              </div>
+              <div className={`mt-3 grid gap-2 ${dispute.raisedBy === currentMember?.id ? "grid-cols-2" : "grid-cols-1"}`}>
+                <button type="button" onClick={() => setTab(dispute.entityType === "expense" ? "expenses" : "settle")} className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-foreground">View record</button>
+                {dispute.raisedBy === currentMember?.id && (
+                  <button type="button" onClick={() => void resolveDirectHistoryDispute(dispute.id)} className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Mark resolved</button>
+                )}
+              </div>
+              {dispute.raisedBy !== currentMember?.id && <p className="mt-2 text-xs text-amber-800">The person who raised this flag will close it once the correction is agreed.</p>}
+            </div>
+          ))}
+        </div>
+      )}
+      {group.kind === "direct" && tab === "balances" && sharedGroupBalances.length > 0 && (
+        <div className="border-b border-border bg-primary/5 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => setSharedGroupSummaryOpen((open) => !open)}
+            className="flex w-full items-center gap-3 text-left"
+            aria-expanded={sharedGroupSummaryOpen}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-foreground">Across shared groups</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Summary only—settle each amount in its original group.</p>
+            </div>
+            <ChevronDown size={17} className={`text-muted-foreground transition-transform ${sharedGroupSummaryOpen ? "rotate-180" : ""}`} />
+          </button>
+          {sharedGroupSummaryOpen && (
+            <div className="mt-3 space-y-2">
+              {sharedGroupBalances.flatMap((balance) => balance.sources.map((source) => (
+                <button
+                  key={`${balance.key}:${source.group.id}`}
+                  type="button"
+                  onClick={() => onOpenGroup?.(source.group)}
+                  className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-left"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{source.group.name}</span>
+                  <span className={`text-sm font-semibold ${source.amount > 0 ? "text-emerald-600" : "text-destructive"}`}>
+                    {source.amount > 0 ? "Owes you " : "You owe "}{formatCurrency(Math.abs(source.amount), balance.currency)}
+                  </span>
+                </button>
+              )))}
+            </div>
+          )}
+        </div>
+      )}
+      {group.kind === "direct" && (group.expenseCorrectionRequests ?? []).some((request) => request.status === "pending") && (
+        <div className="border-b border-border bg-amber-50 px-4 py-3 space-y-3">
+          {(group.expenseCorrectionRequests ?? [])
+            .filter((request) => request.status === "pending")
+            .map((request) => {
+              const original = group.expenses.find((expense) => expense.id === request.expenseId);
+              const requestedByMe = request.requestedBy === currentMember?.id;
+              return (
+                <div key={request.id} className="rounded-2xl border border-amber-200 bg-card p-3">
+                  <p className="text-sm font-semibold text-foreground">Expense correction requested</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{request.reason}</p>
+                  <div className="mt-2 flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground line-through">
+                      {original ? `${original.description} · ${formatCurrency(original.amount, group.currency)}` : "Original expense"}
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {request.proposedExpense.description} · {formatCurrency(request.proposedExpense.amount, group.currency)}
+                    </span>
+                  </div>
+                  {requestedByMe ? (
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <p className="text-xs font-medium text-amber-800">Waiting for the other person’s approval</p>
+                      <button type="button" onClick={() => void cancelDirectCorrection(request.id)} className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold">Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => openCorrectionRejection(request.id)} className="rounded-xl border border-border px-3 py-2 text-xs font-semibold">Reject</button>
+                      <button type="button" onClick={() => void reviewDirectCorrection(request.id, true)} className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Approve correction</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+      )}
+      {group.kind === "direct" && (group.expenseCorrectionRequests ?? []).some(
+        (request) =>
+          request.status === "rejected" &&
+          request.requestedBy === currentMember?.id &&
+          !request.dismissedByRequesterAt,
+      ) && (
+        <div className="border-b border-border bg-destructive/5 px-4 py-3 space-y-3">
+          {(group.expenseCorrectionRequests ?? [])
+            .filter(
+              (request) =>
+                request.status === "rejected" &&
+                request.requestedBy === currentMember?.id &&
+                !request.dismissedByRequesterAt,
+            )
+            .map((request) => (
+              <div key={request.id} className="rounded-2xl border border-destructive/20 bg-card p-3">
+                <p className="text-sm font-semibold text-destructive">Correction rejected</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Your proposed change to “{request.proposedExpense.description}” wasn’t accepted.
+                </p>
+                <div className="mt-3 rounded-xl bg-destructive/5 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-destructive">Reason</p>
+                  <p className="mt-1 text-sm text-foreground">{request.rejectionReason || "No reason provided"}</p>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void dismissRejectedCorrection(request.id)}
+                    className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-muted-foreground"
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditExpense(request.proposedExpense);
+                      setAddOpen(true);
+                      void dismissRejectedCorrection(request.id);
+                    }}
+                    className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
+                  >
+                    Revise and try again
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
       {/* Content */}
       <GroupContent
         tab={tab}
@@ -1242,6 +1721,10 @@ export function GroupScreen({
         reviewPayment={reviewPayment}
         setCreatorPaidConfirmation={setCreatorPaidConfirmation}
         onReplyToMessage={replyToMessage}
+        expensePrelude={personExpensePrelude}
+        expensePostlude={group.kind === "direct" && personExpenseScope === "all" && sharedExpenseItems.length > 0 ? sharedPersonExpenseList : undefined}
+        hideDirectExpenseContent={group.kind === "direct" && personExpenseScope === "shared"}
+        expenseTotalView={expenseTotalView}
       />
       {/* FAB */}
       {tab === "chat" ? (
@@ -1340,6 +1823,12 @@ export function GroupScreen({
               <Send size={18} />
             </button>
           </div>
+        </div>
+      ) : group.kind === "direct" && group.directStatus === "pending" && group.directRequestedBy !== currentUser.id ? (
+        <div className="border-t border-border bg-card p-4">
+          <button type="button" onClick={() => setDirectHistoryReviewOpen(true)} className="w-full rounded-2xl bg-primary py-4 text-sm font-semibold text-primary-foreground">
+            Review earlier history
+          </button>
         </div>
       ) : (
         <div className="p-4 border-t border-border bg-card">
@@ -1735,6 +2224,142 @@ export function GroupScreen({
       </Dialog.Root>
 
       <Dialog.Root
+        open={correctionReasonOpen}
+        onOpenChange={(open) => !open && closeCorrectionReason()}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-[80] rounded-t-3xl bg-card shadow-2xl">
+            <div className="relative flex items-center justify-between border-b border-border px-5 pb-3 pt-4">
+              <div className="absolute left-1/2 top-2 h-1 w-10 -translate-x-1/2 rounded-full bg-border" />
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">
+                  Request a correction
+                </Dialog.Title>
+                <Dialog.Description className="mt-0.5 text-xs text-muted-foreground">
+                  The other person will review this before the expense changes.
+                </Dialog.Description>
+              </div>
+              <button
+                type="button"
+                onClick={() => closeCorrectionReason()}
+                className="rounded-full p-2 hover:bg-muted"
+                aria-label="Close correction request"
+              >
+                <X size={18} className="text-muted-foreground" />
+              </button>
+            </div>
+            <div className="space-y-4 p-5 pb-8">
+              <div>
+                <label htmlFor="direct-correction-reason" className="mb-1.5 block text-sm text-muted-foreground">
+                  What needs to be corrected?
+                </label>
+                <textarea
+                  id="direct-correction-reason"
+                  autoFocus
+                  rows={4}
+                  value={correctionReason}
+                  onChange={(event) => {
+                    setCorrectionReason(event.target.value);
+                    setCorrectionReasonError("");
+                  }}
+                  placeholder="e.g. I entered the wrong total amount"
+                  className="w-full resize-none rounded-2xl border border-border bg-input-background px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+                {correctionReasonError && (
+                  <p className="mt-1.5 text-xs text-destructive">{correctionReasonError}</p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => closeCorrectionReason()}
+                  className="rounded-2xl bg-muted py-3.5 text-sm font-medium text-foreground active:scale-95 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={submitCorrectionReason}
+                  className="rounded-2xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground active:scale-95 transition-all"
+                >
+                  Send request
+                </button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={!!rejectCorrectionId}
+        onOpenChange={(open) => !open && closeCorrectionRejection()}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-[80] rounded-t-3xl bg-card shadow-2xl">
+            <div className="relative flex items-center justify-between border-b border-border px-5 pb-3 pt-4">
+              <div className="absolute left-1/2 top-2 h-1 w-10 -translate-x-1/2 rounded-full bg-border" />
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">
+                  Reject correction?
+                </Dialog.Title>
+                <Dialog.Description className="mt-0.5 text-xs text-muted-foreground">
+                  Explain what needs to be fixed so they can submit a better correction.
+                </Dialog.Description>
+              </div>
+              <button
+                type="button"
+                onClick={closeCorrectionRejection}
+                className="rounded-full p-2 hover:bg-muted"
+                aria-label="Close rejection reason"
+              >
+                <X size={18} className="text-muted-foreground" />
+              </button>
+            </div>
+            <div className="space-y-4 p-5 pb-8">
+              <div>
+                <label htmlFor="direct-correction-rejection" className="mb-1.5 block text-sm text-muted-foreground">
+                  Reason for rejection
+                </label>
+                <textarea
+                  id="direct-correction-rejection"
+                  autoFocus
+                  rows={4}
+                  value={rejectionReason}
+                  onChange={(event) => {
+                    setRejectionReason(event.target.value);
+                    setRejectionReasonError("");
+                  }}
+                  placeholder="e.g. The original amount matches the receipt"
+                  className="w-full resize-none rounded-2xl border border-border bg-input-background px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+                {rejectionReasonError && (
+                  <p className="mt-1.5 text-xs text-destructive">{rejectionReasonError}</p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={closeCorrectionRejection}
+                  className="rounded-2xl bg-muted py-3.5 text-sm font-medium text-foreground active:scale-95 transition-all"
+                >
+                  Keep reviewing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitCorrectionRejection()}
+                  className="rounded-2xl bg-destructive py-3.5 text-sm font-semibold text-destructive-foreground active:scale-95 transition-all"
+                >
+                  Reject correction
+                </button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
         open={!!creatorPaidConfirmation}
         onOpenChange={(open) => !open && setCreatorPaidConfirmation(null)}
       >
@@ -1901,27 +2526,40 @@ export function GroupScreen({
         editExpense={editExpense}
         isAdmin={isAdmin}
       />
+      {group.kind === "direct" && currentMember && (
+        <DirectHistoryReview
+          open={directHistoryReviewOpen}
+          group={group}
+          member={currentMember}
+          onClose={() => setDirectHistoryReviewOpen(false)}
+          onComplete={onUpdate}
+        />
+      )}
       <QRModal
         group={group}
         open={qrOpen}
         onClose={() => setQrOpen(false)}
         isAdmin={isAdmin}
       />
-      <InviteModal
-        group={group}
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        isAdmin={isAdmin}
-        currentMemberId={currentMember?.id}
-        onAddPending={handleAddPendingMember}
-        onMergePending={handleMergePendingMember}
-        onMergeMember={handleMergeJoinedMember}
-        onSetAutoApproveClaims={handleSetAutoApproveClaims}
-        onReviewClaimRequest={handleReviewClaimRequest}
-        onDeletePending={handleDeletePendingMember}
-        onRemoveMember={handleRemoveMember}
-        onSetMemberAdmin={handleSetMemberAdmin}
-      />
+      {group.kind === "direct" && directPerson && !directPerson.uid ? (
+        <DirectClaimInviteModal group={group} person={directPerson} open={inviteOpen} onClose={() => setInviteOpen(false)} />
+      ) : (
+        <InviteModal
+          group={group}
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          isAdmin={isAdmin}
+          currentMemberId={currentMember?.id}
+          onAddPending={handleAddPendingMember}
+          onMergePending={handleMergePendingMember}
+          onMergeMember={handleMergeJoinedMember}
+          onSetAutoApproveClaims={handleSetAutoApproveClaims}
+          onReviewClaimRequest={handleReviewClaimRequest}
+          onDeletePending={handleDeletePendingMember}
+          onRemoveMember={handleRemoveMember}
+          onSetMemberAdmin={handleSetMemberAdmin}
+        />
+      )}
     </div>
   );
 }

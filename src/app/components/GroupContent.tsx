@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowUpDown,
@@ -88,6 +88,10 @@ interface Props {
     SetStateAction<{ expense: Expense; split: Split } | null>
   >;
   onReplyToMessage: (messageId: string) => void;
+  expensePrelude?: ReactNode;
+  expensePostlude?: ReactNode;
+  hideDirectExpenseContent?: boolean;
+  expenseTotalView?: "unsettled" | "all";
 }
 
 export function GroupContent({
@@ -120,6 +124,10 @@ export function GroupContent({
   reviewPayment,
   setCreatorPaidConfirmation,
   onReplyToMessage,
+  expensePrelude,
+  expensePostlude,
+  hideDirectExpenseContent = false,
+  expenseTotalView = "all",
 }: Props) {
   const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false);
   const settlementModeKey = `bayadtayoopo:settlement-mode:${group.id}:${currentMember?.uid ?? currentMember?.id ?? "guest"}`;
@@ -281,8 +289,9 @@ export function GroupContent({
             expense.category === categoryFilter) &&
           (payerFilter === "all" ||
             getExpensePayerId(expense) === payerFilter) &&
-          (settlementFilter === "all" ||
-            (settlementFilter === "settled" ? settled : !settled))
+          (settlementFilter === "all"
+            ? expenseTotalView === "all" || !settled
+            : settlementFilter === "settled" ? settled : !settled)
         );
       }),
     [
@@ -291,6 +300,7 @@ export function GroupContent({
       group.expenses,
       payerFilter,
       settlementFilter,
+      expenseTotalView,
     ],
   );
   const expenseSections = useMemo(() => {
@@ -330,6 +340,13 @@ export function GroupContent({
   ].filter(Boolean).length;
   const amountSorted =
     expenseSort === "highest" || expenseSort === "lowest";
+  const allExpensesHiddenAsSettled =
+    expenseTotalView === "unsettled" &&
+    settlementFilter === "all" &&
+    categoryFilter === "all" &&
+    payerFilter === "all" &&
+    group.expenses.length > 0 &&
+    group.expenses.every((expense) => expenseSettlementById.get(expense.id) === true);
 
   function clearExpenseFilters() {
     setCategoryFilter("all");
@@ -339,9 +356,11 @@ export function GroupContent({
 
   return (
     <>
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "expenses" && (
           <div className="p-4 space-y-6">
+            {expensePrelude}
+            {!hideDirectExpenseContent && <>
             {group.expenses.length > 0 && (
               <div className="space-y-3">
                 <div className="flex gap-2">
@@ -480,18 +499,20 @@ export function GroupContent({
                   <Filter size={22} className="text-muted-foreground" />
                 </div>
                 <p className="font-medium text-foreground">
-                  No matching expenses
+                  {allExpensesHiddenAsSettled ? "Everything is settled" : "No matching expenses"}
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Try changing or clearing your filters.
+                  {allExpensesHiddenAsSettled
+                    ? "Switch to All tracked under the group name to see the complete history."
+                    : "Try changing or clearing your filters."}
                 </p>
-                <button
+                {!allExpensesHiddenAsSettled && <button
                   type="button"
                   onClick={clearExpenseFilters}
                   className="mt-4 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
                 >
                   Clear filters
-                </button>
+                </button>}
               </div>
             ) : (
               expenseSections.map((section) => (
@@ -713,6 +734,8 @@ export function GroupContent({
                 </div>
               ))
             )}
+            </>}
+            {expensePostlude}
           </div>
         )}
 

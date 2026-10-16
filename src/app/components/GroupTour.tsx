@@ -62,7 +62,7 @@ export function GroupTour({
       icon: Receipt,
       eyebrow: "Start tracking immediately",
       title: "Add the expense now",
-      copy: "Choose who paid, split equally or enter custom amounts, include pending members, and optionally attach the original receipt for transparency.",
+      copy: "Choose who paid, split equally or enter custom amounts, include pending members, and optionally attach the receipt. The list starts on Unsettled; switch to All tracked under the group name to see settled history with clear labels.",
     },
     {
       icon: CreditCard,

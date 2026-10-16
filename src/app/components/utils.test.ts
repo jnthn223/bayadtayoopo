@@ -20,6 +20,7 @@ import {
   getMemberById,
   getOutstandingExpenseShares,
   getTotalExpenses,
+  getUnsettledTotal,
   getUnsettledPaymentSummary,
   isExpenseSettled,
   mergeGroupMember,
@@ -71,6 +72,45 @@ const group: Group = {
 };
 
 describe("expense business logic", () => {
+  it("uses the remaining amount after partial payments for the unsettled total", () => {
+    const partial: Group = {
+      id: "partial",
+      name: "Partial",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      currency: "PHP",
+      members: [
+        { id: "alice", name: "Alice", color: "#111" },
+        { id: "bob", name: "Bob", color: "#222" },
+      ],
+      expenses: [{
+        id: "meal",
+        description: "Meal",
+        amount: 100,
+        paidBy: "alice",
+        splitType: "equal",
+        category: "food",
+        date: "2026-01-01",
+        splits: [
+          { memberId: "alice", amount: 50 },
+          { memberId: "bob", amount: 50 },
+        ],
+      }],
+      payments: [{
+        id: "partial-payment",
+        fromMemberId: "bob",
+        toMemberId: "alice",
+        amount: 20,
+        method: "Cash",
+        allocations: [{ expenseId: "meal", expenseDescription: "Meal", amount: 20 }],
+        status: "confirmed",
+        submittedAt: "2026-01-02T00:00:00.000Z",
+        submittedBy: "bob",
+      }],
+    };
+    expect(getTotalExpenses(partial)).toBe(100);
+    expect(getUnsettledTotal(partial)).toBe(30);
+  });
+
   it("groups direct obligations by the member who originally paid", () => {
     expect(computeDirectExpenseSettlements(group)).toEqual([
       {

@@ -210,6 +210,48 @@ describe("group merge business logic", () => {
     expect(compacted.deletedExpenses?.[0].expenseId).toBe("expense-5");
     expect(compacted.deletedExpenses?.at(-1)?.expenseId).toBe("expense-104");
   });
+
+  it("preserves a direct request approval through the safe merge", () => {
+    const base = group({ kind: "direct", directStatus: "pending" });
+    const changed = group({
+      kind: "direct",
+      directStatus: "active",
+      directReviewedBy: "bob",
+      directReviewedAt: timestamp(3),
+    });
+    const merged = mergeGroupChanges(base, changed, base);
+
+    expect(merged.directStatus).toBe("active");
+    expect(merged.directReviewedBy).toBe("bob");
+    expect(merged.directReviewedAt).toBe(timestamp(3));
+  });
+
+  it("preserves a direct claim review and its flagged history through the safe merge", () => {
+    const base = group({ kind: "direct", directStatus: "pending" });
+    const changed = group({
+      kind: "direct",
+      directStatus: "active",
+      directHistoryReviewedBy: "bob",
+      directHistoryReviewedAt: timestamp(4),
+      directHistoryDisputes: [{
+        id: "dispute-1",
+        entityType: "expense",
+        entityId: "expense-1",
+        entityLabel: "Dinner",
+        reason: "I was not included in this expense.",
+        raisedBy: "bob",
+        raisedAt: timestamp(4),
+        status: "open",
+      }],
+    });
+    const merged = mergeGroupChanges(base, changed, base);
+
+    expect(merged.directStatus).toBe("active");
+    expect(merged.directHistoryReviewedBy).toBe("bob");
+    expect(merged.directHistoryReviewedAt).toBe(timestamp(4));
+    expect(merged.directHistoryDisputes).toHaveLength(1);
+    expect(merged.directHistoryDisputes?.[0].reason).toContain("not included");
+  });
 });
 
 function message(id: string, minute: number): ChatMessage {
