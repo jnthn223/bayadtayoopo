@@ -10,6 +10,10 @@ import {
   Receipt,
   Trash2,
   Users,
+  Archive,
+  Eye,
+  EyeOff,
+  RotateCcw,
 } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -42,6 +46,12 @@ interface Props {
   onShowGuide: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onArchive: () => void;
+  archiveDisabledReason?: string;
+  onArchiveBlocked?: (reason: string) => void;
+  includeArchivedGroups?: boolean;
+  onIncludeArchivedGroupsChange?: (include: boolean) => void;
+  isArchived?: boolean;
   directExpenseSummary?: {
     direct: Array<{ currency: string; amount: number }>;
     shared: Array<{ currency: string; amount: number }>;
@@ -83,6 +93,12 @@ export function GroupHeader({
   onShowGuide,
   onEdit,
   onDelete,
+  onArchive,
+  archiveDisabledReason,
+  onArchiveBlocked,
+  includeArchivedGroups = false,
+  onIncludeArchivedGroupsChange,
+  isArchived = false,
   directExpenseSummary,
   directUnsettledExpenseSummary,
   totalView: controlledTotalView,
@@ -139,7 +155,7 @@ export function GroupHeader({
               <QrCode size={19} />
             </HeaderAction>}
 
-            {!isDirect && <DropdownMenu.Root>
+            <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
                 <button className="p-2 rounded-full hover:bg-muted transition-colors" aria-label="Group menu">
                   <MoreVertical size={19} className="text-foreground" />
@@ -151,13 +167,26 @@ export function GroupHeader({
                   sideOffset={6}
                   className="z-50 min-w-[170px] bg-card border border-border rounded-2xl shadow-xl overflow-hidden py-1"
                 >
-                  <MenuItem icon={FileSpreadsheet} onSelect={onCsvTools}>
+                  {!isDirect && <MenuItem icon={FileSpreadsheet} onSelect={onCsvTools}>
                     CSV Tools
-                  </MenuItem>
-                  <MenuItem icon={HelpCircle} onSelect={onShowGuide}>
+                  </MenuItem>}
+                  {!isDirect && <MenuItem icon={HelpCircle} onSelect={onShowGuide}>
                     Show group guide
+                  </MenuItem>}
+                  {isDirect && onIncludeArchivedGroupsChange && (
+                    <MenuItem icon={includeArchivedGroups ? EyeOff : Eye} onSelect={() => onIncludeArchivedGroupsChange(!includeArchivedGroups)}>
+                      {includeArchivedGroups ? "Hide archived groups" : "Include archived groups"}
+                    </MenuItem>
+                  )}
+                  <MenuItem icon={isArchived ? RotateCcw : Archive} onSelect={() => {
+                    if (archiveDisabledReason) onArchiveBlocked?.(archiveDisabledReason);
+                    else onArchive();
+                  }}>
+                    {isArchived
+                      ? (isDirect ? "Unarchive person" : "Unarchive group")
+                      : (isDirect ? "Archive person" : "Archive group")}
                   </MenuItem>
-                  {isAdmin && (
+                  {!isDirect && isAdmin && (
                     <>
                       <MenuItem icon={Edit2} onSelect={onEdit}>
                         Edit Details
@@ -171,7 +200,7 @@ export function GroupHeader({
                   )}
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>
-            </DropdownMenu.Root>}
+            </DropdownMenu.Root>
           </div>
         </div>
 
@@ -195,7 +224,10 @@ export function GroupHeader({
             />
           )}
           <div className="min-w-0">
-            <h1 className="text-foreground mb-1 truncate">{directPerson?.name ?? group.name}</h1>
+            <h1 className="mb-1 flex items-center gap-2 text-foreground">
+              <span className="truncate">{directPerson?.name ?? group.name}</span>
+              {isArchived && <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Archived</span>}
+            </h1>
             {isDirect ? (
               <div className="space-y-1.5 text-xs text-muted-foreground">
                 <TotalViewToggle value={totalView} onChange={setTotalView} />

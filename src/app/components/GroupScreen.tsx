@@ -61,6 +61,7 @@ import type { GroupTab } from "./GroupHeader";
 import { GroupContent } from "./GroupContent";
 import { UserAvatar } from "./UserAvatar";
 import { buildOverallBalances } from "./overallBalances";
+import { ArchiveBlockedDialog } from "./ArchiveBlockedDialog";
 import {
   findMentionRange,
   getMentionedMemberIds,
@@ -83,6 +84,8 @@ interface Props {
   onDelete: (groupId: string) => void;
   allGroups?: Group[];
   onOpenGroup?: (group: Group) => void;
+  onUpdateUser: (user: CurrentUser) => void;
+  onArchiveGroup: (group: Group) => void;
 }
 
 export function GroupScreen({
@@ -94,10 +97,14 @@ export function GroupScreen({
   onDelete,
   allGroups = [],
   onOpenGroup,
+  onUpdateUser,
+  onArchiveGroup,
 }: Props) {
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const chatReadKey = `bayadtayoopo:chat-read:${currentUser.id}:${group.id}`;
   const groupTourKey = `bayadtayoopo:group-tour:${currentUser.id}:${group.id}`;
+  const [includeArchivedGroups, setIncludeArchivedGroups] = useState(false);
+  const [archiveBlockedReason, setArchiveBlockedReason] = useState<string>();
   const messages = [...(Array.isArray(group.messages) ? group.messages : [])]
     .filter(
       (message) =>
@@ -1387,13 +1394,17 @@ export function GroupScreen({
     ? group.members.find((member) => member.uid !== currentUser.id && member.id !== currentUser.id)
     : undefined;
   const directPersonUid = directPerson?.uid ?? group.directContactUid;
+  const archivedGroupIds = new Set(currentUser.archivedGroupIds ?? []);
+  const isArchived = archivedGroupIds.has(group.id);
+  const sharedSourceGroups = allGroups.filter(
+    (candidate) => candidate.kind !== "direct" && (includeArchivedGroups || !archivedGroupIds.has(candidate.id)),
+  );
   const sharedGroupBalances = directPersonUid
-    ? buildOverallBalances(allGroups.filter((candidate) => candidate.kind !== "direct"), currentUser)
+    ? buildOverallBalances(sharedSourceGroups, currentUser)
         .filter((balance) => balance.personUid === directPersonUid)
     : [];
   const sharedExpenseItems = directPersonUid
-    ? allGroups
-        .filter((candidate) => candidate.kind !== "direct")
+    ? sharedSourceGroups
         .flatMap((candidate) => {
           const me = candidate.members.find((member) => member.uid === currentUser.id || member.id === currentUser.id);
           const person = candidate.members.find((member) => member.uid === directPersonUid);
@@ -1441,6 +1452,38 @@ export function GroupScreen({
     ...sharedUnsettledTotals,
     [group.currency]: (sharedUnsettledTotals[group.currency] ?? 0) + unsettledTotal,
   };
+  const currentUserConfirmedBalance = currentMember
+    ? computeBalances(group).find((balance) => balance.memberId === currentMember.id)?.net ?? 0
+    : 0;
+  const directSharedBalanceExists = group.kind === "direct" && directPersonUid
+    ? buildOverallBalances(allGroups.filter((candidate) => candidate.kind !== "direct"), currentUser)
+        .some((balance) => balance.personUid === directPersonUid && Math.abs(balance.amount) >= 0.005)
+    : false;
+  const archiveDisabledReason = Math.abs(currentUserConfirmedBalance) >= 0.005
+    ? group.kind === "direct"
+      ? "Settle this direct balance before archiving the person."
+      : "Settle your balance in this group before archiving it."
+    : directSharedBalanceExists
+      ? "Settle your shared-group balances with this person before archiving them."
+      : undefined;
+  const groupHasUnsettledBalances = computeBalances(group).some(
+    (balance) => Math.abs(balance.net) >= 0.005,
+  );
+  function handleArchiveCurrent() {
+    if (isArchived) {
+      onUpdateUser({
+        ...currentUser,
+        archivedGroupIds: (currentUser.archivedGroupIds ?? []).filter((id) => id !== group.id),
+      });
+      return;
+    }
+    if (archiveDisabledReason) {
+      setArchiveBlockedReason(archiveDisabledReason);
+      return;
+    }
+    onArchiveGroup(group);
+    onBack();
+  }
   const visibleSharedExpenseItems = expenseTotalView === "all"
     ? sharedExpenseItems
     : sharedExpenseItems.filter((item) => !item.settled);
@@ -1460,7 +1503,12 @@ export function GroupScreen({
         >
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-foreground">{expense.description}</p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{sourceGroup.name} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString()}</p>
+            <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+              <span className="truncate">{sourceGroup.name} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString()}</span>
+              {archivedGroupIds.has(sourceGroup.id) && (
+                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">Archived group</span>
+              )}
+            </p>
           </div>
           <div className="shrink-0 text-right">
             <span className="block text-sm font-semibold text-foreground">{formatCurrency(expense.amount, sourceGroup.currency)}</span>
@@ -1496,6 +1544,7 @@ export function GroupScreen({
 
   return (
     <div className="flex flex-col h-full bg-background">
+      <ArchiveBlockedDialog reason={archiveBlockedReason} onClose={() => setArchiveBlockedReason(undefined)} />
       <GroupHeader
         group={group}
         currentUser={currentUser}
@@ -1521,6 +1570,12 @@ export function GroupScreen({
         onShowGuide={() => setGroupTourStep(0)}
         onEdit={openEditGroup}
         onDelete={() => setConfirmDelete(true)}
+        onArchive={handleArchiveCurrent}
+        archiveDisabledReason={isArchived ? undefined : archiveDisabledReason}
+        onArchiveBlocked={setArchiveBlockedReason}
+        isArchived={isArchived}
+        includeArchivedGroups={includeArchivedGroups}
+        onIncludeArchivedGroupsChange={group.kind === "direct" ? setIncludeArchivedGroups : undefined}
         directExpenseSummary={group.kind === "direct" ? {
           direct: [{ currency: group.currency, amount: directExpenseTotal }],
           shared: Object.entries(sharedExpenseTotals).map(([currency, amount]) => ({ currency, amount })),
@@ -1597,7 +1652,10 @@ export function GroupScreen({
                   onClick={() => onOpenGroup?.(source.group)}
                   className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-left"
                 >
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{source.group.name}</span>
+                  <span className="min-w-0 flex flex-1 items-center gap-1.5 text-sm font-medium text-foreground">
+                    <span className="truncate">{source.group.name}</span>
+                    {archivedGroupIds.has(source.group.id) && <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">Archived group</span>}
+                  </span>
                   <span className={`text-sm font-semibold ${source.amount > 0 ? "text-emerald-600" : "text-destructive"}`}>
                     {source.amount > 0 ? "Owes you " : "You owe "}{formatCurrency(Math.abs(source.amount), balance.currency)}
                   </span>
@@ -1877,10 +1935,24 @@ export function GroupScreen({
               Delete "{group.name}"?
             </Dialog.Title>
             <Dialog.Description className="text-sm text-muted-foreground mb-5">
-              This will permanently delete the group and all{" "}
-              {group.expenses.length} expense
-              {group.expenses.length !== 1 ? "s" : ""}. This cannot be undone.
+              {groupHasUnsettledBalances
+                ? "This group still has unsettled balances. Settle everyone’s balance before permanently deleting it."
+                : <>This will permanently delete the group and all {group.expenses.length} expense{group.expenses.length !== 1 ? "s" : ""}. This cannot be undone.</>}
             </Dialog.Description>
+            <div className="mb-5 rounded-2xl bg-primary/5 p-4">
+              <p className="text-sm font-semibold text-foreground">Just cleaning up your Home?</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Consider archiving this group instead. Its history remains safe and other members are not affected.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDelete(false);
+                  handleArchiveCurrent();
+                }}
+                className="mt-3 text-xs font-semibold text-primary"
+              >
+                Archive group instead
+              </button>
+            </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDelete(false)}
@@ -1890,9 +1962,10 @@ export function GroupScreen({
               </button>
               <button
                 onClick={handleDeleteGroup}
-                className="flex-1 py-3.5 rounded-2xl bg-destructive text-white text-sm font-semibold transition-all active:scale-95"
+                disabled={groupHasUnsettledBalances}
+                className="flex-1 py-3.5 rounded-2xl bg-destructive text-white text-sm font-semibold transition-all active:scale-95 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:active:scale-100"
               >
-                Delete
+                {groupHasUnsettledBalances ? "Settle balances first" : "Delete"}
               </button>
             </div>
           </Dialog.Content>

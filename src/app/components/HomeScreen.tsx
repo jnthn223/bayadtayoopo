@@ -15,6 +15,7 @@ import {
   Users,
   Clock3,
   UserRoundPlus,
+  Archive,
 } from "lucide-react";
 import type { AppNotification, Group, CurrentUser } from "./types";
 import { BrandWordmark } from "./Brand";
@@ -25,11 +26,14 @@ import {
   getMemberById,
   getTotalExpenses,
   getUnsettledPaymentSummary,
+  computeBalances,
 } from "./utils";
 import { CreateGroupModal } from "./CreateGroupModal";
 import { NotificationInbox } from "./NotificationInbox";
 import { DirectExpenseModal } from "./DirectExpenseModal";
 import { getDirectContact } from "./directExpenses";
+import { buildOverallBalances } from "./overallBalances";
+import { ArchiveBlockedDialog } from "./ArchiveBlockedDialog";
 
 interface Props {
   groups: Group[];
@@ -47,6 +51,7 @@ interface Props {
   notificationReadAt?: string;
   onOpenNotification: (notification: AppNotification) => void;
   onMarkAllNotificationsRead: () => void;
+  onArchiveGroup: (group: Group) => void;
 }
 
 export function HomeScreen({
@@ -62,11 +67,13 @@ export function HomeScreen({
   notificationReadAt,
   onOpenNotification,
   onMarkAllNotificationsRead,
+  onArchiveGroup,
 }: Props) {
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const [createOpen, setCreateOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [directExpenseOpen, setDirectExpenseOpen] = useState(false);
+  const [archiveBlockedReason, setArchiveBlockedReason] = useState<string>();
   const [searchQuery, setSearchQuery] = useState("");
   const [peopleOpen, setPeopleOpen] = useState(() => localStorage.getItem(`bayadtayoopo:home:people-open:${user.id}`) !== "false");
   const [groupsOpen, setGroupsOpen] = useState(() => localStorage.getItem(`bayadtayoopo:home:groups-open:${user.id}`) !== "false");
@@ -78,12 +85,13 @@ export function HomeScreen({
     }
   });
   const normalizedSearch = searchQuery.trim().toLowerCase();
+  const archivedIds = new Set(user.archivedGroupIds ?? []);
   const sortPinned = (items: Group[]) => [...items].sort((a, b) => Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id)));
   const ordinaryGroups = sortPinned(groups.filter(
-    (group) => group.kind !== "direct" && group.name.toLowerCase().includes(normalizedSearch),
+    (group) => !archivedIds.has(group.id) && group.kind !== "direct" && group.name.toLowerCase().includes(normalizedSearch),
   ));
   const directGroups = sortPinned(groups.filter(
-    (group) => group.kind === "direct" && !["declined", "withdrawn"].includes(group.directStatus ?? ""),
+    (group) => !archivedIds.has(group.id) && group.kind === "direct" && !["declined", "withdrawn"].includes(group.directStatus ?? ""),
   ).filter((group) => {
     const person = getDirectContact(group, user.id);
     return !normalizedSearch || person?.name.toLowerCase().includes(normalizedSearch);
@@ -104,7 +112,45 @@ export function HomeScreen({
       return next;
     });
   }
+
+  function currentUserBalance(group: Group): number {
+    const member = [...group.members, ...(group.formerMembers ?? [])].find(
+      (candidate) => candidate.uid === user.id || candidate.id === user.id,
+    );
+    if (!member) return 0;
+    return computeBalances(group).find((balance) => balance.memberId === member.id)?.net ?? 0;
+  }
+
+  function archiveBlockReason(group: Group): string | undefined {
+    if (group.kind !== "direct") {
+      return Math.abs(currentUserBalance(group)) >= 0.005
+        ? "Settle your balance in this group before archiving it."
+        : undefined;
+    }
+    if (Math.abs(currentUserBalance(group)) >= 0.005) {
+      return "Settle this direct balance before archiving the person."
+    }
+    const person = getDirectContact(group, user.id);
+    if (person?.uid) {
+      const hasSharedBalance = buildOverallBalances(
+        groups.filter((candidate) => candidate.kind !== "direct"),
+        user,
+      ).some((balance) => balance.personUid === person.uid && Math.abs(balance.amount) >= 0.005);
+      if (hasSharedBalance) return "Settle your shared-group balances with this person before archiving them.";
+    }
+    return undefined;
+  }
+
+  function archive(group: Group) {
+    const reason = archiveBlockReason(group);
+    if (reason) {
+      setArchiveBlockedReason(reason);
+      return;
+    }
+    onArchiveGroup(group);
+  }
   const activity = groups
+    .filter((group) => !archivedIds.has(group.id))
     .filter((group) => group.kind !== "direct" || group.directStatus === "active")
     .flatMap((group) => {
       const expenseItems = group.expenses
@@ -178,6 +224,7 @@ export function HomeScreen({
 
   return (
     <div className="flex flex-col h-full bg-background">
+      <ArchiveBlockedDialog reason={archiveBlockedReason} onClose={() => setArchiveBlockedReason(undefined)} />
       {/* Header */}
       <div className="bg-card border-b border-border px-5 pt-14 pb-6 sm:px-8">
         <div className="flex items-center justify-between">
@@ -316,6 +363,10 @@ export function HomeScreen({
                                   <Pin size={15} fill={pinnedIds.has(group.id) ? "currentColor" : "none"} />
                                   {pinnedIds.has(group.id) ? "Unpin person" : "Pin person"}
                                 </DropdownMenu.Item>
+                                <DropdownMenu.Item onSelect={() => archive(group)} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground outline-none hover:bg-muted focus:bg-muted">
+                                  <Archive size={15} />
+                                  Archive person
+                                </DropdownMenu.Item>
                               </DropdownMenu.Content>
                             </DropdownMenu.Portal>
                           </DropdownMenu.Root>
@@ -411,6 +462,10 @@ export function HomeScreen({
                         <DropdownMenu.Item onSelect={() => togglePin(group.id)} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground outline-none hover:bg-muted focus:bg-muted">
                           <Pin size={15} fill={pinnedIds.has(group.id) ? "currentColor" : "none"} />
                           {pinnedIds.has(group.id) ? "Unpin group" : "Pin group"}
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item onSelect={() => archive(group)} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground outline-none hover:bg-muted focus:bg-muted">
+                          <Archive size={15} />
+                          Archive group
                         </DropdownMenu.Item>
                       </DropdownMenu.Content>
                     </DropdownMenu.Portal>

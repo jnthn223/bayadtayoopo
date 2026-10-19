@@ -305,6 +305,7 @@ export interface CurrentUser {
   paymentReminderDigest?: PaymentReminderDigest;
   productUpdateEmailsEnabled?: boolean;
   seenAnnouncementIds?: string[];
+  archivedGroupIds?: string[];
 }
 
 export interface UserProfile {
@@ -319,6 +320,7 @@ export interface UserProfile {
   paymentReminderDigest?: PaymentReminderDigest;
   productUpdateEmailsEnabled?: boolean;
   seenAnnouncementIds?: string[];
+  archivedGroupIds?: string[];
 }
 
 export type NotificationType =

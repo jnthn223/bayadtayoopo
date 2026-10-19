@@ -129,6 +129,11 @@ export async function loadOrCreateUserProfile(uid: string, verifiedEmail?: strin
           (value): value is string => typeof value === "string",
         )
       : [],
+    archivedGroupIds: Array.isArray(user.archivedGroupIds)
+      ? user.archivedGroupIds.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : [],
   };
 }
 

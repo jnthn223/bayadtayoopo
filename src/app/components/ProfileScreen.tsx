@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink, Bell, Camera, ImageOff, MessageCircleQuestion, Bug, Lightbulb, Paperclip, Trash2, Send, CheckCircle2, Sparkles } from "lucide-react";
+import { ArrowLeft, LogOut, Edit2, Check, X, Mail, Shield, ChevronRight, Shuffle, Coffee, ExternalLink, Bell, Camera, ImageOff, MessageCircleQuestion, Bug, Lightbulb, Paperclip, Trash2, Send, CheckCircle2, Sparkles, Archive, Search, RotateCcw } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { CurrentUser, Group, NotificationPreferences, PaymentReminderPreferences } from "./types";
 import { MEMBER_COLORS } from "./utils";
@@ -25,6 +25,8 @@ import {
   CURRENT_RELEASE_ANNOUNCEMENT,
   ReleaseAnnouncementBody,
 } from "./ReleaseAnnouncements";
+import { getDirectContact } from "./directExpenses";
+import { GroupAvatar } from "./GroupAvatar";
 
 interface Props {
   user: CurrentUser;
@@ -71,6 +73,24 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
   const [supportSending, setSupportSending] = useState(false);
   const [supportError, setSupportError] = useState("");
   const [supportReference, setSupportReference] = useState("");
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [archiveSearch, setArchiveSearch] = useState("");
+  const archivedGroups = groups.filter((group) => (user.archivedGroupIds ?? []).includes(group.id));
+  const normalizedArchiveSearch = archiveSearch.trim().toLowerCase();
+  const archivedPeople = archivedGroups.filter((group) => {
+    if (group.kind !== "direct") return false;
+    return (getDirectContact(group, user.id)?.name ?? group.name).toLowerCase().includes(normalizedArchiveSearch);
+  });
+  const archivedOrdinaryGroups = archivedGroups.filter(
+    (group) => group.kind !== "direct" && group.name.toLowerCase().includes(normalizedArchiveSearch),
+  );
+
+  function unarchive(groupId: string) {
+    onUpdateUser({
+      ...user,
+      archivedGroupIds: (user.archivedGroupIds ?? []).filter((id) => id !== groupId),
+    });
+  }
 
   function openSupport() {
     setSupportType("bug");
@@ -189,6 +209,17 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
               action: () => setWhatsNewOpen(true),
             }]
           : []),
+        {
+          icon: Archive,
+          label: "Archived groups and people",
+          value: archivedGroups.length > 0
+            ? `${archivedGroups.length} archived`
+            : "Nothing archived",
+          action: () => {
+            setArchiveSearch("");
+            setArchivedOpen(true);
+          },
+        },
         {
           icon: Shield,
           label: "Privacy",
@@ -470,6 +501,42 @@ export function ProfileScreen({ user, groupCount, expenseCount, groups, onBack, 
             >
               Done
             </button>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root open={archivedOpen} onOpenChange={setArchivedOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[92vh] flex-col rounded-t-3xl bg-background shadow-2xl sm:inset-x-4 sm:bottom-8 sm:mx-auto sm:max-w-xl sm:rounded-3xl">
+            <div className="flex items-center justify-between border-b border-border bg-card px-5 py-4 sm:rounded-t-3xl">
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">Archived groups and people</Dialog.Title>
+                <Dialog.Description className="mt-0.5 text-xs text-muted-foreground">Hidden from Home, never deleted.</Dialog.Description>
+              </div>
+              <button type="button" onClick={() => setArchivedOpen(false)} className="rounded-full p-2 hover:bg-muted" aria-label="Close archived items">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-5 pb-10">
+              <label className="relative block">
+                <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input type="search" value={archiveSearch} onChange={(event) => setArchiveSearch(event.target.value)} placeholder="Search archived items" className="w-full rounded-2xl border border-border bg-card py-3 pl-10 pr-4 text-sm outline-none focus:border-primary" />
+              </label>
+              {archivedGroups.length === 0 ? (
+                <div className="py-16 text-center">
+                  <Archive size={30} className="mx-auto text-muted-foreground" />
+                  <p className="mt-3 text-sm font-semibold text-foreground">Nothing archived</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Archived groups and people will appear here.</p>
+                </div>
+              ) : (
+                <div className="mt-5 space-y-6">
+                  {archivedPeople.length > 0 && <ArchivedSection title="People" groups={archivedPeople} user={user} onUnarchive={unarchive} />}
+                  {archivedOrdinaryGroups.length > 0 && <ArchivedSection title="Groups" groups={archivedOrdinaryGroups} user={user} onUnarchive={unarchive} />}
+                  {archivedPeople.length === 0 && archivedOrdinaryGroups.length === 0 && <p className="py-12 text-center text-sm text-muted-foreground">No archived items match your search.</p>}
+                </div>
+              )}
+            </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
@@ -1069,6 +1136,48 @@ function PaymentReminderSettings({
         are excluded automatically.
       </p>
     </div>
+  );
+}
+
+function ArchivedSection({
+  title,
+  groups,
+  user,
+  onUnarchive,
+}: {
+  title: string;
+  groups: Group[];
+  user: CurrentUser;
+  onUnarchive: (groupId: string) => void;
+}) {
+  return (
+    <section>
+      <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+      <div className="space-y-2">
+        {groups.map((group) => {
+          const person = group.kind === "direct" ? getDirectContact(group, user.id) : undefined;
+          const label = person?.name ?? group.name;
+          return (
+            <div key={group.id} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
+              {person ? (
+                <UserAvatar name={person.name} color={person.color} seed={person.avatarSeed} uid={person.uid} photoVersion={person.profileImageVersion} className="h-10 w-10 rounded-full" />
+              ) : (
+                <GroupAvatar name={group.name} seed={group.avatarSeed} groupId={group.id} photoVersion={group.groupImageVersion} className="h-10 w-10 rounded-xl" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">{label}</p>
+                <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  <Archive size={10} /> Archived
+                </span>
+              </div>
+              <button type="button" onClick={() => onUnarchive(group.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted">
+                <RotateCcw size={13} /> Unarchive
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

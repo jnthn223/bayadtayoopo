@@ -124,6 +124,8 @@ export default function App() {
     text: string;
     type: "success" | "error";
     notification?: AppNotification;
+    detail?: string;
+    action?: { label: string; onClick: () => void };
   } | null>(null);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [profileLoaded, setProfileLoaded] = useState(false);
@@ -187,15 +189,45 @@ export default function App() {
     text: string,
     type: "success" | "error" = "success",
     notification?: AppNotification,
+    options?: {
+      detail?: string;
+      action?: { label: string; onClick: () => void };
+      duration?: number;
+    },
   ) {
     if (bannerTimerRef.current !== null) {
       window.clearTimeout(bannerTimerRef.current);
     }
-    setBanner({ text, type, notification });
+    setBanner({ text, type, notification, detail: options?.detail, action: options?.action });
     bannerTimerRef.current = window.setTimeout(
       () => setBanner(null),
-      notification ? 6000 : 3500,
+      options?.duration ?? (notification ? 6000 : 3500),
     );
+  }
+
+  function handleArchiveItem(group: Group) {
+    if (!currentUser) return;
+    const previousArchivedIds = currentUser.archivedGroupIds ?? [];
+    const nextUser = {
+      ...currentUser,
+      archivedGroupIds: [...new Set([...previousArchivedIds, group.id])],
+    };
+    handleUpdateUser(nextUser);
+    const directPerson = group.kind === "direct"
+      ? group.members.find((member) => member.uid !== currentUser.id && member.id !== currentUser.id)
+      : undefined;
+    const label = directPerson?.name ?? group.name;
+    showBanner(`${label} archived`, "success", undefined, {
+      detail: "Find it anytime in Profile → Archived groups and people.",
+      duration: 8000,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          handleUpdateUser({ ...nextUser, archivedGroupIds: previousArchivedIds });
+          dismissBanner();
+        },
+      },
+    });
   }
 
   // ── Auth bootstrap ──────────────────────────────────────────────────────
@@ -359,6 +391,7 @@ export default function App() {
               paymentReminderDigest: profile.paymentReminderDigest,
               productUpdateEmailsEnabled: profile.productUpdateEmailsEnabled,
               seenAnnouncementIds: profile.seenAnnouncementIds,
+              archivedGroupIds: profile.archivedGroupIds,
             }
           : user,
       );
@@ -690,6 +723,7 @@ export default function App() {
         paymentReminderPreferences: updated.paymentReminderPreferences,
         productUpdateEmailsEnabled: updated.productUpdateEmailsEnabled,
         seenAnnouncementIds: updated.seenAnnouncementIds,
+        archivedGroupIds: updated.archivedGroupIds,
       }).catch((err) => {
         showBanner(errorMessage(err, "Unable to save profile"), "error");
       });
@@ -1253,10 +1287,18 @@ export default function App() {
                 </span>
               </button>
             ) : (
-              <span className="flex-1 text-center">
-                {banner.type === "success" ? "🎉 " : "⚠️ "}
-                {banner.text}
-              </span>
+              <>
+                <span aria-hidden="true">{banner.type === "success" ? "✓" : "⚠️"}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold">{banner.text}</span>
+                  {banner.detail && <span className="mt-0.5 block text-xs text-white/85">{banner.detail}</span>}
+                </span>
+                {banner.action && (
+                  <button type="button" onClick={banner.action.onClick} className="shrink-0 rounded-xl bg-white/15 px-3 py-2 text-xs font-semibold hover:bg-white/25">
+                    {banner.action.label}
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1397,6 +1439,8 @@ export default function App() {
                   setNotificationDestination(null);
                   setScreen("group");
                 }}
+                onUpdateUser={handleUpdateUser}
+                onArchiveGroup={handleArchiveItem}
               />
             )}
             {screen === "home" && (
@@ -1419,6 +1463,7 @@ export default function App() {
                 onCreateDirectTracker={handleCreateDirectTracker}
                 onRespondDirectRequest={handleRespondDirectRequest}
                 onOpenProfile={() => setScreen("profile")}
+                onArchiveGroup={handleArchiveItem}
               />
             )}
             <ReleaseAnnouncementPrompt
