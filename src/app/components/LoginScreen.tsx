@@ -235,8 +235,10 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
               <BrandMark className="w-12 h-12 rounded-2xl shadow-lg" />
               <BrandWordmark className="text-[1.45rem] text-foreground" />
             </div>
-            <div className="inline-flex items-center gap-1.5 mt-8 px-3 py-1.5 rounded-full bg-card border border-border text-[11px] font-semibold text-primary shadow-sm">
-              <Check size={13} /> Free to use · Walang password
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-2 lg:justify-start">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold text-primary shadow-sm">
+                <Check size={13} /> Free to use · Walang password
+              </div>
             </div>
             <h1 className="mt-5 text-[2rem] leading-[1.15] font-semibold tracking-tight text-foreground lg:text-[clamp(2.6rem,4vw,4.6rem)]">
               Huwag nang hintayin ang lahat
@@ -276,6 +278,70 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
 
         <LandingDemo />
       </div>
+      <section className="relative z-10 -mt-5 px-4 pb-8 pt-0 sm:-mt-7 lg:-mt-10 lg:px-[clamp(4rem,6vw,7rem)] lg:pb-12">
+        <div className="relative mx-auto max-w-[1500px]">
+          <div aria-hidden="true" className="pointer-events-none absolute -left-12 top-1/2 z-20 hidden h-20 w-8 -translate-y-1/2 lg:block">
+            <span className="absolute left-1 top-1 h-1 w-6 rotate-[58deg] rounded-full bg-primary/75" />
+            <span className="absolute left-0 top-9 h-1 w-7 rotate-[5deg] rounded-full bg-primary/75" />
+            <span className="absolute left-1 top-[4.25rem] h-1 w-6 -rotate-[48deg] rounded-full bg-primary/75" />
+          </div>
+          <div aria-hidden="true" className="pointer-events-none absolute -right-12 top-1/2 z-20 hidden h-20 w-8 -translate-y-1/2 lg:block">
+            <span className="absolute right-1 top-1 h-1 w-6 -rotate-[58deg] rounded-full bg-primary/75" />
+            <span className="absolute right-0 top-9 h-1 w-7 -rotate-[5deg] rounded-full bg-primary/75" />
+            <span className="absolute right-1 top-[4.25rem] h-1 w-6 rotate-[48deg] rounded-full bg-primary/75" />
+          </div>
+          <a
+          href="https://www.spot.ph/newsfeatures/adulting/splitting-the-bill-with-your-barkada-just-got-easier-thanks-to-this-filipino-made-app-a8218-20261019-bsc?ref=section_feed_1"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Read the BayadTayoOpo feature on SPOT.ph"
+          className="group relative grid overflow-hidden rounded-[2rem] border border-[#eadfc8] bg-[linear-gradient(115deg,#fffaf0_0%,#fffdf8_52%,#f8f3ff_100%)] shadow-[0_22px_70px_-45px_rgba(55,39,21,0.45)] transition-transform duration-300 hover:-translate-y-1 lg:grid-cols-[minmax(0,1.08fr)_minmax(380px,0.92fr)]"
+        >
+          <div className="relative z-10 px-6 py-8 sm:px-12 sm:py-10 lg:py-12 lg:pl-16 lg:pr-5">
+            <p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em] text-[#8c6b48] sm:text-xs">
+              A little milestone <span aria-hidden="true" className="text-base leading-none">📣</span>
+            </p>
+            <div className="mt-4 h-px max-w-2xl bg-[#e8dcc5]" />
+            <p className="mt-5 flex items-center gap-3 text-sm font-medium text-muted-foreground">
+              Featured in
+              <span className="text-2xl font-black tracking-[-0.06em] text-[#d44735]">SPOT.ph</span>
+            </p>
+            <h2 className="mt-3 max-w-3xl font-serif text-[1.75rem] font-bold leading-[1.05] tracking-[-0.025em] text-foreground sm:text-4xl lg:text-[clamp(2.2rem,3vw,3.5rem)]">
+              Splitting the bill with your barkada just got easier thanks to this Filipino-made app
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+              Our little ambagan app made it to SPOT.ph! Read the story behind BayadTayoOpo and how it’s helping more barkadas split their expenses.
+            </p>
+            <span className="mt-6 inline-flex items-center gap-2 rounded-xl bg-foreground px-5 py-3 text-sm font-semibold text-background shadow-lg transition-transform group-hover:translate-x-1">
+              Read the feature <ExternalLink size={15} />
+            </span>
+          </div>
+
+          <div className="relative flex min-h-[310px] items-center justify-center overflow-hidden px-8 pb-10 pt-2 sm:min-h-[370px] sm:px-12 lg:min-h-0 lg:py-9 lg:pl-2 lg:pr-16">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(91,70,245,0.12),transparent_65%)]" />
+            <div className="relative w-full max-w-[420px] rotate-[3deg] overflow-hidden rounded-2xl border-[7px] border-white bg-white shadow-[0_25px_60px_-22px_rgba(32,23,48,0.55)] transition-transform duration-300 group-hover:rotate-[1deg]">
+              <div className="flex items-center justify-between bg-[#d44735] px-4 py-3 text-white">
+                <span className="text-xs">☰</span>
+                <span className="text-xl font-black tracking-[-0.06em]">SPOT.ph</span>
+                <span className="text-sm">⌕</span>
+              </div>
+              <div className="p-4 sm:p-5">
+                <p className="text-[9px] text-muted-foreground">News &amp; Features　&gt;　Adulting</p>
+                <p className="mt-3 text-lg font-extrabold leading-[1.02] tracking-tight text-foreground sm:text-xl">
+                  Splitting the bill with your barkada just got easier thanks to this Filipino-made app
+                </p>
+                <p className="mt-2 text-[9px] text-muted-foreground">By Zoe Andin　|　October 19, 2026</p>
+                <img
+                  src="/social-card.png"
+                  alt="BayadTayoOpo app preview"
+                  className="mt-4 aspect-[1.9/1] w-full rounded-lg object-cover"
+                />
+              </div>
+            </div>
+          </div>
+          </a>
+        </div>
+      </section>
       <section className="px-6 pb-16 pt-16 lg:w-full lg:px-[clamp(2rem,4vw,5rem)] lg:py-28">
         <div className="mx-auto max-w-[1680px]">
           <div className="mx-auto max-w-3xl text-center">
