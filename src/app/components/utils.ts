@@ -288,6 +288,8 @@ export interface BalanceDetail {
   label: string;
   amount: number;
   date: string;
+  expenseId?: string;
+  kind?: "expense-paid" | "expense-share" | "split-payment" | "group-payment";
 }
 
 /**
@@ -312,6 +314,8 @@ export function getMemberBalanceDetails(
         label: `Paid upfront · ${expense.description}`,
         amount: expense.amount,
         date: expense.date,
+        expenseId: expense.id,
+        kind: "expense-paid",
       });
     }
 
@@ -321,6 +325,8 @@ export function getMemberBalanceDetails(
         label: `Paid by ${payerName} · ${expense.description}`,
         amount: -memberSplit.amount,
         date: expense.date,
+        expenseId: expense.id,
+        kind: "expense-share",
       });
     }
 

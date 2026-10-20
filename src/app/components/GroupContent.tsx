@@ -38,6 +38,10 @@ import { buildBalanceShareMessage } from "./balanceShareMessage";
 import { ensureRequiredShareLinks } from "./requiredShareLinks";
 import { getExpenseDeadlineState } from "./expenseDeadline";
 import {
+  allocateItemizedShares,
+} from "./itemizedExpense";
+import { ItemizedMemberBreakdown } from "./ItemizedMemberBreakdown";
+import {
   canDirectlyConfirmSplit,
   CATEGORY_ICONS,
   computeDirectExpenseSettlements,
@@ -172,6 +176,9 @@ export function GroupContent({
   const [expandedBalanceIds, setExpandedBalanceIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [expandedExpenseItemIds, setExpandedExpenseItemIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const balanceDetailsByMember = useMemo(
     () =>
       new Map(
@@ -191,6 +198,16 @@ export function GroupContent({
       return next;
     });
   }
+
+  function toggleExpenseItemDetails(expenseId: string) {
+    setExpandedExpenseItemIds((current) => {
+      const next = new Set(current);
+      if (next.has(expenseId)) next.delete(expenseId);
+      else next.add(expenseId);
+      return next;
+    });
+  }
+
 
   useEffect(() => {
     if (!focusedExpenseId) return;
@@ -553,6 +570,12 @@ export function GroupContent({
                           deletionRequest?.requiredApproverIds.includes(currentMember.id) &&
                           !deletionRequest.approvedByIds.includes(currentMember.id),
                       );
+                      const hasItemBreakdown =
+                        exp.splitType === "itemized" && (exp.items?.length ?? 0) > 0;
+                      const itemBreakdownExpanded = expandedExpenseItemIds.has(exp.id);
+                      const itemizedShares = hasItemBreakdown
+                        ? allocateItemizedShares(exp.items!)
+                        : {};
                       return (
                         <div
                           key={exp.id}
@@ -581,7 +604,9 @@ export function GroupContent({
                               ·{" "}
                               {exp.splitType === "equal"
                                 ? "Split equally"
-                                : "Custom split"}
+                                : exp.splitType === "itemized"
+                                  ? `Split by item${exp.items?.length ? ` · ${exp.items.length} ${exp.items.length === 1 ? "item" : "items"}` : ""}`
+                                  : "Custom split"}
                               {exp.category === "other" && exp.categoryDetail
                                 ? ` · ${exp.categoryDetail}`
                                 : ""}
@@ -597,6 +622,95 @@ export function GroupContent({
                               <p className="mt-1.5 line-clamp-2 whitespace-pre-line text-xs leading-relaxed text-foreground/75">
                                 {exp.notes}
                               </p>
+                            )}
+                            {hasItemBreakdown && (
+                              <div className="mt-2.5">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpenseItemDetails(exp.id)}
+                                  aria-expanded={itemBreakdownExpanded}
+                                  aria-controls={`item-breakdown-${exp.id}`}
+                                  className="inline-flex items-center gap-1.5 rounded-lg py-1 text-xs font-semibold text-primary transition-colors hover:text-primary/80"
+                                >
+                                  <ChevronDown
+                                    size={14}
+                                    className={`transition-transform ${itemBreakdownExpanded ? "rotate-180" : ""}`}
+                                  />
+                                  {itemBreakdownExpanded
+                                    ? "Hide item breakdown"
+                                    : "View item breakdown"}
+                                </button>
+
+                                {itemBreakdownExpanded && (
+                                  <div
+                                    id={`item-breakdown-${exp.id}`}
+                                    className="mt-2 rounded-xl border border-border bg-muted/40 p-3"
+                                  >
+                                    <p className="text-xs font-semibold text-foreground">
+                                      Item breakdown
+                                    </p>
+                                    <div className="mt-2 space-y-2">
+                                      {exp.items!.map((item) => {
+                                        const assignedNames = item.memberIds.map((memberId) =>
+                                          displayMemberName(
+                                            memberId,
+                                            getMemberById(group, memberId)?.name,
+                                          ),
+                                        );
+                                        return (
+                                          <div
+                                            key={item.id}
+                                            className="flex items-start justify-between gap-3 text-xs"
+                                          >
+                                            <div className="min-w-0">
+                                              <p className="font-medium text-foreground">
+                                                {item.name}
+                                              </p>
+                                              <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                                                {assignedNames.length > 0
+                                                  ? assignedNames.join(", ")
+                                                  : "No members assigned"}
+                                                {item.memberIds.length > 1
+                                                  ? ` · shared by ${item.memberIds.length}`
+                                                  : ""}
+                                              </p>
+                                            </div>
+                                            <p className="shrink-0 font-semibold text-foreground">
+                                              {formatCurrency(item.amount, group.currency)}
+                                            </p>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+
+                                    <div className="mt-3 border-t border-border pt-2.5">
+                                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        Member totals
+                                      </p>
+                                      <div className="mt-1.5 space-y-1">
+                                        {Object.entries(itemizedShares).map(
+                                          ([memberId, amount]) => (
+                                            <div
+                                              key={memberId}
+                                              className="flex items-center justify-between gap-3 text-xs"
+                                            >
+                                              <span className="truncate text-muted-foreground">
+                                                {displayMemberName(
+                                                  memberId,
+                                                  getMemberById(group, memberId)?.name,
+                                                )}
+                                              </span>
+                                              <span className="shrink-0 font-semibold text-foreground">
+                                                {formatCurrency(amount, group.currency)}
+                                              </span>
+                                            </div>
+                                          ),
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             )}
                             {deadline && (
                               <span
@@ -768,6 +882,13 @@ export function GroupContent({
                     : Math.abs(b.net) < 0.01) && !hasDirectRelationship;
                   const isExpanded = expandedBalanceIds.has(b.memberId);
                   const balanceDetails = balanceDetailsByMember.get(b.memberId) ?? [];
+                  const itemizedBalanceDetails = balanceDetails.filter((detail) => {
+                    if (detail.kind !== "expense-share" || !detail.expenseId) return false;
+                    const expense = group.expenses.find(
+                      (candidate) => candidate.id === detail.expenseId,
+                    );
+                    return expense?.splitType === "itemized";
+                  });
                   const displayName = displayMemberName(b.memberId, b.memberName);
 
                   return (
@@ -870,27 +991,73 @@ export function GroupContent({
                                     </span>
                                   </div>
                                 ))}
+                                {itemizedBalanceDetails.length > 0 && (
+                                  <div className="mt-3 space-y-2.5 border-t border-border pt-3">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                      Itemized expense shares
+                                    </p>
+                                    {itemizedBalanceDetails.map((detail) => {
+                                      const expense = group.expenses.find(
+                                        (candidate) => candidate.id === detail.expenseId,
+                                      );
+                                      if (!expense) return null;
+                                      return (
+                                        <div key={`direct-${detail.id}`}>
+                                          <div className="flex items-start justify-between gap-3 text-xs">
+                                            <p className="min-w-0 leading-relaxed text-foreground/85">
+                                              {detail.label}
+                                            </p>
+                                            <span className="shrink-0 font-semibold text-destructive">
+                                              −{formatCurrency(Math.abs(detail.amount), group.currency)}
+                                            </span>
+                                          </div>
+                                          <ItemizedMemberBreakdown
+                                            expense={expense}
+                                            memberId={b.memberId}
+                                            currency={group.currency}
+                                            defaultOpen
+                                          />
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </>
-                            ) : balanceDetails.map((detail) => (
-                              <div
-                                key={detail.id}
-                                className="flex items-start justify-between gap-3 text-xs"
-                              >
-                                <p className="min-w-0 leading-relaxed text-foreground/85">
-                                  {detail.label}
-                                </p>
-                                <span
-                                  className={`shrink-0 font-semibold ${
-                                    detail.amount >= 0
-                                      ? "text-green-600"
-                                      : "text-destructive"
-                                  }`}
-                                >
-                                  {detail.amount >= 0 ? "+" : "−"}
-                                  {formatCurrency(Math.abs(detail.amount), group.currency)}
-                                </span>
-                              </div>
-                            ))}
+                            ) : balanceDetails.map((detail) => {
+                              const detailExpense = detail.expenseId
+                                ? group.expenses.find(
+                                    (expense) => expense.id === detail.expenseId,
+                                  )
+                                : undefined;
+                              return (
+                                <div key={detail.id}>
+                                  <div className="flex items-start justify-between gap-3 text-xs">
+                                    <p className="min-w-0 leading-relaxed text-foreground/85">
+                                      {detail.label}
+                                    </p>
+                                    <span
+                                      className={`shrink-0 font-semibold ${
+                                        detail.amount >= 0
+                                          ? "text-green-600"
+                                          : "text-destructive"
+                                      }`}
+                                    >
+                                      {detail.amount >= 0 ? "+" : "−"}
+                                      {formatCurrency(Math.abs(detail.amount), group.currency)}
+                                    </span>
+                                  </div>
+
+                                  {detail.kind === "expense-share" && detailExpense && (
+                                    <ItemizedMemberBreakdown
+                                      expense={detailExpense}
+                                      memberId={b.memberId}
+                                      currency={group.currency}
+                                      defaultOpen
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                           <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs font-semibold">
                             <span className="text-foreground">

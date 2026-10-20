@@ -144,7 +144,8 @@ function expenseToRow(expense: Expense, group: Group): string[] {
     String(expense.amount),
     group.currency,
     paidBy,
-    expense.splitType,
+    // CSV preserves the resulting member shares but not the item rows.
+    expense.splitType === "itemized" ? "custom" : expense.splitType,
     expense.splits
       .map((split) => `${getMemberName(historicalMembers, split.memberId)}:${split.amount}`)
       .join(";"),

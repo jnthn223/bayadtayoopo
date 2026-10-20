@@ -40,6 +40,7 @@ import {
 import { UserAvatar } from "./UserAvatar";
 import { ImagePasteControl } from "./ImagePasteControl";
 import { getExpenseDeadlineState } from "./expenseDeadline";
+import { ItemizedMemberBreakdown } from "./ItemizedMemberBreakdown";
 
 interface Props {
   group: Group;
@@ -371,6 +372,9 @@ export function GroupPayments({
   const balancesOwedToYou = displayedSettlements.filter(
     (settlement) => settlement.to === memberId,
   );
+  const hasPayableBalanceInEitherMode =
+    directSettlements.some((settlement) => settlement.from === memberId) ||
+    settlements.some((settlement) => settlement.from === memberId);
   const directTemporaryMemberBalances = useMemo(
     () => directSettlements.filter((settlement) =>
       canAdminRecordPaymentBetweenTemporaryMembers(
@@ -1174,6 +1178,7 @@ export function GroupPayments({
                             currency={group.currency}
                             group={group}
                             recipientMemberId={payment.toMemberId}
+                            memberIdForItems={payment.fromMemberId}
                           />
                         )}
                         {canReverse && (
@@ -1479,6 +1484,7 @@ export function GroupPayments({
                     currency={group.currency}
                     group={group}
                     recipientMemberId={payment.toMemberId}
+                    memberIdForItems={payment.fromMemberId}
                   />
                 )}
 
@@ -1606,6 +1612,18 @@ export function GroupPayments({
                   </p>
                 </div>
               </div>
+              {memberId && (() => {
+                const expense = group.expenses.find(
+                  (candidate) => candidate.id === option.expenseId,
+                );
+                return expense ? (
+                  <ItemizedMemberBreakdown
+                    expense={expense}
+                    memberId={memberId}
+                    currency={group.currency}
+                  />
+                ) : null;
+              })()}
               <div className={`mt-3 grid gap-2 ${balanceOffset ? "grid-cols-2" : "grid-cols-1"}`}>
                 <button
                   type="button"
@@ -1632,6 +1650,66 @@ export function GroupPayments({
             </article>
             );
           })}
+        </section>
+      )}
+
+      {hasPayableBalanceInEitherMode && (
+        <section
+          className={`rounded-2xl border bg-accent/50 p-4 ${
+            settlementModeRemembered
+              ? "border-primary/20"
+              : "border-primary ring-2 ring-primary/15"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                How should this balance be paid?
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Choose a route before paying toward your overall balance.
+              </p>
+            </div>
+            {!settlementModeRemembered && (
+              <span className="shrink-0 rounded-full bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground">
+                New
+              </span>
+            )}
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-card p-1.5">
+            <button
+              type="button"
+              onClick={() => onSettlementModePreferenceChange("direct", true)}
+              className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
+                effectiveSettlementMode === "direct"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground"
+              }`}
+            >
+              Original payees
+            </button>
+            <button
+              type="button"
+              onClick={() => onSettlementModePreferenceChange("simplified", true)}
+              className={`relative rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
+                effectiveSettlementMode === "simplified"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
+              }`}
+            >
+              Try Fewer transfers!
+            </button>
+          </div>
+
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            {effectiveSettlementMode === "simplified"
+              ? "Recommended · Combines group balances to reduce transfers. The recipient may not be the original payer."
+              : "Default · Pays each member who originally covered an expense. This may require more transfers."}
+          </p>
+          <p className="mt-2 text-[11px] font-medium text-primary">
+            This setting does not affect paying a specific expense.
+          </p>
         </section>
       )}
 
@@ -1689,69 +1767,6 @@ export function GroupPayments({
               </p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 {section.description}
-              </p>
-            </div>
-          )}
-          {section.id === "owed-by-you" && (
-            <div
-              className={`rounded-2xl border bg-accent/50 p-4 ${
-                settlementModeRemembered
-                  ? "border-primary/20"
-                  : "border-primary ring-2 ring-primary/15"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">
-                    How should this balance be paid?
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    Choose a route before paying toward your overall balance.
-                  </p>
-                </div>
-                {!settlementModeRemembered && (
-                  <span className="shrink-0 rounded-full bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground">
-                    New
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-card p-1.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    onSettlementModePreferenceChange("direct", true)
-                  }
-                  className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
-                    effectiveSettlementMode === "direct"
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  Original payees
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onSettlementModePreferenceChange("simplified", true)
-                  }
-                  className={`relative rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
-                    effectiveSettlementMode === "simplified"
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
-                  }`}
-                >
-                  Try Fewer transfers!
-                </button>
-              </div>
-
-              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                {effectiveSettlementMode === "simplified"
-                  ? "Recommended · Combines group balances to reduce transfers. The recipient may not be the original payer."
-                  : "Default · Pays each member who originally covered an expense. This may require more transfers."}
-              </p>
-              <p className="mt-2 text-[11px] font-medium text-primary">
-                This setting does not affect paying a specific expense.
               </p>
             </div>
           )}
@@ -2430,41 +2445,52 @@ export function GroupPayments({
                           ? getMemberById(group, getExpensePayerId(expense))
                           : undefined;
                         return (
-                          <button
+                          <div
                             key={expenseId}
-                            type="button"
-                            onClick={() =>
-                              setSelectedExpenseIds((current) => {
-                                const next = new Set(current);
-                                if (next.has(expenseId)) next.delete(expenseId);
-                                else next.add(expenseId);
-                                return next;
-                              })
-                            }
-                            className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left ${
+                            className={`rounded-xl border px-3 py-2 ${
                               selected
                                 ? "border-primary bg-accent"
                                 : "border-border bg-card"
                             }`}
                           >
-                            <span
-                              className={`flex h-4 w-4 items-center justify-center rounded border ${
-                                selected
-                                  ? "border-primary bg-primary text-primary-foreground"
-                                  : "border-border"
-                              }`}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedExpenseIds((current) => {
+                                  const next = new Set(current);
+                                  if (next.has(expenseId)) next.delete(expenseId);
+                                  else next.add(expenseId);
+                                  return next;
+                                })
+                              }
+                              className="flex w-full items-center gap-2 text-left"
                             >
-                              {selected && <Check size={11} />}
-                            </span>
-                            <span className="min-w-0 flex-1 truncate text-xs text-foreground">
-                              {payer
-                                ? `Paid by ${payer.name} · ${share.expenseDescription}`
-                                : share.expenseDescription}
-                            </span>
-                            <span className="text-xs font-medium text-muted-foreground">
-                              {formatCurrency(share.amount, group.currency)}
-                            </span>
-                          </button>
+                              <span
+                                className={`flex h-4 w-4 items-center justify-center rounded border ${
+                                  selected
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-border"
+                                }`}
+                              >
+                                {selected && <Check size={11} />}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+                                {payer
+                                  ? `Paid by ${payer.name} · ${share.expenseDescription}`
+                                  : share.expenseDescription}
+                              </span>
+                              <span className="text-xs font-medium text-muted-foreground">
+                                {formatCurrency(share.amount, group.currency)}
+                              </span>
+                            </button>
+                            {expense && draft && (
+                              <ItemizedMemberBreakdown
+                                expense={expense}
+                                memberId={draft.fromMemberId}
+                                currency={group.currency}
+                              />
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -2522,6 +2548,7 @@ export function GroupPayments({
                     currency={group.currency}
                     group={group}
                     recipientMemberId={draft.toMemberId}
+                    memberIdForItems={draft.fromMemberId}
                   />
                   <div className="mt-3 flex justify-between border-t border-border pt-3 text-xs">
                     <span className="text-muted-foreground">
@@ -2578,11 +2605,13 @@ function AllocationList({
   currency,
   group,
   recipientMemberId,
+  memberIdForItems,
 }: {
   allocations: PaymentAllocation[];
   currency: string;
   group?: Group;
   recipientMemberId?: string;
+  memberIdForItems?: string;
 }) {
   if (allocations.length === 0) {
     return (
@@ -2605,38 +2634,44 @@ function AllocationList({
         const deadline = getExpenseDeadlineState(expense?.dueDate);
 
         return (
-          <div
-            key={`${allocation.expenseId ?? "balance"}-${index}`}
-            className="flex items-start justify-between gap-3 text-xs"
-          >
-            <span className="min-w-0 flex-1 text-muted-foreground">
-              <span className="block truncate">
+          <div key={`${allocation.expenseId ?? "balance"}-${index}`}>
+            <div className="flex items-start justify-between gap-3 text-xs">
+              <span className="min-w-0 flex-1 text-muted-foreground">
+                <span className="block truncate">
                 {payer
                   ? `Paid by ${payer.name} · ${allocation.expenseDescription}`
                   : allocation.expenseDescription}
+                </span>
+                {isSimplifiedRoute && (
+                  <span className="mt-0.5 block text-[10px] font-medium text-primary">
+                    Routed through the simplified group balance
+                  </span>
+                )}
+                {deadline && (
+                  <span
+                    className={`mt-0.5 block text-[10px] font-medium ${
+                      deadline.state === "overdue"
+                        ? "text-destructive"
+                        : deadline.state === "due-today" || deadline.state === "due-soon"
+                          ? "text-amber-700"
+                          : "text-muted-foreground"
+                    }`}
+                  >
+                    {deadline.label}
+                  </span>
+                )}
               </span>
-              {isSimplifiedRoute && (
-                <span className="mt-0.5 block text-[10px] font-medium text-primary">
-                  Routed through the simplified group balance
-                </span>
-              )}
-              {deadline && (
-                <span
-                  className={`mt-0.5 block text-[10px] font-medium ${
-                    deadline.state === "overdue"
-                      ? "text-destructive"
-                      : deadline.state === "due-today" || deadline.state === "due-soon"
-                        ? "text-amber-700"
-                        : "text-muted-foreground"
-                  }`}
-                >
-                  {deadline.label}
-                </span>
-              )}
-            </span>
-            <span className="shrink-0 font-medium text-foreground">
-              {formatCurrency(allocation.amount, currency)}
-            </span>
+              <span className="shrink-0 font-medium text-foreground">
+                {formatCurrency(allocation.amount, currency)}
+              </span>
+            </div>
+            {expense && memberIdForItems && (
+              <ItemizedMemberBreakdown
+                expense={expense}
+                memberId={memberIdForItems}
+                currency={currency}
+              />
+            )}
           </div>
         );
       })}

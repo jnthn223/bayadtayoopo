@@ -175,7 +175,14 @@ export interface Split {
   confirmedBy?: string;
 }
 
-export type SplitType = "equal" | "custom";
+export type SplitType = "equal" | "custom" | "itemized";
+
+export interface ExpenseItem {
+  id: string;
+  name: string;
+  amount: number;
+  memberIds: string[];
+}
 export const EXPENSE_CATEGORIES = [
   "food",
   "drinks",
@@ -205,6 +212,8 @@ export interface Expense {
   createdBy?: string;
   splitType: SplitType;
   splits: Split[];
+  /** Optional item-level explanation used to calculate the member splits. */
+  items?: ExpenseItem[];
   date: string;
   dueDate?: string;
   category: Category;

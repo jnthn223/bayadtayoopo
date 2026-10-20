@@ -1,14 +1,22 @@
 import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Check, ChevronDown, ImagePlus, Loader2, RefreshCw, X } from "lucide-react";
+import { Check, ChevronDown, ImagePlus, Loader2, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { EXPENSE_CATEGORIES } from "./types";
-import type { CurrentUser, Group, Expense, SplitType, Category } from "./types";
+import type { CurrentUser, Group, Expense, ExpenseItem, SplitType, Category } from "./types";
 import { allocateCustomShares, formatCurrency, generateId, CATEGORY_ICONS, getCurrencySymbol, getExpensePayerId } from "./utils";
 import { UserAvatar } from "./UserAvatar";
 import { ImagePasteControl } from "./ImagePasteControl";
 import { hasNonPayerShare, SELF_ONLY_EXPENSE_ERROR } from "./expenseValidation";
 import { SUPPORTED_CURRENCIES } from "./currencies";
 import { fetchExchangeRate } from "../../lib/exchangeRateService";
+import { allocateItemizedShares, itemizedTotal } from "./itemizedExpense";
+
+interface ItemDraft {
+  id: string;
+  name: string;
+  amount: string;
+  memberIds: string[];
+}
 
 interface Props {
   group: Group;
@@ -56,6 +64,7 @@ export function AddExpenseModal({
   const [category, setCategory] = useState<Category>("food");
   const [categoryDetail, setCategoryDetail] = useState("");
   const [customOverrides, setCustomOverrides] = useState<Record<string, string>>({});
+  const [itemDrafts, setItemDrafts] = useState<ItemDraft[]>([]);
   const [includedMemberIds, setIncludedMemberIds] = useState<string[]>(
     group.members.map((member) => member.id),
   );
@@ -94,6 +103,12 @@ export function AddExpenseModal({
             )
           : {},
       );
+      setItemDrafts(
+        (editExpense.items ?? []).map((item) => ({
+          ...item,
+          amount: String(item.amount),
+        })),
+      );
     } else {
       setDescription("");
       setNotes("");
@@ -110,6 +125,7 @@ export function AddExpenseModal({
       setDate(new Date().toISOString().slice(0, 10));
       setDueDate("");
       setCustomOverrides({});
+      setItemDrafts([]);
       setIncludedMemberIds(group.members.map((member) => member.id));
     }
 
@@ -120,8 +136,22 @@ export function AddExpenseModal({
 
   const totalAmount = parseFloat(amount) || 0;
   const numericOriginalAmount = parseFloat(originalAmount) || 0;
+  const itemizedItems: ExpenseItem[] = itemDrafts.map((item) => ({
+    id: item.id,
+    name: item.name.trim(),
+    amount: parseFloat(item.amount) || 0,
+    memberIds: item.memberIds,
+  }));
+  const itemizedAllocation = allocateItemizedShares(itemizedItems);
+  const itemTotal = itemizedTotal(itemizedItems);
+  const itemDifference = Math.round((totalAmount - itemTotal) * 100) / 100;
+  const effectiveIncludedMemberIds = splitType === "itemized"
+    ? availableMembers
+        .filter((member) => (itemizedAllocation[member.id] ?? 0) > 0)
+        .map((member) => member.id)
+    : includedMemberIds;
   const includedMembers = availableMembers.filter((member) =>
-    includedMemberIds.includes(member.id),
+    effectiveIncludedMemberIds.includes(member.id),
   );
   const numericOverrides = Object.fromEntries(
     Object.entries(customOverrides)
@@ -156,15 +186,30 @@ export function AddExpenseModal({
       errs.categoryDetail = "Specify what kind of expense this is";
     }
     if (includedMembers.length === 0) errs.members = "Include at least one member";
-    if (Object.values(customOverrides).some((value) => parseFloat(value) < 0)) {
+    if (splitType === "custom" && Object.values(customOverrides).some((value) => parseFloat(value) < 0)) {
       errs.splits = "Split amounts cannot be negative";
     }
     if (splitType === "custom") {
       if (customDiff > 0.01)
         errs.splits = `Splits must equal total (diff: ${currencySymbol}${customDiff.toFixed(2)})`;
     }
+    if (splitType === "itemized") {
+      if (itemDrafts.length === 0) {
+        errs.items = "Add at least one item";
+      } else if (itemizedItems.some((item) => !item.name || item.amount <= 0)) {
+        errs.items = "Every item needs a name and valid amount";
+      } else if (itemizedItems.some((item) => item.memberIds.length === 0)) {
+        errs.items = "Assign every item to at least one member";
+      } else if (Math.abs(itemDifference) > 0.01) {
+        errs.items = `Items must equal the expense total (difference: ${formatCurrency(Math.abs(itemDifference), group.currency)})`;
+      }
+    }
     const payerId = isAdmin ? paidBy : (currentMember?.id ?? currentUser.id);
-    const allocation = splitType === "custom" ? customAllocation : equalAllocation;
+    const allocation = splitType === "custom"
+      ? customAllocation
+      : splitType === "itemized"
+        ? itemizedAllocation
+        : equalAllocation;
     if (
       paidBy &&
       includedMembers.length > 0 &&
@@ -214,14 +259,23 @@ export function AddExpenseModal({
               ...paymentState(m.id, splitAmount),
             };
           })
-        : includedMembers.map((m) => {
-            const splitAmount = customAllocation[m.id] ?? 0;
-            return {
-              memberId: m.id,
-              amount: splitAmount,
-              ...paymentState(m.id, splitAmount),
-            };
-          });
+        : splitType === "itemized"
+          ? includedMembers.map((m) => {
+              const splitAmount = itemizedAllocation[m.id] ?? 0;
+              return {
+                memberId: m.id,
+                amount: splitAmount,
+                ...paymentState(m.id, splitAmount),
+              };
+            })
+          : includedMembers.map((m) => {
+              const splitAmount = customAllocation[m.id] ?? 0;
+              return {
+                memberId: m.id,
+                amount: splitAmount,
+                ...paymentState(m.id, splitAmount),
+              };
+            });
 
     setSaving(true);
     try {
@@ -249,6 +303,7 @@ export function AddExpenseModal({
           createdBy: creatorId,
           splitType,
           splits,
+          items: splitType === "itemized" ? itemizedItems : undefined,
           date,
           dueDate: dueDate || undefined,
           category,
@@ -318,6 +373,31 @@ export function AddExpenseModal({
       return next;
     });
     setErrors((current) => ({ ...current, members: "", splits: "" }));
+  }
+
+  function addItem() {
+    setItemDrafts((current) => [
+      ...current,
+      { id: generateId(), name: "", amount: "", memberIds: [] },
+    ]);
+    setErrors((current) => ({ ...current, items: "" }));
+  }
+
+  function updateItem(itemId: string, change: Partial<ItemDraft>) {
+    setItemDrafts((current) =>
+      current.map((item) => (item.id === itemId ? { ...item, ...change } : item)),
+    );
+    setErrors((current) => ({ ...current, items: "", members: "" }));
+  }
+
+  function toggleItemMember(itemId: string, memberId: string) {
+    const item = itemDrafts.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    updateItem(itemId, {
+      memberIds: item.memberIds.includes(memberId)
+        ? item.memberIds.filter((id) => id !== memberId)
+        : [...item.memberIds, memberId],
+    });
   }
 
   return (
@@ -595,7 +675,7 @@ export function AddExpenseModal({
                 Split
               </label>
               <div className="flex gap-2 p-1 bg-muted rounded-xl">
-                {(["equal", "custom"] as SplitType[]).map((type) => (
+                {(["equal", "custom", "itemized"] as SplitType[]).map((type) => (
                   <button
                     key={type}
                     onClick={() => setSplitType(type)}
@@ -605,7 +685,7 @@ export function AddExpenseModal({
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    {type === "equal" ? "Equal" : "Custom"}
+                    {type === "equal" ? "Equal" : type === "custom" ? "Custom" : "By item"}
                   </button>
                 ))}
               </div>
@@ -650,6 +730,162 @@ export function AddExpenseModal({
                   </button>
                 ))}
                 {errors.members && <p className="text-destructive text-xs">{errors.members}</p>}
+              </div>
+            ) : splitType === "itemized" ? (
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Item assignments</p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                      Add each item and choose who shared it. Shared items are divided equally.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addItem}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-2 text-xs font-semibold text-primary"
+                  >
+                    <Plus size={13} /> Item
+                  </button>
+                </div>
+
+                {itemDrafts.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={addItem}
+                    className="flex w-full flex-col items-center rounded-2xl border border-dashed border-primary/25 bg-primary/5 px-4 py-6 text-center"
+                  >
+                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <Plus size={17} />
+                    </span>
+                    <span className="mt-2 text-sm font-semibold text-foreground">Add the first item</span>
+                    <span className="mt-1 text-xs text-muted-foreground">For example: Burger, Drinks, or Service charge</span>
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    {itemDrafts.map((item, index) => {
+                      const everyoneSelected = availableMembers.length > 0 &&
+                        availableMembers.every((member) => item.memberIds.includes(member.id));
+                      return (
+                        <div key={item.id} className="rounded-2xl border border-border bg-muted/15 p-3">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-semibold text-primary">
+                              {index + 1}
+                            </span>
+                            <input
+                              type="text"
+                              value={item.name}
+                              onChange={(event) => updateItem(item.id, { name: event.target.value })}
+                              placeholder="Item name"
+                              className="min-w-0 flex-1 rounded-xl border border-border bg-input-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                            />
+                            <div className="relative w-28 shrink-0">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{currencySymbol}</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                inputMode="decimal"
+                                value={item.amount}
+                                onChange={(event) => updateItem(item.id, { amount: event.target.value })}
+                                placeholder="0.00"
+                                className="w-full rounded-xl border border-border bg-input-background py-2.5 pl-7 pr-2 text-right text-sm outline-none focus:border-primary"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setItemDrafts((current) => current.filter((candidate) => candidate.id !== item.id))}
+                              className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              aria-label={`Remove ${item.name || `item ${index + 1}`}`}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => updateItem(item.id, {
+                                memberIds: everyoneSelected ? [] : availableMembers.map((member) => member.id),
+                              })}
+                              className={`rounded-full border px-2.5 py-1.5 text-[11px] font-semibold ${
+                                everyoneSelected
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-border bg-card text-muted-foreground"
+                              }`}
+                            >
+                              Everyone
+                            </button>
+                            {availableMembers.map((member) => {
+                              const selected = item.memberIds.includes(member.id);
+                              return (
+                                <button
+                                  type="button"
+                                  key={member.id}
+                                  onClick={() => toggleItemMember(item.id, member.id)}
+                                  className={`inline-flex items-center gap-1.5 rounded-full border py-1 pr-2.5 pl-1 text-[11px] font-medium ${
+                                    selected
+                                      ? "border-primary/30 bg-accent text-accent-foreground"
+                                      : "border-border bg-card text-muted-foreground"
+                                  }`}
+                                >
+                                  <UserAvatar name={member.name} color={member.color} seed={member.avatarSeed} uid={member.uid} photoVersion={member.profileImageVersion} className="h-6 w-6 rounded-full text-[9px]" />
+                                  {displayMemberName(member.id, member.name)}
+                                  {selected && <Check size={11} className="text-primary" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {itemDrafts.length > 0 && (
+                  <button type="button" onClick={addItem} className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary">
+                    <Plus size={13} /> Add another item
+                  </button>
+                )}
+
+                <div className="rounded-xl border border-border bg-card p-3 text-sm">
+                  <div className="flex items-center justify-between text-muted-foreground">
+                    <span>Expense total</span>
+                    <span>{formatCurrency(totalAmount, group.currency)}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-muted-foreground">
+                    <span>Assigned by item</span>
+                    <span>{formatCurrency(itemTotal, group.currency)}</span>
+                  </div>
+                  <div className={`mt-2 flex items-center justify-between border-t border-border pt-2 font-semibold ${
+                    Math.abs(itemDifference) <= 0.01 ? "text-success" : "text-destructive"
+                  }`}>
+                    <span>
+                      {Math.abs(itemDifference) <= 0.01
+                        ? "Fully assigned"
+                        : itemDifference > 0
+                          ? "Still unassigned"
+                          : "Over the expense total"}
+                    </span>
+                    <span>{Math.abs(itemDifference) <= 0.01 ? "✓" : formatCurrency(Math.abs(itemDifference), group.currency)}</span>
+                  </div>
+                </div>
+
+                {Object.keys(itemizedAllocation).length > 0 && (
+                  <div className="rounded-xl bg-accent/60 p-3">
+                    <p className="text-xs font-semibold text-foreground">Member totals</p>
+                    <div className="mt-2 space-y-1.5">
+                      {availableMembers.filter((member) => (itemizedAllocation[member.id] ?? 0) > 0).map((member) => (
+                        <div key={member.id} className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">{displayMemberName(member.id, member.name)}</span>
+                          <span className="font-semibold text-foreground">{formatCurrency(itemizedAllocation[member.id], group.currency)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {errors.items && <p className="text-xs text-destructive">{errors.items}</p>}
+                {errors.members && <p className="text-xs text-destructive">{errors.members}</p>}
               </div>
             ) : (
               <div className="space-y-2">
