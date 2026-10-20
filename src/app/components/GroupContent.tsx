@@ -131,12 +131,12 @@ export function GroupContent({
 }: Props) {
   const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false);
   const settlementModeKey = `bayadtayoopo:settlement-mode:${group.id}:${currentMember?.uid ?? currentMember?.id ?? "guest"}`;
-  const [settlementMode, setSettlementMode] = useState<"simplified" | "direct">("simplified");
+  const [settlementMode, setSettlementMode] = useState<"simplified" | "direct">("direct");
   const [settlementModeRemembered, setSettlementModeRemembered] = useState(false);
 
   useEffect(() => {
     const storedMode = localStorage.getItem(settlementModeKey);
-    setSettlementMode(storedMode === "direct" ? "direct" : "simplified");
+    setSettlementMode(storedMode === "simplified" ? "simplified" : "direct");
     setSettlementModeRemembered(
       storedMode === "direct" || storedMode === "simplified",
     );
@@ -146,7 +146,7 @@ export function GroupContent({
     mode: "simplified" | "direct",
     remember: boolean,
   ) => {
-    setSettlementMode(remember ? mode : "simplified");
+    setSettlementMode(remember ? mode : "direct");
     setSettlementModeRemembered(remember);
     if (remember) localStorage.setItem(settlementModeKey, mode);
     else localStorage.removeItem(settlementModeKey);

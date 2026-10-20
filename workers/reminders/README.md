@@ -33,5 +33,8 @@ and the push Worker's pinned Wrangler install, avoiding a second copy of the
 same tooling.
 
 The `/run` endpoint is for an authorized manual staging run. Pass
-`Authorization: Bearer <RUN_SECRET>`. `/unsubscribe` is signed and is linked
-from every reminder email.
+`Authorization: Bearer <RUN_SECRET>`. The same authorization can be used with
+`POST /refresh-stats` to rebuild the materialized `system/publicStats`
+document immediately. The public `GET /stats` endpoint reads only that single
+snapshot; the hourly reminder run refreshes it automatically.
+`/unsubscribe` is signed and is linked from every reminder email.

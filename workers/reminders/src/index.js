@@ -512,7 +512,41 @@ export function buildPublicStats(users, groups, now = new Date()) {
   };
 }
 
-async function runReminders(env, now = new Date()) {
+const PUBLIC_STATS_DOCUMENT = "system/publicStats";
+
+async function savePublicStatsSnapshot(env, token, stats) {
+  const response = await fetch(
+    `${firestoreRoot(env)}/documents/${PUBLIC_STATS_DOCUMENT}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fields: Object.fromEntries(
+          Object.entries(stats).map(([key, value]) => [key, encodeValue(value)]),
+        ),
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Unable to save public stats: ${response.status}`);
+  }
+}
+
+async function loadPublicStatsSnapshot(env, token) {
+  const response = await fetch(
+    `${firestoreRoot(env)}/documents/${PUBLIC_STATS_DOCUMENT}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!response.ok) {
+    throw new Error(`Unable to load public stats snapshot: ${response.status}`);
+  }
+  return decodeDocument(await response.json());
+}
+
+async function refreshPublicStats(env, now = new Date()) {
   const token = await serviceAccessToken(env);
   const [users, groupDocuments] = await Promise.all([
     listCollection(env, "users", token),
@@ -520,8 +554,20 @@ async function runReminders(env, now = new Date()) {
   ]);
   const groups = groupDocuments.flatMap((document) => {
     if (document.deleted || typeof document.data !== "string") return [];
-    try { return [{ ...JSON.parse(document.data), id: document.id }]; } catch { return []; }
+    try {
+      return [{ ...JSON.parse(document.data), id: document.id }];
+    } catch {
+      return [];
+    }
   });
+  const stats = buildPublicStats(users, groups, now);
+  await savePublicStatsSnapshot(env, token, stats);
+  return { stats, users, groups };
+}
+
+async function runReminders(env, now = new Date()) {
+  const { users, groups } = await refreshPublicStats(env, now);
+  const token = await serviceAccessToken(env);
   const dailyLimit = Math.min(100, Math.max(1, Number(env.MAX_EMAILS_PER_DAY ?? 95)));
   const utcDate = now.toISOString().slice(0, 10);
   const sentToday = users.filter((user) =>
@@ -589,19 +635,8 @@ async function publicStatsResponse(request, env, ctx) {
 
   try {
     const token = await serviceAccessToken(env);
-    const [users, groupDocuments] = await Promise.all([
-      listCollection(env, "users", token),
-      listCollection(env, "groups", token),
-    ]);
-    const groups = groupDocuments.flatMap((document) => {
-      if (document.deleted || typeof document.data !== "string") return [];
-      try {
-        return [{ ...JSON.parse(document.data), id: document.id }];
-      } catch {
-        return [];
-      }
-    });
-    const response = Response.json(buildPublicStats(users, groups), {
+    const stats = await loadPublicStatsSnapshot(env, token);
+    const response = Response.json(stats, {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Cache-Control": "public, max-age=3600, s-maxage=3600",
@@ -840,6 +875,21 @@ export default {
     }
     if (url.pathname === "/stats" && request.method === "GET") {
       return publicStatsResponse(request, env, ctx);
+    }
+    if (url.pathname === "/refresh-stats" && request.method === "POST") {
+      if (request.headers.get("authorization") !== `Bearer ${env.RUN_SECRET}`) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      const { stats } = await refreshPublicStats(env);
+      const response = Response.json(stats, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "public, max-age=3600, s-maxage=3600",
+        },
+      });
+      const cacheKey = new Request(`${url.origin}/stats`, { method: "GET" });
+      ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+      return response;
     }
     if (url.pathname === "/unsubscribe") return unsubscribe(request, env);
     if (url.pathname === "/health") return Response.json({ ok: true, service: "bayadtayoopo-reminders" });

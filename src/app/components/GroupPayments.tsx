@@ -415,6 +415,28 @@ export function GroupPayments({
         : [],
     [draft, group],
   );
+  const simplifiedReconciliation = useMemo(() => {
+    if (!draft || draft.flow === "expense" || draft.restrictToRecipientExpenses) {
+      return undefined;
+    }
+    const originalShares = Math.round(
+      outstandingExpenseShares.reduce((sum, share) => sum + share.amount, 0) * 100,
+    ) / 100;
+    const simplifiedTotal = Math.round(
+      settlements
+        .filter((settlement) => settlement.from === draft.fromMemberId)
+        .reduce((sum, settlement) => sum + settlement.amount, 0) * 100,
+    ) / 100;
+    const nettedAmount = Math.max(
+      0,
+      Math.round((originalShares - simplifiedTotal) * 100) / 100,
+    );
+    const otherTransfers = Math.max(
+      0,
+      Math.round((simplifiedTotal - draft.maximumAmount) * 100) / 100,
+    );
+    return { originalShares, simplifiedTotal, nettedAmount, otherTransfers };
+  }, [draft, outstandingExpenseShares, settlements]);
   const draftRecipient = draft
     ? getMemberById(group, draft.toMemberId)
     : undefined;
@@ -1698,19 +1720,6 @@ export function GroupPayments({
                 <button
                   type="button"
                   onClick={() =>
-                    onSettlementModePreferenceChange("simplified", true)
-                  }
-                  className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
-                    effectiveSettlementMode === "simplified"
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  Fewer transfers
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
                     onSettlementModePreferenceChange("direct", true)
                   }
                   className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
@@ -1721,12 +1730,25 @@ export function GroupPayments({
                 >
                   Original payees
                 </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSettlementModePreferenceChange("simplified", true)
+                  }
+                  className={`relative rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
+                    effectiveSettlementMode === "simplified"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
+                  }`}
+                >
+                  Try Fewer transfers!
+                </button>
               </div>
 
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 {effectiveSettlementMode === "simplified"
                   ? "Recommended · Combines group balances to reduce transfers. The recipient may not be the original payer."
-                  : "Pays each member who originally covered an expense. This may require more transfers."}
+                  : "Default · Pays each member who originally covered an expense. This may require more transfers."}
               </p>
               <p className="mt-2 text-[11px] font-medium text-primary">
                 This setting does not affect paying a specific expense.
@@ -2379,6 +2401,7 @@ export function GroupPayments({
                       </span>
                     </div>
                     {draft.flow !== "expense" &&
+                      !!draft.restrictToRecipientExpenses &&
                       outstandingExpenseShares.length > 1 && (
                         <button
                           type="button"
@@ -2446,17 +2469,52 @@ export function GroupPayments({
                       })}
                     </div>
                   )}
-                  {hasSimplifiedRouting && (
-                    <div className="mb-3 rounded-xl border border-primary/15 bg-accent px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-                      <p className="font-semibold text-foreground">
-                        Simplified group payment
-                      </p>
-                      <p className="mt-1">
-                        Some expenses below were originally paid by other members. Your debt to them and their balances elsewhere form a payment chain, so BayadTayoOpo skips the intermediate transfers and sends the combined amount to {draftRecipient?.name ?? "the recipient"}.
-                      </p>
-                      <p className="mt-1.5 font-medium text-foreground">
-                        Prefer separate repayments? Close this payment and choose “Pay original payees” in Settle Up.
-                      </p>
+                  {simplifiedReconciliation && (
+                    <div className="mb-3 overflow-hidden rounded-xl border border-primary/15 bg-card">
+                      <div className="border-b border-border bg-primary/5 px-3 py-2.5">
+                        <p className="text-xs font-semibold text-foreground">How this amount was calculated</p>
+                        <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                          {hasSimplifiedRouting
+                            ? `Fewer transfers combines balances across the group, so some shares below may have been paid by someone other than ${draftRecipient?.name ?? "this recipient"}.`
+                            : "Fewer transfers combines the payer’s balances across this group."}
+                        </p>
+                      </div>
+                      <div className="space-y-2.5 px-3 py-3 text-xs">
+                        <div className="flex items-center justify-between gap-3 text-muted-foreground">
+                          <span>Unpaid expense shares</span>
+                          <span className="font-medium text-foreground">{formatCurrency(simplifiedReconciliation.originalShares, group.currency)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 text-muted-foreground">
+                          <span>Netted through other group balances</span>
+                          <span className="font-medium text-foreground">−{formatCurrency(simplifiedReconciliation.nettedAmount, group.currency)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 border-t border-border pt-2.5 font-semibold text-foreground">
+                          <span>Simplified balance to pay</span>
+                          <span>{formatCurrency(simplifiedReconciliation.simplifiedTotal, group.currency)}</span>
+                        </div>
+                        {simplifiedReconciliation.otherTransfers > 0.005 && (
+                          <>
+                            <div className="flex items-center justify-between gap-3 text-muted-foreground">
+                              <span>Other simplified transfers</span>
+                              <span>{formatCurrency(simplifiedReconciliation.otherTransfers, group.currency)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3 font-semibold text-primary">
+                              <span>Amount to {draftRecipient?.name ?? "this recipient"}</span>
+                              <span>{formatCurrency(draft.maximumAmount, group.currency)}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeDraft();
+                          onSettlementModePreferenceChange("direct", true);
+                        }}
+                        className="w-full border-t border-border px-3 py-3 text-left text-xs font-semibold text-primary hover:bg-primary/5"
+                      >
+                        Prefer exact expenses? Switch to Pay original payees
+                      </button>
                     </div>
                   )}
                   <AllocationList
@@ -2475,7 +2533,7 @@ export function GroupPayments({
                           : "You’ll still owe for this expense"
                         : draft.restrictToRecipientExpenses
                           ? `Still owed to ${draftRecipient?.name ?? "the original payee"}`
-                          : "Remaining simplified balance"}
+                          : "Remaining amount using fewer transfers"}
                     </span>
                     <span className="font-semibold text-foreground">
                       {formatCurrency(
