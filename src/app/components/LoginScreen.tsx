@@ -681,6 +681,35 @@ export function LoginScreen({ onGoogleSignIn }: Props) {
         </p>
       </section>
 
+      <footer className="px-6 pb-10 pt-2 sm:px-8 sm:pb-12">
+        <div className="mx-auto flex max-w-3xl flex-col items-center justify-center gap-2 border-t border-border pt-6 text-center text-xs text-muted-foreground sm:flex-row sm:gap-3">
+          <p>
+            Made with care by{" "}
+            <a
+              href="https://whythough.space"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-foreground underline decoration-primary/30 underline-offset-4 transition-colors hover:text-primary"
+            >
+              whythough.space
+            </a>
+          </p>
+          <span className="hidden text-border sm:inline" aria-hidden="true">
+            •
+          </span>
+          <p>Independent tools for real everyday problems.</p>
+          <span className="hidden text-border sm:inline" aria-hidden="true">
+            •
+          </span>
+          <a
+            href="mailto:support@whythough.space"
+            className="font-medium text-muted-foreground transition-colors hover:text-primary"
+          >
+            Contact support
+          </a>
+        </div>
+      </footer>
+
       {mobileInstallPromptOpen && (
         <aside
           role="dialog"
