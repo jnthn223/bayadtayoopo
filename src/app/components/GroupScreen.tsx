@@ -1329,12 +1329,21 @@ export function GroupScreen({
   }
 
   function csvFilename(suffix: string) {
-    const safeName = group.name
+    const directContact = group.kind === "direct"
+      ? group.members.find(
+          (member) => member.id !== currentMember?.id && member.uid !== currentMember?.uid,
+        )
+      : undefined;
+    const sourceName = directContact?.name ?? group.name;
+    const safeName = sourceName
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
-    return `${safeName || "group"}-${suffix}.csv`;
+    const resolvedSuffix = group.kind === "direct"
+      ? suffix.replace(/^expense/, "direct-expense")
+      : suffix;
+    return `${safeName || (group.kind === "direct" ? "person" : "group")}-${resolvedSuffix}.csv`;
   }
 
   function handleDownloadTemplate() {
@@ -2172,7 +2181,7 @@ export function GroupScreen({
             <div className="pt-4 pb-3 px-5 flex items-center justify-between border-b border-border relative">
               <div className="w-10 h-1 bg-border rounded-full mx-auto absolute left-1/2 -translate-x-1/2 top-2" />
               <Dialog.Title className="text-lg font-semibold text-foreground">
-                CSV Tools
+                {group.kind === "direct" ? "Direct Expense CSV" : "CSV Tools"}
               </Dialog.Title>
               <button
                 onClick={() => setCsvOpen(false)}
@@ -2228,7 +2237,9 @@ export function GroupScreen({
 
               {!isAdmin && (
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Only the group admin can import expenses.
+                  {group.kind === "direct"
+                    ? "Only the person-view owner can import expenses. You can still download or export CSV files."
+                    : "Only the group admin can import expenses."}
                 </p>
               )}
 
@@ -2247,7 +2258,9 @@ export function GroupScreen({
                       {pendingCsvExpenses.length === 1 ? "" : "s"}?
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      This will add the CSV expenses to the group.
+                      {group.kind === "direct"
+                        ? "This will add the CSV expenses to this direct person record. If the other person joins later, these expenses will be included in their history review."
+                        : "This will add the CSV expenses to the group."}
                     </p>
                   </div>
                   <div className="grid grid-cols-2 gap-2">

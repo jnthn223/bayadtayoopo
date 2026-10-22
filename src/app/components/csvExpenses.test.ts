@@ -69,6 +69,151 @@ describe("CSV expense tools", () => {
     ]);
   });
 
+  it("round-trips itemized expenses, deadlines, and locked currency details", () => {
+    const itemizedGroup: Group = {
+      ...group,
+      expenses: [
+        {
+          id: "expense-itemized",
+          description: "Tokyo dinner",
+          amount: 920,
+          originalAmount: 2400,
+          originalCurrency: "JPY",
+          conversionRate: 920 / 2400,
+          conversionRateDate: "2026-07-10",
+          conversionSource: "manual",
+          paidBy: "alice",
+          createdBy: "alice",
+          splitType: "itemized",
+          category: "food",
+          date: "2026-07-10",
+          dueDate: "2026-07-20",
+          splits: [
+            { memberId: "alice", amount: 460 },
+            { memberId: "bob", amount: 460 },
+          ],
+          items: [
+            {
+              id: "ramen",
+              name: "Ramen",
+              amount: 300,
+              memberIds: ["alice"],
+            },
+            {
+              id: "gyoza",
+              name: "Shared gyoza",
+              amount: 320,
+              memberIds: ["alice", "bob"],
+            },
+            {
+              id: "dessert",
+              name: "Dessert",
+              amount: 300,
+              memberIds: ["bob"],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = parseExpensesCsv(
+      exportExpensesCsv(itemizedGroup),
+      { ...group, expenses: [] },
+      "alice",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.expenses[0]).toMatchObject({
+      description: "Tokyo dinner",
+      amount: 920,
+      originalAmount: 2400,
+      originalCurrency: "JPY",
+      conversionRate: 920 / 2400,
+      conversionRateDate: "2026-07-10",
+      conversionSource: "manual",
+      dueDate: "2026-07-20",
+      splitType: "itemized",
+      splits: [
+        { memberId: "alice", amount: 460 },
+        { memberId: "bob", amount: 460 },
+      ],
+      items: [
+        { name: "Ramen", amount: 300, memberIds: ["alice"] },
+        { name: "Shared gyoza", amount: 320, memberIds: ["alice", "bob"] },
+        { name: "Dessert", amount: 300, memberIds: ["bob"] },
+      ],
+    });
+  });
+
+  it("supports direct-person expense ledgers", () => {
+    const directGroup: Group = {
+      ...group,
+      id: "direct-alice-bob",
+      name: "Alice & Bob",
+      kind: "direct",
+      directStatus: "draft",
+      participantUids: ["alice"],
+      members: group.members.slice(0, 2),
+      expenses: [
+        {
+          id: "direct-expense",
+          description: "Coffee",
+          amount: 240,
+          paidBy: "alice",
+          createdBy: "alice",
+          splitType: "equal",
+          category: "drinks",
+          date: "2026-07-12",
+          dueDate: "2026-07-19",
+          splits: [
+            { memberId: "alice", amount: 120 },
+            { memberId: "bob", amount: 120 },
+          ],
+        },
+      ],
+    };
+
+    const result = parseExpensesCsv(
+      exportExpensesCsv(directGroup),
+      { ...directGroup, expenses: [] },
+      "alice",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.expenses[0]).toMatchObject({
+      description: "Coffee",
+      amount: 240,
+      paidBy: "alice",
+      createdBy: "alice",
+      dueDate: "2026-07-19",
+      splits: [
+        { memberId: "alice", amount: 120 },
+        { memberId: "bob", amount: 120 },
+      ],
+    });
+  });
+
+  it("rejects inconsistent item assignments and conversion values", () => {
+    const result = parseExpensesCsv(
+      [
+        "date,description,category,amount,currency,originalAmount,originalCurrency,conversionRate,paidBy,splitType,splits,items,dueDate",
+        '2026-07-10,Dinner,food,600,PHP,1000,JPY,0.5,Alice,itemized,"Alice:300;Bob:300","[{""name"":""Meal"",""amount"":600,""members"":[""Alice""]}]",2026-07-09',
+      ].join("\n"),
+      group,
+      "alice",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors).toContain("Row 2: dueDate cannot be earlier than date");
+    expect(result.errors).toContain(
+      "Row 2: originalAmount × conversionRate must match amount",
+    );
+    expect(result.errors).toContain("Row 2: item assignments must match splits");
+  });
+
   it("generates a group-specific CSV template", () => {
     const template = exportExpensesTemplateCsv(group);
 

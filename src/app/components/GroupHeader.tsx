@@ -167,9 +167,9 @@ export function GroupHeader({
                   sideOffset={6}
                   className="z-50 min-w-[170px] bg-card border border-border rounded-2xl shadow-xl overflow-hidden py-1"
                 >
-                  {!isDirect && <MenuItem icon={FileSpreadsheet} onSelect={onCsvTools}>
+                  <MenuItem icon={FileSpreadsheet} onSelect={onCsvTools}>
                     CSV Tools
-                  </MenuItem>}
+                  </MenuItem>
                   {!isDirect && <MenuItem icon={HelpCircle} onSelect={onShowGuide}>
                     Show group guide
                   </MenuItem>}
