@@ -18,6 +18,7 @@ import {
   getCurrencySymbol,
   getMemberBalanceDetails,
   getMemberById,
+  getConfirmedOutstandingExpenseShares,
   getOutstandingExpenseShares,
   getTotalExpenses,
   getUnsettledTotal,
@@ -641,6 +642,57 @@ describe("expense business logic", () => {
       })),
     };
     expect(isExpenseSettled(fullyCovered, dinner)).toBe(true);
+  });
+
+  it("reduces unsettled member shares after confirmed partial payments", () => {
+    const dinner = group.expenses[0];
+    const partiallyCovered: Group = {
+      ...group,
+      payments: [
+        {
+          id: "bob-partial",
+          fromMemberId: "bob",
+          toMemberId: "alice",
+          amount: 12,
+          method: "Cash",
+          allocations: [{
+            expenseId: dinner.id,
+            expenseDescription: dinner.description,
+            amount: 12,
+          }],
+          status: "confirmed",
+          submittedAt: "2026-01-04T00:00:00.000Z",
+          submittedBy: "bob",
+        },
+        {
+          id: "carol-pending",
+          fromMemberId: "carol",
+          toMemberId: "alice",
+          amount: 10,
+          method: "Cash",
+          allocations: [{
+            expenseId: dinner.id,
+            expenseDescription: dinner.description,
+            amount: 10,
+          }],
+          status: "pending",
+          submittedAt: "2026-01-04T01:00:00.000Z",
+          submittedBy: "carol",
+        },
+      ],
+    };
+
+    expect(getConfirmedOutstandingExpenseShares(partiallyCovered, "alice")).toEqual([]);
+    expect(getConfirmedOutstandingExpenseShares(partiallyCovered, "bob")).toContainEqual({
+      expenseId: dinner.id,
+      expenseDescription: dinner.description,
+      amount: 18,
+    });
+    expect(getConfirmedOutstandingExpenseShares(partiallyCovered, "carol")).toContainEqual({
+      expenseId: dinner.id,
+      expenseDescription: dinner.description,
+      amount: 30,
+    });
   });
 
   it("recognizes legacy confirmed expense repayments as settled", () => {

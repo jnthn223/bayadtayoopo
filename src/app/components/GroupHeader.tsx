@@ -64,6 +64,7 @@ interface Props {
   };
   totalView?: "unsettled" | "all";
   onTotalViewChange?: (view: "unsettled" | "all") => void;
+  onShowSpendingBreakdown?: () => void;
 }
 
 const tabs = [
@@ -103,6 +104,7 @@ export function GroupHeader({
   directUnsettledExpenseSummary,
   totalView: controlledTotalView,
   onTotalViewChange,
+  onShowSpendingBreakdown,
 }: Props) {
   const [localTotalView, setLocalTotalView] = useState<"unsettled" | "all">("unsettled");
   const totalView = controlledTotalView ?? localTotalView;
@@ -230,7 +232,10 @@ export function GroupHeader({
             </h1>
             {isDirect ? (
               <div className="space-y-1.5 text-xs text-muted-foreground">
-                <TotalViewToggle value={totalView} onChange={setTotalView} />
+                <div className="flex items-center gap-1.5">
+                  <TotalViewToggle value={totalView} onChange={setTotalView} />
+                  {onShowSpendingBreakdown && <SpendingBreakdownButton onClick={onShowSpendingBreakdown} />}
+                </div>
                 <div className="space-y-0.5">
                   <p>Direct <strong className="font-semibold text-foreground">{(visibleDirectSummary?.direct ?? [{ currency: group.currency, amount: totalView === "unsettled" ? unsettledTotal : total }]).map((item) => formatCurrency(item.amount, item.currency)).join(" / ")}</strong></p>
                   <p>Across groups <strong className="font-semibold text-foreground">{visibleDirectSummary?.shared.length ? visibleDirectSummary.shared.map((item) => formatCurrency(item.amount, item.currency)).join(" / ") : formatCurrency(0, group.currency)}</strong></p>
@@ -262,6 +267,7 @@ export function GroupHeader({
               </div>
               <span className="text-sm text-muted-foreground">{group.members.length} members</span>
               <TotalViewToggle value={totalView} onChange={setTotalView} />
+              {onShowSpendingBreakdown && <SpendingBreakdownButton onClick={onShowSpendingBreakdown} />}
               <span className="text-sm font-medium text-foreground">{formatCurrency(totalView === "unsettled" ? unsettledTotal : total, group.currency)}</span>
             </div>}
           </div>
@@ -305,6 +311,20 @@ export function GroupHeader({
         })}
       </div>
     </>
+  );
+}
+
+function SpendingBreakdownButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors hover:bg-primary/15"
+      aria-label="View spending breakdown"
+      title="Spending breakdown"
+    >
+      <BarChart2 size={15} />
+    </button>
   );
 }
 

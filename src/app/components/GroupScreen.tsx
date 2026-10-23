@@ -40,11 +40,11 @@ import {
   generateId,
   getExpensePayerId,
   getOutstandingExpenseShares,
+  getConfirmedOutstandingExpenseShares,
   getMemberById,
   isExpenseSettled,
   isGroupAdmin,
   getTotalExpenses,
-  getUnsettledTotal,
   MEMBER_COLORS,
   mergeGroupMember,
 } from "./utils";
@@ -62,6 +62,10 @@ import { GroupContent } from "./GroupContent";
 import { UserAvatar } from "./UserAvatar";
 import { buildOverallBalances } from "./overallBalances";
 import { ArchiveBlockedDialog } from "./ArchiveBlockedDialog";
+import {
+  SpendingBreakdownModal,
+  type SpendingBreakdownSection,
+} from "./SpendingBreakdownModal";
 import {
   findMentionRange,
   getMentionedMemberIds,
@@ -148,6 +152,7 @@ export function GroupScreen({
   const [sharedGroupSummaryOpen, setSharedGroupSummaryOpen] = useState(true);
   const [personExpenseScope, setPersonExpenseScope] = useState<"all" | "direct" | "shared">("all");
   const [expenseTotalView, setExpenseTotalView] = useState<"unsettled" | "all">("unsettled");
+  const [spendingBreakdownOpen, setSpendingBreakdownOpen] = useState(false);
   const [editGroupOpen, setEditGroupOpen] = useState(false);
   const [groupNameInput, setGroupNameInput] = useState(group.name);
   const [groupCurrencyInput, setGroupCurrencyInput] = useState(group.currency);
@@ -1577,15 +1582,6 @@ export function GroupScreen({
     ...sharedExpenseTotals,
     [group.currency]: (sharedExpenseTotals[group.currency] ?? 0) + directExpenseTotal,
   };
-  const unsettledTotal = getUnsettledTotal(group, { includeProvisionalDirect: true });
-  const sharedUnsettledTotals = sharedGroupBalances.reduce<Record<string, number>>((totals, balance) => {
-    totals[balance.currency] = (totals[balance.currency] ?? 0) + Math.abs(balance.amount);
-    return totals;
-  }, {});
-  const allUnsettledTotals = {
-    ...sharedUnsettledTotals,
-    [group.currency]: (sharedUnsettledTotals[group.currency] ?? 0) + unsettledTotal,
-  };
   const currentUserConfirmedBalance = currentMember
     ? computeBalances(group).find((balance) => balance.memberId === currentMember.id)?.net ?? 0
     : 0;
@@ -1622,6 +1618,100 @@ export function GroupScreen({
     ? sharedExpenseItems
     : sharedExpenseItems.filter((item) => !item.settled);
   const hiddenSettledSharedExpenseCount = sharedExpenseItems.length - visibleSharedExpenseItems.length;
+  const buildSpendingBreakdownSections = (
+    view: "unsettled" | "all",
+    directScope: "all" | "direct" | "shared" = personExpenseScope,
+  ) => {
+    const totals = new Map<string, Map<string, { member: typeof group.members[number]; amount: number }>>();
+    const outstandingByMember = new Map<string, Map<string, number>>();
+    const outstandingAmount = (sourceGroup: Group, memberId: string, expenseId: string) => {
+      const key = `${sourceGroup.id}:${memberId}`;
+      let amounts = outstandingByMember.get(key);
+      if (!amounts) {
+        amounts = new Map(
+          getConfirmedOutstandingExpenseShares(sourceGroup, memberId).map((allocation) => [
+            allocation.expenseId ?? "",
+            allocation.amount,
+          ]),
+        );
+        outstandingByMember.set(key, amounts);
+      }
+      return amounts.get(expenseId) ?? 0;
+    };
+    const addExpense = (
+      sourceGroup: Group,
+      expense: Expense,
+      memberIds?: Set<string>,
+      canonicalMembers?: Map<string, typeof group.members[number]>,
+    ) => {
+      const currencyTotals = totals.get(sourceGroup.currency) ?? new Map();
+      for (const split of expense.splits) {
+        if (split.amount <= 0.005 || (memberIds && !memberIds.has(split.memberId))) continue;
+        const amount = view === "unsettled"
+          ? outstandingAmount(sourceGroup, split.memberId, expense.id)
+          : split.amount;
+        if (amount <= 0.005) continue;
+        const member = canonicalMembers?.get(split.memberId) ?? getMemberById(sourceGroup, split.memberId);
+        if (!member) continue;
+        const key = member.uid ?? member.id;
+        const current = currencyTotals.get(key);
+        currencyTotals.set(key, { member, amount: (current?.amount ?? 0) + amount });
+      }
+      totals.set(sourceGroup.currency, currencyTotals);
+    };
+
+    if (group.kind !== "direct") {
+      group.expenses.forEach((expense) => addExpense(group, expense));
+    } else {
+      const includeDirect = directScope !== "shared";
+      const includeGroups = directScope !== "direct";
+      if (includeDirect) group.expenses.forEach((expense) => addExpense(group, expense));
+      if (includeGroups && directPersonUid && directPerson) {
+        for (const sourceGroup of sharedSourceGroups) {
+          const me = sourceGroup.members.find((member) => member.uid === currentUser.id || member.id === currentUser.id);
+          const person = sourceGroup.members.find((member) => member.uid === directPersonUid);
+          if (!me || !person) continue;
+          const ids = new Set([me.id, person.id]);
+          const canonical = new Map([
+            [me.id, currentMember ?? me],
+            [person.id, directPerson],
+          ]);
+          sourceGroup.expenses
+            .filter((expense) => {
+              const participants = new Set([getExpensePayerId(expense), ...expense.splits.filter((split) => split.amount > 0.005).map((split) => split.memberId)]);
+              return participants.has(me.id) && participants.has(person.id);
+            })
+            .forEach((expense) => addExpense(sourceGroup, expense, ids, canonical));
+        }
+      }
+    }
+
+    return [...totals.entries()]
+      .map(([currency, memberTotals]) => ({ currency, entries: [...memberTotals.values()] }))
+      .sort((a, b) => a.currency.localeCompare(b.currency)) as SpendingBreakdownSection[];
+  };
+  const spendingBreakdownSections = buildSpendingBreakdownSections(expenseTotalView);
+  const unsettledBreakdownSections = expenseTotalView === "unsettled"
+    ? spendingBreakdownSections
+    : buildSpendingBreakdownSections("unsettled");
+  const sectionTotals = (sections: SpendingBreakdownSection[]) =>
+    Object.fromEntries(
+      sections.map((section) => [
+        section.currency,
+        section.entries.reduce((sum, entry) => sum + entry.amount, 0),
+      ]),
+    );
+  const unsettledExpenseShareTotals = sectionTotals(unsettledBreakdownSections);
+  const unsettledTotal = unsettledExpenseShareTotals[group.currency] ?? 0;
+  const directUnsettledTotals = group.kind === "direct"
+    ? sectionTotals(buildSpendingBreakdownSections("unsettled", "direct"))
+    : {};
+  const sharedUnsettledTotals = group.kind === "direct"
+    ? sectionTotals(buildSpendingBreakdownSections("unsettled", "shared"))
+    : {};
+  const allUnsettledTotals = group.kind === "direct"
+    ? sectionTotals(buildSpendingBreakdownSections("unsettled", "all"))
+    : {};
   const sharedPersonExpenseList = (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
@@ -1724,12 +1814,19 @@ export function GroupScreen({
           all: Object.entries(allExpenseTotals).map(([currency, amount]) => ({ currency, amount })),
         } : undefined}
         directUnsettledExpenseSummary={group.kind === "direct" ? {
-          direct: [{ currency: group.currency, amount: unsettledTotal }],
+          direct: Object.entries(directUnsettledTotals).map(([currency, amount]) => ({ currency, amount })),
           shared: Object.entries(sharedUnsettledTotals).map(([currency, amount]) => ({ currency, amount })),
           all: Object.entries(allUnsettledTotals).map(([currency, amount]) => ({ currency, amount })),
         } : undefined}
         totalView={expenseTotalView}
         onTotalViewChange={setExpenseTotalView}
+        onShowSpendingBreakdown={() => setSpendingBreakdownOpen(true)}
+      />
+      <SpendingBreakdownModal
+        open={spendingBreakdownOpen}
+        onClose={() => setSpendingBreakdownOpen(false)}
+        view={expenseTotalView}
+        sections={spendingBreakdownSections}
       />
       {group.kind === "direct" && visibleDirectImportRequests.length > 0 && (
         <div className="space-y-3 border-b border-violet-200 bg-violet-50 px-4 py-3">

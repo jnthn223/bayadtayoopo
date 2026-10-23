@@ -463,6 +463,69 @@ export function getOutstandingExpenseShares(
   });
 }
 
+/**
+ * Remaining expense shares after completed settlements only.
+ * Unlike getOutstandingExpenseShares, a payment that is merely pending is
+ * still shown here because the money has not been confirmed yet.
+ */
+export function getConfirmedOutstandingExpenseShares(
+  group: Group,
+  fromMemberId: string,
+): PaymentAllocation[] {
+  const allocatedCents = new Map<string, number>();
+  for (const payment of group.payments ?? []) {
+    if (payment.fromMemberId !== fromMemberId || payment.status !== "confirmed") continue;
+    for (const allocation of payment.allocations) {
+      if (!allocation.expenseId) continue;
+      allocatedCents.set(
+        allocation.expenseId,
+        (allocatedCents.get(allocation.expenseId) ?? 0) + Math.round(allocation.amount * 100),
+      );
+    }
+  }
+  for (const offset of group.balanceOffsets ?? []) {
+    if (offset.status !== "confirmed") continue;
+    const allocations =
+      offset.requesterMemberId === fromMemberId
+        ? offset.debitAllocations
+        : offset.counterpartyMemberId === fromMemberId
+          ? offset.creditAllocations
+          : [];
+    for (const allocation of allocations) {
+      if (!allocation.expenseId) continue;
+      allocatedCents.set(
+        allocation.expenseId,
+        (allocatedCents.get(allocation.expenseId) ?? 0) + Math.round(allocation.amount * 100),
+      );
+    }
+  }
+
+  return [...group.expenses]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+    .flatMap((expense) => {
+      const split = expense.splits.find((candidate) => candidate.memberId === fromMemberId);
+      if (
+        !split ||
+        split.memberId === getExpensePayerId(expense) ||
+        split.amount <= 0.005 ||
+        split.paymentStatus === "confirmed"
+      ) {
+        return [];
+      }
+      const remainingCents = Math.max(
+        0,
+        Math.round(split.amount * 100) - (allocatedCents.get(expense.id) ?? 0),
+      );
+      return remainingCents > 0
+        ? [{
+            expenseId: expense.id,
+            expenseDescription: expense.description,
+            amount: remainingCents / 100,
+          }]
+        : [];
+    });
+}
+
 export function computeDirectExpenseSettlements(group: Group): Settlement[] {
   const settlements = new Map<string, Settlement>();
   for (const sender of group.members) {
