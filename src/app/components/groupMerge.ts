@@ -162,6 +162,11 @@ export function mergeGroupChanges(
       changed.expenseCorrectionRequests,
       latest.expenseCorrectionRequests,
     ),
+    expenseImportRequests: mergeById(
+      base.expenseImportRequests,
+      changed.expenseImportRequests,
+      latest.expenseImportRequests,
+    ),
     memberClaimRequests: mergeById(
       base.memberClaimRequests,
       changed.memberClaimRequests,

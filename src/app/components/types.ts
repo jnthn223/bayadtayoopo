@@ -238,6 +238,20 @@ export interface ExpenseCorrectionRequest {
   dismissedByRequesterAt?: string;
 }
 
+export interface ExpenseImportRequest {
+  id: string;
+  expenses?: Expense[];
+  expenseCount: number;
+  expenseIds?: string[];
+  requestedBy: string;
+  requestedAt: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+  dismissedByRequesterAt?: string;
+}
+
 export interface DirectHistoryDispute {
   id: string;
   entityType: "expense" | "payment";
@@ -359,7 +373,11 @@ export type NotificationType =
   | "direct_correction_requested"
   | "direct_correction_approved"
   | "direct_correction_rejected"
-  | "direct_correction_cancelled";
+  | "direct_correction_cancelled"
+  | "direct_import_requested"
+  | "direct_import_approved"
+  | "direct_import_rejected"
+  | "direct_import_cancelled";
 
 export interface NotificationDestination {
   tab: "expenses" | "balances" | "settle" | "chat";
@@ -414,6 +432,7 @@ export interface Group {
   deletedExpenses?: DeletedExpense[];
   expenseDeletionRequests?: ExpenseDeletionRequest[];
   expenseCorrectionRequests?: ExpenseCorrectionRequest[];
+  expenseImportRequests?: ExpenseImportRequest[];
   messages?: ChatMessage[];
   createdAt: string;
   currency: string;

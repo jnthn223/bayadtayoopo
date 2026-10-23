@@ -43,6 +43,12 @@ const OPTIONAL_HEADERS = new Set<(typeof HEADERS)[number]>([
   "notes",
 ]);
 const REQUIRED_HEADERS = HEADERS.filter((header) => !OPTIONAL_HEADERS.has(header));
+export const MAX_CSV_FILE_BYTES = 1_000_000;
+const MAX_CSV_EXPENSE_ROWS = 500;
+const MAX_CSV_CELL_LENGTH = 10_000;
+const MAX_DESCRIPTION_LENGTH = 500;
+const MAX_NOTES_LENGTH = 500;
+const MAX_ITEM_NAME_LENGTH = 120;
 
 type CsvRow = Record<string, string>;
 
@@ -55,45 +61,53 @@ export function exportExpensesTemplateCsv(group: Group): string {
   const payer = members[0];
   const equalAmount = members.length * 300;
   const customAmount = members.length * 500;
+  const today = new Date();
+  const dateAt = (days: number) =>
+    new Date(today.getTime() + days * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+  const sampleOriginalCurrency = group.currency === "USD" ? "EUR" : "USD";
+  const sampleOriginalAmount = 100;
+  const sampleConversionRate = customAmount / sampleOriginalAmount;
   const rows: string[][] = [
     [...HEADERS],
     [
-      new Date().toISOString().slice(0, 10),
+      dateAt(0),
       "Sample dinner",
       "food",
-      "",
+      "N/A",
       String(equalAmount),
       group.currency,
-      "",
-      "",
-      "",
-      "",
-      "",
+      "N/A",
+      "N/A",
+      "N/A",
+      "N/A",
+      "N/A",
       payer?.name ?? "Member name",
       "equal",
       members.map((member) => `${member.name}:300`).join(";"),
-      "",
-      "",
-      "",
+      "N/A",
+      dateAt(7),
+      "Equal split example; items and conversion fields do not apply",
     ],
     [
-      new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      "Sample hotel",
-      "accommodation",
-      "",
+      dateAt(1),
+      "Sample converted expense",
+      "other",
+      "Travel booking",
       String(customAmount),
       group.currency,
-      "",
-      "",
-      "",
-      "",
-      "",
+      String(sampleOriginalAmount),
+      sampleOriginalCurrency,
+      String(sampleConversionRate),
+      dateAt(1),
+      "manual",
       payer?.name ?? "Member name",
       "custom",
       members.map((member) => `${member.name}:500`).join(";"),
-      "",
-      "",
-      "",
+      "N/A",
+      dateAt(14),
+      `Originally paid in ${sampleOriginalCurrency}; replace the sample rate with your locked-in rate`,
     ],
   ];
 
@@ -107,23 +121,23 @@ export function exportExpensesTemplateCsv(group: Group): string {
       },
     ];
     rows.push([
-      new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      dateAt(2),
       "Sample itemized meal",
       "food",
-      "",
+      "N/A",
       "500",
       group.currency,
-      "",
-      "",
-      "",
-      "",
-      "",
+      "N/A",
+      "N/A",
+      "N/A",
+      "N/A",
+      "N/A",
       payer?.name ?? "Member name",
       "itemized",
       `${members[0].name}:400;${members[1].name}:100`,
       JSON.stringify(itemizedItems),
-      "",
-      "Items use JSON with name, amount, and members",
+      dateAt(9),
+      "Itemized example; items use JSON with name, amount, and members",
     ]);
   }
 
@@ -137,11 +151,29 @@ export function exportExpensesCsv(group: Group): string {
   ]);
 }
 
+/** Re-runs the CSV accounting rules before a staged import is committed. */
+export function validateExpenseImportBatch(
+  expenses: Expense[],
+  group: Group,
+  createdBy: string,
+): string[] {
+  if (!expenses.length) return ["The import batch has no expenses"];
+  const result = parseExpensesCsv(
+    exportExpensesCsv({ ...group, expenses }),
+    group,
+    createdBy,
+  );
+  return result.ok ? [] : result.errors;
+}
+
 export function parseExpensesCsv(
   csv: string,
   group: Group,
   createdBy: string,
 ): ExpenseImportResult {
+  if (new TextEncoder().encode(csv).length > MAX_CSV_FILE_BYTES) {
+    return { ok: false, errors: ["CSV file must be 1 MB or smaller"] };
+  }
   const rows = parseCsv(csv);
   const errors: string[] = [];
   const existingFingerprints = new Set(
@@ -151,8 +183,35 @@ export function parseExpensesCsv(
   if (rows.length < 2) {
     return { ok: false, errors: ["CSV must include a header row and at least one expense row"] };
   }
+  const expenseRowCount = rows
+    .slice(1)
+    .filter((row) => row.some((cell) => cell.trim())).length;
+  if (expenseRowCount > MAX_CSV_EXPENSE_ROWS) {
+    return {
+      ok: false,
+      errors: [`CSV can contain at most ${MAX_CSV_EXPENSE_ROWS} expense rows`],
+    };
+  }
+  const oversizedCell = rows.findIndex((row) =>
+    row.some((cell) => cell.length > MAX_CSV_CELL_LENGTH),
+  );
+  if (oversizedCell >= 0) {
+    return {
+      ok: false,
+      errors: [`Row ${oversizedCell + 1}: a cell exceeds the 10,000 character limit`],
+    };
+  }
 
   const headers = rows[0].map((header) => header.trim());
+  const duplicateHeaders = headers.filter(
+    (header, index) => header && headers.indexOf(header) !== index,
+  );
+  if (duplicateHeaders.length) {
+    return {
+      ok: false,
+      errors: [`Duplicate column(s): ${[...new Set(duplicateHeaders)].join(", ")}`],
+    };
+  }
   const missingHeaders = REQUIRED_HEADERS.filter((header) => !headers.includes(header));
   if (missingHeaders.length) {
     return {
@@ -167,7 +226,16 @@ export function parseExpensesCsv(
     .filter(({ row }) => row.some((cell) => cell.trim()))
     .map(({ row, lineNumber }) => {
       const record = Object.fromEntries(
-        headers.map((header, cellIndex) => [header, row[cellIndex]?.trim() ?? ""]),
+        headers.map((header, cellIndex) => {
+          const value = restoreSpreadsheetCell(row[cellIndex]?.trim() ?? "");
+          return [
+            header,
+            OPTIONAL_HEADERS.has(header as (typeof HEADERS)[number]) &&
+            value.toLowerCase() === "n/a"
+              ? ""
+              : value,
+          ];
+        }),
       ) as CsvRow;
 
       const parsed = parseExpenseRow(record, group, createdBy, lineNumber);
@@ -253,10 +321,20 @@ function parseExpenseRow(
 
   if (!isValidDate(row.date)) errors.push(`Row ${lineNumber}: date must be YYYY-MM-DD`);
   if (!row.description) errors.push(`Row ${lineNumber}: description is required`);
+  if (row.description.length > MAX_DESCRIPTION_LENGTH) {
+    errors.push(
+      `Row ${lineNumber}: description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer`,
+    );
+  }
+  if ((row.notes?.length ?? 0) > MAX_NOTES_LENGTH) {
+    errors.push(`Row ${lineNumber}: notes must be ${MAX_NOTES_LENGTH} characters or fewer`);
+  }
   if (!Number.isFinite(amount) || amount <= 0) {
     errors.push(`Row ${lineNumber}: amount must be greater than zero`);
   }
-  if (row.currency && row.currency !== group.currency) {
+  if (!row.currency) {
+    errors.push(`Row ${lineNumber}: currency is required`);
+  } else if (row.currency !== group.currency) {
     errors.push(`Row ${lineNumber}: currency must be ${group.currency}`);
   }
   if (!EXPENSE_CATEGORIES.includes(category)) {
@@ -274,7 +352,11 @@ function parseExpenseRow(
     errors.push(`Row ${lineNumber}: splitType must be equal, custom, or itemized`);
   }
   if (!paidBy) {
-    errors.push(`Row ${lineNumber}: paidBy "${row.paidBy}" is not a group member`);
+    errors.push(
+      memberNameIsAmbiguous(group.members, row.paidBy, createdBy)
+        ? `Row ${lineNumber}: paidBy "${row.paidBy}" is ambiguous; member names must be unique`
+        : `Row ${lineNumber}: paidBy "${row.paidBy}" is not a group member`,
+    );
   }
 
   const splits = parseSplits(row.splits, group, createdBy, lineNumber);
@@ -342,6 +424,15 @@ function parseExpenseRow(
     }
     if (paidBy && !hasNonPayerShare(paidBy.id, splits.splits)) {
       errors.push(`Row ${lineNumber}: ${SELF_ONLY_EXPENSE_ERROR}`);
+    }
+    if (
+      splitType === "equal" &&
+      splits.splits.length > 1 &&
+      splits.splits.some(
+        (split) => Math.abs(split.amount - splits.splits[0].amount) > 0.01,
+      )
+    ) {
+      errors.push(`Row ${lineNumber}: equal splits must use the same amount for every member`);
     }
   }
 
@@ -460,6 +551,11 @@ function parseItems(
     const memberNames = Array.isArray(record.members) ? record.members : [];
 
     if (!name) errors.push(`Row ${lineNumber}: item ${itemNumber} name is required`);
+    if (name.length > MAX_ITEM_NAME_LENGTH) {
+      errors.push(
+        `Row ${lineNumber}: item ${itemNumber} name must be ${MAX_ITEM_NAME_LENGTH} characters or fewer`,
+      );
+    }
     if (!Number.isFinite(amount) || amount <= 0) {
       errors.push(`Row ${lineNumber}: item ${itemNumber} amount must be greater than zero`);
     }
@@ -476,7 +572,9 @@ function parseItems(
       const member = findMemberByName(group.members, rawName, currentMemberId);
       if (!member) {
         errors.push(
-          `Row ${lineNumber}: item ${itemNumber} member "${rawName}" is not a group member`,
+          memberNameIsAmbiguous(group.members, rawName, currentMemberId)
+            ? `Row ${lineNumber}: item ${itemNumber} member "${rawName}" is ambiguous; member names must be unique`
+            : `Row ${lineNumber}: item ${itemNumber} member "${rawName}" is not a group member`,
         );
         return [];
       }
@@ -523,7 +621,11 @@ function parseSplits(
       const member = findMemberByName(group.members, memberName, currentMemberId);
 
       if (!member) {
-        errors.push(`Row ${lineNumber}: split member "${memberName}" is not a group member`);
+        errors.push(
+          memberNameIsAmbiguous(group.members, memberName, currentMemberId)
+            ? `Row ${lineNumber}: split member "${memberName}" is ambiguous; member names must be unique`
+            : `Row ${lineNumber}: split member "${memberName}" is not a group member`,
+        );
         return null;
       }
       if (seen.has(member.id)) {
@@ -545,7 +647,23 @@ function parseSplits(
 }
 
 function stringifyCsv(rows: string[][]): string {
-  return rows.map((row) => row.map(escapeCsvCell).join(",")).join("\n");
+  return rows
+    .map((row, rowIndex) =>
+      row
+        .map((value) => escapeCsvCell(rowIndex === 0 ? value : protectSpreadsheetCell(value)))
+        .join(","),
+    )
+    .join("\n");
+}
+
+function protectSpreadsheetCell(value: string): string {
+  return /^\s*[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
+function restoreSpreadsheetCell(value: string): string {
+  return value.startsWith("'") && /^\s*[=+\-@]/.test(value.slice(1))
+    ? value.slice(1)
+    : value;
 }
 
 function escapeCsvCell(value: string): string {
@@ -606,7 +724,22 @@ function findMemberByName(
     );
   }
 
-  return members.find((member) => member.name.trim().toLowerCase() === normalized);
+  const matches = members.filter(
+    (member) => member.name.trim().toLowerCase() === normalized,
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function memberNameIsAmbiguous(
+  members: Member[],
+  name: string,
+  currentMemberId?: string,
+): boolean {
+  const normalized = name.trim().toLowerCase();
+  if (normalized === "you" && currentMemberId) return false;
+  return members.filter(
+    (member) => member.name.trim().toLowerCase() === normalized,
+  ).length > 1;
 }
 
 function getMemberName(members: Member[], memberId: string): string {

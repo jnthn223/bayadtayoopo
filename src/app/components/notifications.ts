@@ -144,6 +144,51 @@ export function deriveNotifications(
         }
       }
 
+      for (const request of group.expenseImportRequests ?? []) {
+        const requestedByMe = request.requestedBy === currentMember.id;
+        if (request.status === "pending" && !requestedByMe) {
+          add({
+            id: `${group.id}:direct-import:${request.id}:pending`,
+            type: "direct_import_requested",
+            title: "Imported expenses need your review",
+            body: `${request.expenseCount} expense${request.expenseCount === 1 ? "" : "s"} will stay pending until you approve them`,
+            at: request.requestedAt,
+            actorId: request.requestedBy,
+            destination: { tab: "expenses" },
+          });
+        } else if (requestedByMe && request.reviewedAt && request.status === "approved") {
+          add({
+            id: `${group.id}:direct-import:${request.id}:approved`,
+            type: "direct_import_approved",
+            title: "CSV import approved",
+            body: `${otherPerson?.name ?? "Your friend"} approved ${request.expenseCount} imported expense${request.expenseCount === 1 ? "" : "s"}`,
+            at: request.reviewedAt,
+            actorId: request.reviewedBy,
+            destination: { tab: "expenses" },
+          });
+        } else if (requestedByMe && request.reviewedAt && request.status === "rejected") {
+          add({
+            id: `${group.id}:direct-import:${request.id}:rejected`,
+            type: "direct_import_rejected",
+            title: "CSV import rejected",
+            body: request.rejectionReason ?? "The imported expenses were not approved",
+            at: request.reviewedAt,
+            actorId: request.reviewedBy,
+            destination: { tab: "expenses" },
+          });
+        } else if (request.status === "cancelled" && !requestedByMe && request.reviewedAt) {
+          add({
+            id: `${group.id}:direct-import:${request.id}:cancelled`,
+            type: "direct_import_cancelled",
+            title: "CSV import withdrawn",
+            body: "The pending imported expenses were withdrawn",
+            at: request.reviewedAt,
+            actorId: request.requestedBy,
+            destination: { tab: "expenses" },
+          });
+        }
+      }
+
       if (group.directStatus !== "active") return items;
     }
 

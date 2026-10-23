@@ -4,6 +4,7 @@ import {
   exportExpensesCsv,
   exportExpensesTemplateCsv,
   parseExpensesCsv,
+  validateExpenseImportBatch,
 } from "./csvExpenses";
 
 vi.mock("./utils", async () => {
@@ -220,6 +221,22 @@ describe("CSV expense tools", () => {
     expect(template).toContain("PHP");
     expect(template).toContain("Alice:300;Bob:300;Carol:300");
     expect(template).toContain("Sample dinner");
+    expect(template).toContain("Sample converted expense");
+    expect(template).toContain("Sample itemized meal");
+    expect(template).toContain("N/A");
+
+    const result = parseExpensesCsv(template, { ...group, expenses: [] }, "alice");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.expenses).toHaveLength(3);
+    expect(result.expenses[0].dueDate).toBeTruthy();
+    expect(result.expenses[1]).toMatchObject({
+      originalAmount: 100,
+      originalCurrency: "USD",
+      conversionSource: "manual",
+    });
+    expect(result.expenses[2].splitType).toBe("itemized");
+    expect(result.expenses[2].items).toHaveLength(2);
   });
 
   it("rejects rows with unknown members and split mismatches", () => {
@@ -239,6 +256,189 @@ describe("CSV expense tools", () => {
       'Row 2: paidBy "Mark" is not a group member',
       "Row 2: split total 600.00 does not match amount 900.00",
     ]);
+  });
+
+  it("rejects people outside a direct-person record", () => {
+    const directGroup: Group = {
+      ...group,
+      kind: "direct",
+      members: group.members.slice(0, 2),
+      expenses: [],
+    };
+    const result = parseExpensesCsv(
+      [
+        "date,description,category,amount,currency,paidBy,splitType,splits",
+        '2026-07-10,Coffee,drinks,240,PHP,Carol,equal,"Alice:120;Bob:120"',
+      ].join("\n"),
+      directGroup,
+      "alice",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors).toContain(
+      'Row 2: paidBy "Carol" is not a group member',
+    );
+  });
+
+  it("rejects ambiguous member names", () => {
+    const ambiguousGroup: Group = {
+      ...group,
+      members: [
+        group.members[0],
+        { ...group.members[1], name: "Sam" },
+        { ...group.members[2], name: "Sam" },
+      ],
+      expenses: [],
+    };
+    const result = parseExpensesCsv(
+      [
+        "date,description,category,amount,currency,paidBy,splitType,splits",
+        '2026-07-10,Lunch,food,300,PHP,Alice,custom,"Alice:100;Sam:200"',
+      ].join("\n"),
+      ambiguousGroup,
+      "alice",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors).toContain(
+      'Row 2: split member "Sam" is ambiguous; member names must be unique',
+    );
+  });
+
+  it("requires the base currency and truly equal equal-split amounts", () => {
+    const missingCurrency = parseExpensesCsv(
+      [
+        "date,description,category,amount,currency,paidBy,splitType,splits",
+        '2026-07-10,Lunch,food,300,,Alice,custom,"Alice:100;Bob:200"',
+      ].join("\n"),
+      group,
+      "alice",
+    );
+    expect(missingCurrency.ok).toBe(false);
+    if (!missingCurrency.ok) {
+      expect(missingCurrency.errors).toContain("Row 2: currency is required");
+    }
+
+    const unequal = parseExpensesCsv(
+      [
+        "date,description,category,amount,currency,paidBy,splitType,splits",
+        '2026-07-10,Lunch,food,300,PHP,Alice,equal,"Alice:100;Bob:200"',
+      ].join("\n"),
+      group,
+      "alice",
+    );
+    expect(unequal.ok).toBe(false);
+    if (!unequal.ok) {
+      expect(unequal.errors).toContain(
+        "Row 2: equal splits must use the same amount for every member",
+      );
+    }
+  });
+
+  it("limits imported text, file size, and expense row count", () => {
+    const longText = "x".repeat(501);
+    const textResult = parseExpensesCsv(
+      [
+        "date,description,category,amount,currency,paidBy,splitType,splits,notes",
+        `2026-07-10,${longText},food,300,PHP,Alice,custom,"Alice:100;Bob:200",${longText}`,
+      ].join("\n"),
+      group,
+      "alice",
+    );
+    expect(textResult.ok).toBe(false);
+    if (!textResult.ok) {
+      expect(textResult.errors).toContain(
+        "Row 2: description must be 500 characters or fewer",
+      );
+      expect(textResult.errors).toContain(
+        "Row 2: notes must be 500 characters or fewer",
+      );
+    }
+
+    const oversized = parseExpensesCsv("x".repeat(1_000_001), group, "alice");
+    expect(oversized).toEqual({
+      ok: false,
+      errors: ["CSV file must be 1 MB or smaller"],
+    });
+
+    const rows = Array.from(
+      { length: 501 },
+      (_, index) =>
+        `2026-07-10,Expense ${index},food,300,PHP,Alice,custom,"Alice:100;Bob:200"`,
+    );
+    const tooManyRows = parseExpensesCsv(
+      [
+        "date,description,category,amount,currency,paidBy,splitType,splits",
+        ...rows,
+      ].join("\n"),
+      group,
+      "alice",
+    );
+    expect(tooManyRows).toEqual({
+      ok: false,
+      errors: ["CSV can contain at most 500 expense rows"],
+    });
+  });
+
+  it("protects spreadsheet-formula-like text while preserving round trips", () => {
+    const formulaGroup: Group = {
+      ...group,
+      expenses: [
+        {
+          ...group.expenses[0],
+          id: "formula-expense",
+          description: "=WEBSERVICE(\"https://example.com\")",
+          notes: "@SUM(1+1)",
+        },
+      ],
+    };
+    const csv = exportExpensesCsv(formulaGroup);
+    expect(csv).toContain("'=WEBSERVICE");
+    expect(csv).toContain("'@SUM(1+1)");
+
+    const result = parseExpensesCsv(
+      csv,
+      { ...group, expenses: [] },
+      "alice",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.expenses[0].description).toBe(
+      '=WEBSERVICE("https://example.com")',
+    );
+    expect(result.expenses[0].notes).toBe("@SUM(1+1)");
+  });
+
+  it("revalidates staged batches before they are committed", () => {
+    const validExpense = {
+      ...group.expenses[0],
+      id: "staged-expense",
+      date: "2026-08-01",
+      description: "Staged dinner",
+    };
+    expect(
+      validateExpenseImportBatch([validExpense], group, "alice"),
+    ).toEqual([]);
+
+    expect(
+      validateExpenseImportBatch(
+        [{
+          ...validExpense,
+          splits: [
+            { memberId: "alice", amount: 100 },
+            { memberId: "bob", amount: 100 },
+          ],
+        }],
+        group,
+        "alice",
+      ),
+    ).toContain("Row 2: split total 200.00 does not match amount 900.00");
+
+    expect(
+      validateExpenseImportBatch([group.expenses[0]], group, "alice"),
+    ).toContain("Row 2: duplicate expense already exists in this group");
   });
 
   it("rejects invalid amounts and categories", () => {

@@ -70,7 +70,9 @@ import {
 import {
   exportExpensesCsv,
   exportExpensesTemplateCsv,
+  MAX_CSV_FILE_BYTES,
   parseExpensesCsv,
+  validateExpenseImportBatch,
 } from "./csvExpenses";
 
 type Tab = GroupTab;
@@ -179,10 +181,15 @@ export function GroupScreen({
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [csvImportCount, setCsvImportCount] = useState<number | null>(null);
+  const [csvImportAwaitingReview, setCsvImportAwaitingReview] = useState(false);
   const [pendingCsvExpenses, setPendingCsvExpenses] = useState<Expense[] | null>(
     null,
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [rejectImportId, setRejectImportId] = useState<string | null>(null);
+  const [importRejectionReason, setImportRejectionReason] = useState("");
+  const [importRejectionError, setImportRejectionError] = useState("");
+  const [directImportError, setDirectImportError] = useState("");
   const [paymentDetailsOpen, setPaymentDetailsOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("");
   const [accountName, setAccountName] = useState("");
@@ -1349,6 +1356,7 @@ export function GroupScreen({
   function handleDownloadTemplate() {
     setCsvErrors([]);
     setCsvImportCount(null);
+    setCsvImportAwaitingReview(false);
     setPendingCsvExpenses(null);
     downloadCsv(csvFilename("expense-template"), exportExpensesTemplateCsv(group));
   }
@@ -1356,17 +1364,26 @@ export function GroupScreen({
   function handleExportExpenses() {
     setCsvErrors([]);
     setCsvImportCount(null);
+    setCsvImportAwaitingReview(false);
     setPendingCsvExpenses(null);
     downloadCsv(csvFilename("expenses"), exportExpensesCsv(group));
   }
 
   async function handleImportFile(file: File) {
     if (!currentMember) return;
+    if (file.size > MAX_CSV_FILE_BYTES) {
+      setCsvErrors(["CSV file must be 1 MB or smaller"]);
+      setCsvImportCount(null);
+      setCsvImportAwaitingReview(false);
+      setPendingCsvExpenses(null);
+      return;
+    }
     const text = await file.text();
     const result = parseExpensesCsv(text, group, currentMember.id);
     if (!result.ok) {
       setCsvErrors(result.errors);
       setCsvImportCount(null);
+      setCsvImportAwaitingReview(false);
       setPendingCsvExpenses(null);
       return;
     }
@@ -1374,17 +1391,125 @@ export function GroupScreen({
     setPendingCsvExpenses(result.expenses);
     setCsvErrors([]);
     setCsvImportCount(null);
+    setCsvImportAwaitingReview(false);
   }
 
-  function confirmCsvImport() {
-    if (!pendingCsvExpenses) return;
-    onUpdate({
-      ...group,
-      expenses: [...pendingCsvExpenses, ...group.expenses],
-    });
+  async function confirmCsvImport() {
+    if (!pendingCsvExpenses || !currentMember) return;
+    const validationErrors = validateExpenseImportBatch(
+      pendingCsvExpenses,
+      group,
+      currentMember.id,
+    );
+    if (validationErrors.length) {
+      setCsvErrors(validationErrors);
+      setPendingCsvExpenses(null);
+      return;
+    }
+    const requiresReview = group.kind === "direct" && group.directStatus === "active";
+    if (requiresReview) {
+      await onUpdate({
+        ...group,
+        expenseImportRequests: [
+          {
+            id: generateId(),
+            expenses: pendingCsvExpenses,
+            expenseCount: pendingCsvExpenses.length,
+            requestedBy: currentMember.id,
+            requestedAt: new Date().toISOString(),
+            status: "pending",
+          },
+          ...(group.expenseImportRequests ?? []),
+        ],
+      });
+    } else {
+      await onUpdate({
+        ...group,
+        expenses: [...pendingCsvExpenses, ...group.expenses],
+      });
+    }
     setCsvErrors([]);
     setCsvImportCount(pendingCsvExpenses.length);
+    setCsvImportAwaitingReview(requiresReview);
     setPendingCsvExpenses(null);
+  }
+
+  async function reviewDirectImport(requestId: string, approved: boolean) {
+    if (!currentMember) return;
+    const request = (group.expenseImportRequests ?? []).find(
+      (candidate) => candidate.id === requestId && candidate.status === "pending",
+    );
+    if (!request || request.requestedBy === currentMember.id) return;
+    const now = new Date().toISOString();
+    const importedExpenses = approved ? (request.expenses ?? []) : [];
+    if (approved) {
+      const validationErrors = validateExpenseImportBatch(
+        importedExpenses,
+        group,
+        request.requestedBy,
+      );
+      if (validationErrors.length) {
+        setDirectImportError(
+          `This batch can no longer be approved: ${validationErrors[0]}`,
+        );
+        return;
+      }
+    }
+    setDirectImportError("");
+    const existingIds = new Set(group.expenses.map((expense) => expense.id));
+    await onUpdate({
+      ...group,
+      expenses: approved
+        ? [...importedExpenses.filter((expense) => !existingIds.has(expense.id)), ...group.expenses]
+        : group.expenses,
+      expenseImportRequests: (group.expenseImportRequests ?? []).map((candidate) =>
+        candidate.id === requestId
+          ? {
+              ...candidate,
+              expenses: undefined,
+              expenseIds: importedExpenses.map((expense) => expense.id),
+              status: approved ? "approved" as const : "rejected" as const,
+              reviewedBy: currentMember.id,
+              reviewedAt: now,
+              rejectionReason: approved ? undefined : importRejectionReason.trim(),
+            }
+          : candidate,
+      ),
+    });
+    setRejectImportId(null);
+    setImportRejectionReason("");
+    setImportRejectionError("");
+  }
+
+  async function cancelDirectImport(requestId: string) {
+    if (!currentMember) return;
+    const now = new Date().toISOString();
+    await onUpdate({
+      ...group,
+      expenseImportRequests: (group.expenseImportRequests ?? []).map((request) =>
+        request.id === requestId && request.requestedBy === currentMember.id && request.status === "pending"
+          ? {
+              ...request,
+              expenses: undefined,
+              status: "cancelled" as const,
+              reviewedBy: currentMember.id,
+              reviewedAt: now,
+            }
+          : request,
+      ),
+    });
+  }
+
+  async function dismissRejectedImport(requestId: string) {
+    if (!currentMember) return;
+    await onUpdate({
+      ...group,
+      expenseImportRequests: (group.expenseImportRequests ?? []).map((request) =>
+        request.id === requestId && request.requestedBy === currentMember.id
+          ? { ...request, dismissedByRequesterAt: new Date().toISOString() }
+          : request,
+      ),
+    });
   }
 
   const expensesByDate = group.expenses.reduce<Record<string, Expense[]>>(
@@ -1550,6 +1675,13 @@ export function GroupScreen({
       {personExpenseScope === "shared" && sharedPersonExpenseList}
     </div>
   ) : undefined;
+  const visibleDirectImportRequests = (group.expenseImportRequests ?? []).filter(
+    (request) =>
+      request.status === "pending" ||
+      (request.status === "rejected" &&
+        request.requestedBy === currentMember?.id &&
+        !request.dismissedByRequesterAt),
+  );
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -1573,6 +1705,7 @@ export function GroupScreen({
         onCsvTools={() => {
           setCsvErrors([]);
           setCsvImportCount(null);
+          setCsvImportAwaitingReview(false);
           setPendingCsvExpenses(null);
           setCsvOpen(true);
         }}
@@ -1598,6 +1731,73 @@ export function GroupScreen({
         totalView={expenseTotalView}
         onTotalViewChange={setExpenseTotalView}
       />
+      {group.kind === "direct" && visibleDirectImportRequests.length > 0 && (
+        <div className="space-y-3 border-b border-violet-200 bg-violet-50 px-4 py-3">
+          {directImportError && (
+            <p className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {directImportError}
+            </p>
+          )}
+          {visibleDirectImportRequests.map((request) => {
+            const requestedByMe = request.requestedBy === currentMember?.id;
+            const totalAmount = (request.expenses ?? []).reduce(
+              (sum, expense) => sum + expense.amount,
+              0,
+            );
+            if (request.status === "rejected") {
+              return (
+                <div key={request.id} className="rounded-2xl border border-destructive/20 bg-card p-3">
+                  <p className="text-sm font-semibold text-destructive">CSV import rejected</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    The other person did not approve this batch of {request.expenseCount} expense{request.expenseCount === 1 ? "" : "s"}.
+                  </p>
+                  <div className="mt-3 rounded-xl bg-destructive/5 px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-destructive">Reason</p>
+                    <p className="mt-1 text-sm text-foreground">{request.rejectionReason}</p>
+                  </div>
+                  <button type="button" onClick={() => void dismissRejectedImport(request.id)} className="mt-3 w-full rounded-xl border border-border px-3 py-2 text-xs font-semibold text-muted-foreground">Dismiss</button>
+                </div>
+              );
+            }
+            return (
+              <div key={request.id} className="rounded-2xl border border-violet-200 bg-card p-3">
+                <p className="text-sm font-semibold text-foreground">
+                  {requestedByMe ? "CSV import awaiting review" : "Review imported expenses"}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {request.expenseCount} expense{request.expenseCount === 1 ? "" : "s"}
+                  {totalAmount > 0 ? ` · ${formatCurrency(totalAmount, group.currency)}` : ""}. These do not affect balances until approved.
+                </p>
+                {(request.expenses ?? []).length > 0 && (
+                  <div className="mt-3 max-h-36 space-y-1.5 overflow-y-auto rounded-xl bg-muted/50 p-2.5">
+                    {(request.expenses ?? []).map((expense) => (
+                      <div key={expense.id} className="flex items-center justify-between gap-3 text-xs">
+                        <span className="truncate text-foreground">{expense.description}</span>
+                        <span className="shrink-0 font-semibold text-foreground">{formatCurrency(expense.amount, group.currency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {requestedByMe ? (
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <p className="text-xs font-medium text-violet-700">Waiting for the other person</p>
+                    <button type="button" onClick={() => void cancelDirectImport(request.id)} className="rounded-xl border border-border px-3 py-2 text-xs font-semibold">Cancel import</button>
+                  </div>
+                ) : (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => {
+                      setRejectImportId(request.id);
+                      setImportRejectionReason("");
+                      setImportRejectionError("");
+                    }} className="rounded-xl border border-border px-3 py-2 text-xs font-semibold">Reject</button>
+                    <button type="button" onClick={() => void reviewDirectImport(request.id, true)} className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Approve all</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {group.kind === "direct" && group.directStatus === "pending" && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
           {directPerson?.uid
@@ -2245,8 +2445,9 @@ export function GroupScreen({
 
               {csvImportCount !== null && (
                 <p className="text-sm text-green-600 font-medium">
-                  Imported {csvImportCount} expense
-                  {csvImportCount === 1 ? "" : "s"}.
+                  {csvImportAwaitingReview ? "Sent" : "Imported"} {csvImportCount} expense
+                  {csvImportCount === 1 ? "" : "s"}
+                  {csvImportAwaitingReview ? " for the other person to review." : "."}
                 </p>
               )}
 
@@ -2259,7 +2460,9 @@ export function GroupScreen({
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       {group.kind === "direct"
-                        ? "This will add the CSV expenses to this direct person record. If the other person joins later, these expenses will be included in their history review."
+                        ? group.directStatus === "active"
+                          ? "These expenses will stay pending and will not affect either balance until the other person approves the batch."
+                          : "This will add the CSV expenses to this direct person record. If the other person joins later, these expenses will be included in their history review."
                         : "This will add the CSV expenses to the group."}
                     </p>
                   </div>
@@ -2271,11 +2474,13 @@ export function GroupScreen({
                       Cancel
                     </button>
                     <button
-                      onClick={confirmCsvImport}
+                      onClick={() => void confirmCsvImport()}
                       className="py-3 rounded-xl text-primary-foreground text-sm font-semibold transition-all active:scale-95"
                       style={{ backgroundColor: "var(--primary)" }}
                     >
-                      Import
+                      {group.kind === "direct" && group.directStatus === "active"
+                        ? "Send for review"
+                        : "Import"}
                     </button>
                   </div>
                 </div>
@@ -2440,6 +2645,55 @@ export function GroupScreen({
                   Reject correction
                 </button>
               </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={!!rejectImportId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRejectImportId(null);
+            setImportRejectionReason("");
+            setImportRejectionError("");
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-4 bottom-8 z-[80] rounded-3xl bg-card p-6 shadow-2xl md:left-1/2 md:w-[min(92vw,32rem)] md:-translate-x-1/2">
+            <Dialog.Title className="text-lg font-semibold text-foreground">Reject this CSV import?</Dialog.Title>
+            <Dialog.Description className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              The pending expenses will not affect either balance. Tell the importer what needs to be corrected.
+            </Dialog.Description>
+            <textarea
+              value={importRejectionReason}
+              onChange={(event) => {
+                setImportRejectionReason(event.target.value);
+                setImportRejectionError("");
+              }}
+              maxLength={500}
+              rows={3}
+              placeholder="What should they fix?"
+              className="mt-4 w-full resize-none rounded-2xl border border-border bg-input-background px-4 py-3 text-sm outline-none focus:border-primary"
+            />
+            {importRejectionError && <p className="mt-1.5 text-xs text-destructive">{importRejectionError}</p>}
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => setRejectImportId(null)} className="rounded-2xl bg-muted py-3.5 text-sm font-medium text-foreground">Keep reviewing</button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!importRejectionReason.trim()) {
+                    setImportRejectionError("Add a reason before rejecting this import.");
+                    return;
+                  }
+                  if (rejectImportId) void reviewDirectImport(rejectImportId, false);
+                }}
+                className="rounded-2xl bg-destructive py-3.5 text-sm font-semibold text-destructive-foreground"
+              >
+                Reject import
+              </button>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
