@@ -9,6 +9,7 @@ import {
   Coffee,
   Edit2,
   ExternalLink,
+  Eye,
   Filter,
   MessageCircle,
   QrCode,
@@ -41,6 +42,7 @@ import {
   allocateItemizedShares,
 } from "./itemizedExpense";
 import { ItemizedMemberBreakdown } from "./ItemizedMemberBreakdown";
+import { ExpenseDetailsModal } from "./ExpenseDetailsModal";
 import {
   canDirectlyConfirmSplit,
   CATEGORY_ICONS,
@@ -134,6 +136,7 @@ export function GroupContent({
   expenseTotalView = "all",
 }: Props) {
   const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false);
+  const [detailExpense, setDetailExpense] = useState<Expense | null>(null);
   const settlementModeKey = `bayadtayoopo:settlement-mode:${group.id}:${currentMember?.uid ?? currentMember?.id ?? "guest"}`;
   const [settlementMode, setSettlementMode] = useState<"simplified" | "direct">("direct");
   const [settlementModeRemembered, setSettlementModeRemembered] = useState(false);
@@ -585,6 +588,19 @@ export function GroupContent({
                               ? "border-primary ring-4 ring-primary/15"
                               : "border-border"
                           }`}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`View details for ${exp.description}`}
+                          onClick={(event) => {
+                            if ((event.target as HTMLElement).closest("button")) return;
+                            setDetailExpense(exp);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setDetailExpense(exp);
+                            }
+                          }}
                         >
                           <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-xl shrink-0">
                             {CATEGORY_ICONS[exp.category]}
@@ -809,6 +825,15 @@ export function GroupContent({
                                 Settled
                               </span>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => setDetailExpense(exp)}
+                              className="ml-auto mt-1.5 flex rounded-lg p-1.5 text-primary transition-colors hover:bg-primary/10"
+                              title="View expense details"
+                              aria-label={`View details for ${exp.description}`}
+                            >
+                              <Eye size={14} />
+                            </button>
                             {!deletionRequest && (!settled ? isCreator || isAdmin : isAdmin) && (
                               <div className="flex gap-1 mt-1 justify-end">
                                 {!settled && isCreator && (
@@ -1556,6 +1581,29 @@ export function GroupContent({
           </div>
         )}
       </div>
+      <ExpenseDetailsModal
+        expense={detailExpense}
+        group={group}
+        displayMemberName={displayMemberName}
+        onClose={() => setDetailExpense(null)}
+        onViewReceipt={viewPaymentImage}
+        onEdit={detailExpense && !isExpenseSettled(group, detailExpense) && currentMember?.id === (detailExpense.createdBy ?? detailExpense.paidBy)
+          ? () => {
+              setDetailExpense(null);
+              setEditExpense(detailExpense);
+              setAddOpen(true);
+            }
+          : undefined}
+        onDelete={detailExpense && !(group.expenseDeletionRequests ?? []).some((request) => request.expenseId === detailExpense.id && request.status === "pending") && (!isExpenseSettled(group, detailExpense)
+          ? currentMember?.id === (detailExpense.createdBy ?? detailExpense.paidBy) || isAdmin
+          : isAdmin)
+          ? () => {
+              const expense = detailExpense;
+              setDetailExpense(null);
+              openDeleteExpense(expense);
+            }
+          : undefined}
+      />
 
       <Dialog.Root
         open={!!balanceShareDraft}
