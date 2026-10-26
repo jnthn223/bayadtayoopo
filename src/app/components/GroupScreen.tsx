@@ -2924,8 +2924,8 @@ export function GroupScreen({
 
       <Dialog.Root open={!!imagePreview} onOpenChange={(open) => !open && setImagePreview(null)}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm" />
-          <Dialog.Content className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-[60] bg-card rounded-3xl p-5 shadow-2xl">
+          <Dialog.Overlay className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-4 top-1/2 z-[100] -translate-y-1/2 rounded-3xl bg-card p-5 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <Dialog.Title className="text-lg font-semibold text-foreground">
                 {imagePreview?.title}
