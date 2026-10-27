@@ -2,7 +2,7 @@ import type { Group, Member } from "./types";
 import {
   computeProjectedBalances,
   formatCurrency,
-  getExpensePayerId,
+  getExpenseContributorIds,
 } from "./utils";
 
 export interface InviteDetails {
@@ -19,7 +19,7 @@ export function getMemberInviteDetails(
   )?.net;
   const linkedExpenseCount = group.expenses.filter(
     (expense) =>
-      getExpensePayerId(expense) === memberId ||
+      getExpenseContributorIds(expense).includes(memberId) ||
       expense.splits.some((split) => split.memberId === memberId),
   ).length;
   return { balance, linkedExpenseCount };

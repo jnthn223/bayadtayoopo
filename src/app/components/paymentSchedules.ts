@@ -19,7 +19,8 @@ export function directSharesOwedTo(
 ): PaymentAllocation[] {
   return getOutstandingExpenseShares(group, debtorMemberId).filter((share) => {
     const expense = group.expenses.find((item) => item.id === share.expenseId);
-    return expense && getExpensePayerId(expense) === payeeMemberId;
+    return expense &&
+      (share.payeeMemberId ?? getExpensePayerId(expense)) === payeeMemberId;
   });
 }
 
@@ -42,7 +43,8 @@ export function coveredByOpenSchedule(group: Group): Set<string> {
       .filter((schedule) => OPEN_PAYMENT_SCHEDULE_STATUSES.has(schedule.status))
       .flatMap((schedule) =>
         schedule.coverage.map(
-          (coverage) => `${schedule.debtorMemberId}:${coverage.expenseId}`,
+          (coverage) =>
+            `${schedule.debtorMemberId}:${schedule.payeeMemberId}:${coverage.expenseId}`,
         ),
       ),
   );

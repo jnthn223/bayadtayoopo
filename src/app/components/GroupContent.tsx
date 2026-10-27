@@ -48,6 +48,9 @@ import {
   CATEGORY_ICONS,
   computeDirectExpenseSettlements,
   formatCurrency,
+  generateId,
+  getExpenseContributions,
+  getExpenseContributorIds,
   getExpensePayerId,
   getMemberBalanceDetails,
   getMemberById,
@@ -137,6 +140,9 @@ export function GroupContent({
 }: Props) {
   const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false);
   const [detailExpense, setDetailExpense] = useState<Expense | null>(null);
+  const [disputeExpense, setDisputeExpense] = useState<Expense | null>(null);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [disputeError, setDisputeError] = useState("");
   const settlementModeKey = `bayadtayoopo:settlement-mode:${group.id}:${currentMember?.uid ?? currentMember?.id ?? "guest"}`;
   const [settlementMode, setSettlementMode] = useState<"simplified" | "direct">("direct");
   const [settlementModeRemembered, setSettlementModeRemembered] = useState(false);
@@ -295,7 +301,7 @@ export function GroupContent({
     [group],
   );
   const expensePayers = useMemo(() => {
-    const payerIds = new Set(group.expenses.map(getExpensePayerId));
+    const payerIds = new Set(group.expenses.flatMap(getExpenseContributorIds));
     return [...group.members, ...(group.formerMembers ?? [])].filter((member) =>
       payerIds.has(member.id),
     );
@@ -308,7 +314,7 @@ export function GroupContent({
           (categoryFilter === "all" ||
             expense.category === categoryFilter) &&
           (payerFilter === "all" ||
-            getExpensePayerId(expense) === payerFilter) &&
+            getExpenseContributorIds(expense).includes(payerFilter)) &&
           (settlementFilter === "all"
             ? expenseTotalView === "all" || !settled
             : settlementFilter === "settled" ? settled : !settled)
@@ -558,6 +564,7 @@ export function GroupContent({
                     {section.expenses.map((exp) => {
                       const payerId = getExpensePayerId(exp);
                       const payer = getMemberById(group, payerId);
+                      const contributions = getExpenseContributions(exp);
                       const isCreator =
                         currentMember?.id === (exp.createdBy ?? exp.paidBy);
                       const settled = isExpenseSettled(group, exp);
@@ -617,6 +624,7 @@ export function GroupContent({
                               >
                                 {displayMemberName(payerId, payer?.name)}
                               </span>{" "}
+                              {contributions.length > 1 ? `+ ${contributions.length - 1} more ` : ""}
                               ·{" "}
                               {exp.splitType === "equal"
                                 ? "Split equally"
@@ -1603,7 +1611,45 @@ export function GroupContent({
               openDeleteExpense(expense);
             }
           : undefined}
+        onDispute={detailExpense && group.kind === "direct" && group.directStatus === "active" && !!currentMember && currentMember.id !== (detailExpense.createdBy ?? detailExpense.paidBy) && !(group.directHistoryDisputes ?? []).some((dispute) => dispute.entityType === "expense" && dispute.entityId === detailExpense.id && dispute.status === "open")
+          ? () => {
+              setDisputeExpense(detailExpense);
+              setDetailExpense(null);
+              setDisputeReason("");
+              setDisputeError("");
+            }
+          : undefined}
       />
+
+      <Dialog.Root open={!!disputeExpense} onOpenChange={(open) => !open && setDisputeExpense(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-x-4 bottom-4 z-[90] rounded-3xl border border-border bg-card p-5 shadow-2xl sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">Flag this expense</Dialog.Title>
+                <Dialog.Description className="mt-1 text-sm leading-relaxed text-muted-foreground">The expense stays visible while you and the other person discuss or correct it.</Dialog.Description>
+              </div>
+              <button type="button" onClick={() => setDisputeExpense(null)} className="rounded-full bg-muted p-2"><X size={17} /></button>
+            </div>
+            <textarea value={disputeReason} onChange={(event) => { setDisputeReason(event.target.value); setDisputeError(""); }} rows={3} placeholder="What looks incorrect?" className="mt-4 w-full resize-none rounded-2xl border border-border bg-input-background px-4 py-3 text-sm outline-none focus:border-primary" />
+            {disputeError && <p className="mt-2 text-xs text-destructive">{disputeError}</p>}
+            <button type="button" onClick={() => {
+              if (!currentMember || !disputeExpense) return;
+              if (!disputeReason.trim()) { setDisputeError("Explain what you disagree with."); return; }
+              const now = new Date().toISOString();
+              void Promise.resolve(onUpdate({
+                ...group,
+                directHistoryDisputes: [...(group.directHistoryDisputes ?? []), {
+                  id: generateId(), entityType: "expense", entityId: disputeExpense.id,
+                  entityLabel: disputeExpense.description, reason: disputeReason.trim(),
+                  raisedBy: currentMember.id, raisedAt: now, status: "open",
+                }],
+              })).then(() => setDisputeExpense(null));
+            }} className="mt-4 w-full rounded-2xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground">Flag for discussion</button>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <Dialog.Root
         open={!!balanceShareDraft}

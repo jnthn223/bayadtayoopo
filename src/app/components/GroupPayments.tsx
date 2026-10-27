@@ -30,6 +30,7 @@ import {
   formatCurrency,
   generateId,
   getExpensePayerId,
+  getExpensePayeeOptions,
   getMemberById,
   getOutstandingExpenseShares,
 } from "./utils";
@@ -189,7 +190,8 @@ function paymentRouteDetails(payment: GroupPayment, group: Group) {
     const expense = group.expenses.find(
       (candidate) => candidate.id === allocation.expenseId,
     );
-    return !!expense && getExpensePayerId(expense) !== payment.toMemberId;
+    const intendedPayee = allocation.payeeMemberId ?? getExpensePayerId(expense);
+    return intendedPayee !== payment.toMemberId;
   });
   const route = payment.settlementRoute ??
     (routedToDifferentPayee ? "fewer-transfers" : undefined);
@@ -345,12 +347,12 @@ export function GroupPayments({
   const expensePaymentOptions = useMemo(
     () =>
       memberId
-        ? getOutstandingExpenseShares(group, memberId).flatMap((share) => {
+        ? getExpensePayeeOptions(group, memberId).flatMap((share) => {
             const expense = group.expenses.find(
               (candidate) => candidate.id === share.expenseId,
             );
             if (!expense) return [];
-            const recipientId = getExpensePayerId(expense);
+            const recipientId = share.payeeMemberId ?? getExpensePayerId(expense);
             if (recipientId === memberId) return [];
             const recipient = getMemberById(group, recipientId);
             return recipient ? [{ ...share, recipientId, recipient }] : [];
@@ -413,7 +415,8 @@ export function GroupPayments({
               const expense = group.expenses.find(
                 (candidate) => candidate.id === share.expenseId,
               );
-              return !!expense && getExpensePayerId(expense) === draft.toMemberId;
+              return !!expense &&
+                (share.payeeMemberId ?? getExpensePayerId(expense)) === draft.toMemberId;
             },
           )
         : [],
@@ -457,7 +460,8 @@ export function GroupPayments({
         const expense = group.expenses.find(
           (candidate) => candidate.id === allocation.expenseId,
         );
-        return !!expense && getExpensePayerId(expense) !== draft.toMemberId;
+        return !!expense &&
+          (allocation.payeeMemberId ?? getExpensePayerId(expense)) !== draft.toMemberId;
       }),
     [draft, draftAllocations, group.expenses],
   );
@@ -1571,7 +1575,7 @@ export function GroupPayments({
               Pay a specific expense
             </p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Pick an expense and pay its exact unpaid amount.
+              Pick an expense and choose which original contributor to repay first.
             </p>
           </div>
           {expensePaymentOptions.map((option) => {
@@ -1586,7 +1590,7 @@ export function GroupPayments({
               : undefined;
             return (
               <article
-                key={option.expenseId}
+                key={`${option.expenseId}-${option.recipientId}`}
                 className="rounded-2xl border border-border bg-card p-4"
               >
               <div className="flex items-center gap-3">
@@ -2442,7 +2446,10 @@ export function GroupPayments({
                           (candidate) => candidate.id === expenseId,
                         );
                         const payer = expense
-                          ? getMemberById(group, getExpensePayerId(expense))
+                          ? getMemberById(
+                              group,
+                              share.payeeMemberId ?? getExpensePayerId(expense),
+                            )
                           : undefined;
                         return (
                           <div
@@ -2627,7 +2634,9 @@ function AllocationList({
         const expense = group?.expenses.find(
           (candidate) => candidate.id === allocation.expenseId,
         );
-        const payerId = expense ? getExpensePayerId(expense) : undefined;
+        const payerId = expense
+          ? allocation.payeeMemberId ?? getExpensePayerId(expense)
+          : undefined;
         const payer = payerId && group ? getMemberById(group, payerId) : undefined;
         const isSimplifiedRoute =
           !!payerId && !!recipientMemberId && payerId !== recipientMemberId;

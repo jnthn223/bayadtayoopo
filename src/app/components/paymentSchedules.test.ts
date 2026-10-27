@@ -54,7 +54,7 @@ describe("payment schedules", () => {
       { expenseId: "hotel", expenseDescription: "Hotel", amount: 500 },
     ]);
     expect(schedule.awaitingMemberId).toBe("debtor");
-    expect(coveredByOpenSchedule({ ...group, paymentSchedules: [schedule] })).toContain("debtor:hotel");
+    expect(coveredByOpenSchedule({ ...group, paymentSchedules: [schedule] })).toContain("debtor:payee:hotel");
   });
 
   it("rejects an installment above the covered balance", () => {

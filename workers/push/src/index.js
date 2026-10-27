@@ -361,7 +361,9 @@ export function validateAndBuild(group, event, actorUid) {
       throw new Error("Expense event does not match the saved group");
     }
     const involved = new Set([
-      expense.paidBy,
+      ...((expense.payerContributions?.length
+        ? expense.payerContributions.map((item) => item.memberId)
+        : [expense.paidBy])),
       ...expense.splits.map((split) => split.memberId),
     ]);
     return {

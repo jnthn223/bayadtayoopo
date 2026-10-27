@@ -70,6 +70,47 @@ describe("CSV expense tools", () => {
     ]);
   });
 
+  it("round-trips multiple payer contributions without changing legacy CSV support", () => {
+    const multiPayerGroup: Group = {
+      ...group,
+      expenses: [{
+        ...group.expenses[0],
+        amount: 900,
+        paidBy: "alice",
+        payerContributions: [
+          { memberId: "alice", amount: 600 },
+          { memberId: "bob", amount: 300 },
+        ],
+      }],
+    };
+    const result = parseExpensesCsv(
+      exportExpensesCsv(multiPayerGroup),
+      { ...group, expenses: [] },
+      "alice",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.expenses[0].payerContributions).toEqual([
+      { memberId: "alice", amount: 600 },
+      { memberId: "bob", amount: 300 },
+    ]);
+  });
+
+  it("rejects payer contributions that do not equal the expense total", () => {
+    const result = parseExpensesCsv(
+      [
+        "date,description,category,amount,currency,paidBy,payerContributions,splitType,splits",
+        '2026-07-10,Dinner,food,900,PHP,Alice,"Alice:500;Bob:300",equal,"Alice:300;Bob:300;Carol:300"',
+      ].join("\n"),
+      group,
+      "alice",
+    );
+    expect(result).toEqual({
+      ok: false,
+      errors: ["Row 2: payer contribution total 800.00 does not match amount 900.00"],
+    });
+  });
+
   it("round-trips itemized expenses, deadlines, and locked currency details", () => {
     const itemizedGroup: Group = {
       ...group,

@@ -207,6 +207,46 @@ export function hasReminderEmail(user) {
   return typeof user.email === "string" && user.email.trim().length > 0;
 }
 
+function expenseContributions(expense) {
+  const contributions = (expense.payerContributions ?? []).filter(
+    (item) => item?.memberId && Number(item.amount || 0) > 0.005,
+  );
+  return contributions.length > 0
+    ? contributions
+    : [{ memberId: expense.paidBy, amount: Number(expense.amount || 0) }];
+}
+
+function expenseObligations(expense) {
+  const positions = new Map();
+  const order = [];
+  const add = (memberId, cents) => {
+    if (!positions.has(memberId)) order.push(memberId);
+    positions.set(memberId, (positions.get(memberId) ?? 0) + cents);
+  };
+  for (const contribution of expenseContributions(expense)) {
+    add(contribution.memberId, Math.round(Number(contribution.amount || 0) * 100));
+  }
+  for (const split of expense.splits ?? []) {
+    add(split.memberId, -Math.round(Number(split.amount || 0) * 100));
+  }
+  const debtors = order.filter((id) => positions.get(id) < 0).map((id) => ({ id, cents: -positions.get(id) }));
+  const creditors = order.filter((id) => positions.get(id) > 0).map((id) => ({ id, cents: positions.get(id) }));
+  const result = [];
+  let debtorIndex = 0;
+  let creditorIndex = 0;
+  while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
+    const debtor = debtors[debtorIndex];
+    const creditor = creditors[creditorIndex];
+    const cents = Math.min(debtor.cents, creditor.cents);
+    if (cents > 0) result.push({ fromMemberId: debtor.id, toMemberId: creditor.id, amount: cents / 100 });
+    debtor.cents -= cents;
+    creditor.cents -= cents;
+    if (debtor.cents === 0) debtorIndex += 1;
+    if (creditor.cents === 0) creditorIndex += 1;
+  }
+  return result;
+}
+
 function projectedBalance(group, memberId) {
   const balances = {};
   for (const member of [...(group.members ?? []), ...(group.formerMembers ?? [])]) {
@@ -214,19 +254,18 @@ function projectedBalance(group, memberId) {
   }
   for (const expense of group.expenses ?? []) {
     const payerId = expense.paidBy;
-    const reserved = (expense.splits ?? []).reduce(
-      (sum, split) =>
-        split.memberId !== payerId && ["pending", "confirmed"].includes(split.paymentStatus)
-          ? sum + Number(split.amount || 0)
-          : sum,
-      0,
-    );
-    balances[payerId] = (balances[payerId] ?? 0) + Number(expense.amount || 0) - reserved;
+    for (const contribution of expenseContributions(expense)) {
+      balances[contribution.memberId] =
+        (balances[contribution.memberId] ?? 0) + Number(contribution.amount || 0);
+    }
     for (const split of expense.splits ?? []) {
       if (
         split.memberId !== payerId &&
         ["pending", "confirmed"].includes(split.paymentStatus)
-      ) continue;
+      ) {
+        balances[split.memberId] = (balances[split.memberId] ?? 0) + Number(split.amount || 0);
+        balances[payerId] = (balances[payerId] ?? 0) - Number(split.amount || 0);
+      }
       balances[split.memberId] = (balances[split.memberId] ?? 0) - Number(split.amount || 0);
     }
   }
@@ -243,12 +282,8 @@ function projectedBalance(group, memberId) {
 function oldestOutstandingAgeDays(group, memberId, now) {
   const timestamps = (group.expenses ?? [])
     .filter((expense) =>
-      (expense.splits ?? []).some(
-        (split) =>
-          split.memberId === memberId &&
-          split.memberId !== expense.paidBy &&
-          Number(split.amount || 0) > 0.005 &&
-          !["pending", "confirmed"].includes(split.paymentStatus),
+      expenseObligations(expense).some(
+        (obligation) => obligation.fromMemberId === memberId && obligation.amount > 0.005,
       ),
     )
     .map((expense) => Date.parse(expense.createdAt ?? `${expense.date}T00:00:00Z`))
@@ -279,10 +314,11 @@ function deadlineSummary(group, memberId, todayKey) {
   const result = { nearestDueDate: undefined, overdueAmount: 0, dueTodayAmount: 0, dueSoonAmount: 0 };
   const today = Date.parse(`${todayKey}T00:00:00Z`);
   for (const expense of group.expenses ?? []) {
-    if (!expense.dueDate || expense.paidBy === memberId) continue;
-    const split = (expense.splits ?? []).find((item) => item.memberId === memberId);
-    if (!split || ["pending", "confirmed"].includes(split.paymentStatus)) continue;
-    const remaining = Math.max(0, Number(split.amount || 0) - Number(allocated[expense.id] ?? 0));
+    if (!expense.dueDate) continue;
+    const owed = expenseObligations(expense)
+      .filter((obligation) => obligation.fromMemberId === memberId)
+      .reduce((sum, obligation) => sum + obligation.amount, 0);
+    const remaining = Math.max(0, owed - Number(allocated[expense.id] ?? 0));
     if (remaining <= 0.005) continue;
     const days = Math.round((Date.parse(`${expense.dueDate}T00:00:00Z`) - today) / 86_400_000);
     if (days < 0) result.overdueAmount += remaining;

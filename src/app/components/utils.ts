@@ -48,6 +48,84 @@ export function getExpensePayerId(expense: Expense): string {
   return expense.paidBy;
 }
 
+export function getExpenseContributions(expense: Expense) {
+  const contributions = (expense.payerContributions ?? [])
+    .filter((item) => item.memberId && Number.isFinite(item.amount) && item.amount > 0.005)
+    .map((item) => ({ memberId: item.memberId, amount: Math.round(item.amount * 100) / 100 }));
+  return contributions.length > 0
+    ? contributions
+    : [{ memberId: expense.paidBy, amount: expense.amount }];
+}
+
+export function getExpenseContributorIds(expense: Expense): string[] {
+  return getExpenseContributions(expense).map((item) => item.memberId);
+}
+
+export function getMemberContribution(expense: Expense, memberId: string): number {
+  return getExpenseContributions(expense)
+    .filter((item) => item.memberId === memberId)
+    .reduce((sum, item) => sum + item.amount, 0);
+}
+
+export interface ExpenseObligation {
+  expenseId: string;
+  expenseDescription: string;
+  fromMemberId: string;
+  toMemberId: string;
+  amount: number;
+}
+
+/** Match each expense's negative positions to its positive contributor positions in cents. */
+export function getExpenseObligations(expense: Expense): ExpenseObligation[] {
+  const positions = new Map<string, number>();
+  const order: string[] = [];
+  const touch = (memberId: string) => {
+    if (!positions.has(memberId)) order.push(memberId);
+    return positions.get(memberId) ?? 0;
+  };
+  for (const contribution of getExpenseContributions(expense)) {
+    positions.set(
+      contribution.memberId,
+      touch(contribution.memberId) + Math.round(contribution.amount * 100),
+    );
+  }
+  for (const split of expense.splits) {
+    positions.set(
+      split.memberId,
+      touch(split.memberId) - Math.round(split.amount * 100),
+    );
+  }
+
+  const debtors = order
+    .filter((memberId) => (positions.get(memberId) ?? 0) < 0)
+    .map((memberId) => ({ memberId, cents: -(positions.get(memberId) ?? 0) }));
+  const creditors = order
+    .filter((memberId) => (positions.get(memberId) ?? 0) > 0)
+    .map((memberId) => ({ memberId, cents: positions.get(memberId) ?? 0 }));
+  const obligations: ExpenseObligation[] = [];
+  let debtorIndex = 0;
+  let creditorIndex = 0;
+  while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
+    const debtor = debtors[debtorIndex];
+    const creditor = creditors[creditorIndex];
+    const cents = Math.min(debtor.cents, creditor.cents);
+    if (cents > 0) {
+      obligations.push({
+        expenseId: expense.id,
+        expenseDescription: expense.description,
+        fromMemberId: debtor.memberId,
+        toMemberId: creditor.memberId,
+        amount: cents / 100,
+      });
+    }
+    debtor.cents -= cents;
+    creditor.cents -= cents;
+    if (debtor.cents === 0) debtorIndex += 1;
+    if (creditor.cents === 0) creditorIndex += 1;
+  }
+  return obligations;
+}
+
 export function isGroupAdmin(group: Group, member?: Member): boolean {
   if (!member) return false;
   const ownerId = group.adminId ?? group.members[0]?.id;
@@ -120,56 +198,15 @@ export function canAdminRecordPaymentBetweenTemporaryMembers(
 }
 
 export function isExpenseSettled(group: Group, expense: Expense): boolean {
-  const payerId = getExpensePayerId(expense);
-  const confirmedAllocationsByMember = new Map<string, number>();
-
-  for (const payment of group.payments ?? []) {
-    if (payment.status !== "confirmed") continue;
-    const allocatedCents = payment.allocations.reduce(
-      (sum, allocation) =>
-        allocation.expenseId === expense.id
-          ? sum + Math.round(allocation.amount * 100)
-          : sum,
-      0,
-    );
-    if (allocatedCents === 0) continue;
-    confirmedAllocationsByMember.set(
-      payment.fromMemberId,
-      (confirmedAllocationsByMember.get(payment.fromMemberId) ?? 0) +
-        allocatedCents,
-    );
-  }
-  for (const offset of group.balanceOffsets ?? []) {
-    if (offset.status !== "confirmed") continue;
-    const sides = [
-      [offset.requesterMemberId, offset.debitAllocations],
-      [offset.counterpartyMemberId, offset.creditAllocations],
-    ] as const;
-    for (const [memberId, allocations] of sides) {
-      const allocatedCents = allocations.reduce(
-        (sum, allocation) =>
-          allocation.expenseId === expense.id
-            ? sum + Math.round(allocation.amount * 100)
-            : sum,
-        0,
-      );
-      if (allocatedCents > 0) {
-        confirmedAllocationsByMember.set(
-          memberId,
-          (confirmedAllocationsByMember.get(memberId) ?? 0) + allocatedCents,
-        );
-      }
-    }
-  }
-
-  return expense.splits.every((split) => {
-    if (split.memberId === payerId || split.amount <= 0.005) return true;
-    if (split.paymentStatus === "confirmed") return true;
-    return (
-      (confirmedAllocationsByMember.get(split.memberId) ?? 0) >=
-      Math.round(split.amount * 100)
-    );
-  });
+  return getExpenseObligations(expense).every((obligation) =>
+    !getConfirmedOutstandingExpenseShares(group, obligation.fromMemberId)
+      .some(
+        (allocation) =>
+          allocation.expenseId === expense.id &&
+          (allocation.payeeMemberId ?? expense.paidBy) === obligation.toMemberId &&
+          allocation.amount > 0.005,
+      ),
+  );
 }
 
 export function canDirectlyConfirmSplit(
@@ -177,6 +214,7 @@ export function canDirectlyConfirmSplit(
   split: Split,
   memberId: string,
 ): boolean {
+  if ((expense.payerContributions?.length ?? 0) > 1) return false;
   const payerId = getExpensePayerId(expense);
   const isBorrower = split.memberId === memberId;
   const isRecipient = payerId === memberId;
@@ -236,31 +274,24 @@ function computeBalancesWithPaymentStatuses(
   members.forEach((m) => (balances[m.id] = 0));
 
   group.expenses.forEach((exp) => {
-    const payerId = getExpensePayerId(exp);
     const reservedSplitStatuses = paymentStatuses.has("pending")
       ? new Set(["pending", "confirmed"])
       : new Set(["confirmed"]);
-    const completedOrReservedPayments = exp.splits.reduce(
-      (sum, s) =>
-        s.memberId !== payerId &&
-        s.paymentStatus &&
-        reservedSplitStatuses.has(s.paymentStatus)
-          ? sum + s.amount
-          : sum,
-      0,
-    );
-
-    balances[payerId] =
-      (balances[payerId] ?? 0) + exp.amount - completedOrReservedPayments;
+    for (const contribution of getExpenseContributions(exp)) {
+      balances[contribution.memberId] =
+        (balances[contribution.memberId] ?? 0) + contribution.amount;
+    }
     exp.splits.forEach((s) => {
+      balances[s.memberId] = (balances[s.memberId] ?? 0) - s.amount;
+      // Legacy per-split confirmations represented a transfer to paidBy.
       if (
-        s.memberId !== payerId &&
+        s.memberId !== exp.paidBy &&
         s.paymentStatus &&
         reservedSplitStatuses.has(s.paymentStatus)
       ) {
-        return;
+        balances[s.memberId] += s.amount;
+        balances[exp.paidBy] = (balances[exp.paidBy] ?? 0) - s.amount;
       }
-      balances[s.memberId] = (balances[s.memberId] ?? 0) - s.amount;
     });
   });
 
@@ -304,15 +335,17 @@ export function getMemberBalanceDetails(
   const entries: BalanceDetail[] = [];
 
   for (const expense of group.expenses) {
-    const payerId = getExpensePayerId(expense);
-    const payerName = getMemberById(group, payerId)?.name ?? "Member";
     const memberSplit = expense.splits.find((split) => split.memberId === memberId);
+    const contribution = getMemberContribution(expense, memberId);
+    const contributorNames = getExpenseContributions(expense)
+      .map((item) => getMemberById(group, item.memberId)?.name ?? "Member")
+      .join(" & ");
 
-    if (payerId === memberId) {
+    if (contribution > 0.005) {
       entries.push({
         id: `expense-paid-${expense.id}`,
         label: `Paid upfront · ${expense.description}`,
-        amount: expense.amount,
+        amount: contribution,
         date: expense.date,
         expenseId: expense.id,
         kind: "expense-paid",
@@ -322,7 +355,7 @@ export function getMemberBalanceDetails(
     if (memberSplit) {
       entries.push({
         id: `expense-share-${expense.id}`,
-        label: `Paid by ${payerName} · ${expense.description}`,
+        label: `Paid by ${contributorNames} · ${expense.description}`,
         amount: -memberSplit.amount,
         date: expense.date,
         expenseId: expense.id,
@@ -332,7 +365,7 @@ export function getMemberBalanceDetails(
 
     for (const split of expense.splits) {
       if (
-        split.memberId === payerId ||
+        split.memberId === expense.paidBy ||
         split.paymentStatus !== "confirmed" ||
         split.amount <= 0.005
       ) {
@@ -347,7 +380,7 @@ export function getMemberBalanceDetails(
           date: split.confirmedAt ?? expense.date,
         });
       }
-      if (payerId === memberId) {
+      if (expense.paidBy === memberId) {
         entries.push({
           id: `split-payment-received-${expense.id}-${split.memberId}`,
           label: `Confirmed payment received · ${expense.description}`,
@@ -394,73 +427,11 @@ export function getOutstandingExpenseShares(
   group: Group,
   fromMemberId: string,
 ): PaymentAllocation[] {
-  const alreadyAllocatedCents = new Map<string, number>();
-  for (const payment of group.payments ?? []) {
-    if (
-      payment.fromMemberId !== fromMemberId ||
-      !["pending", "confirmed"].includes(payment.status)
-    ) {
-      continue;
-    }
-    for (const allocation of payment.allocations) {
-      if (!allocation.expenseId) continue;
-      alreadyAllocatedCents.set(
-        allocation.expenseId,
-        (alreadyAllocatedCents.get(allocation.expenseId) ?? 0) +
-          Math.round(allocation.amount * 100),
-      );
-    }
-  }
-  for (const offset of group.balanceOffsets ?? []) {
-    if (!["pending", "confirmed"].includes(offset.status)) continue;
-    const allocations =
-      offset.requesterMemberId === fromMemberId
-        ? offset.debitAllocations
-        : offset.counterpartyMemberId === fromMemberId
-          ? offset.creditAllocations
-          : [];
-    for (const allocation of allocations) {
-      if (!allocation.expenseId) continue;
-      alreadyAllocatedCents.set(
-        allocation.expenseId,
-        (alreadyAllocatedCents.get(allocation.expenseId) ?? 0) +
-          Math.round(allocation.amount * 100),
-      );
-    }
-  }
-
-  const expenses = [...group.expenses].sort(
-    (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
+  return getOutstandingObligationAllocations(
+    group,
+    fromMemberId,
+    new Set(["pending", "confirmed"]),
   );
-
-  return expenses.flatMap((expense) => {
-    const split = expense.splits.find(
-      (candidate) => candidate.memberId === fromMemberId,
-    );
-    if (
-      !split ||
-      split.memberId === getExpensePayerId(expense) ||
-      split.paymentStatus === "confirmed" ||
-      split.paymentStatus === "pending"
-    ) {
-      return [];
-    }
-
-    const availableCents = Math.max(
-      0,
-      Math.round(split.amount * 100) -
-        (alreadyAllocatedCents.get(expense.id) ?? 0),
-    );
-    return availableCents > 0
-      ? [
-          {
-            expenseId: expense.id,
-            expenseDescription: expense.description,
-            amount: availableCents / 100,
-          },
-        ]
-      : [];
-  });
 }
 
 /**
@@ -472,57 +443,157 @@ export function getConfirmedOutstandingExpenseShares(
   group: Group,
   fromMemberId: string,
 ): PaymentAllocation[] {
-  const allocatedCents = new Map<string, number>();
+  return getOutstandingObligationAllocations(
+    group,
+    fromMemberId,
+    new Set(["confirmed"]),
+  );
+}
+
+function inferredAllocationPayee(
+  group: Group,
+  allocation: PaymentAllocation,
+  fallbackMemberId: string,
+) {
+  if (allocation.payeeMemberId) return allocation.payeeMemberId;
+  const expense = allocation.expenseId
+    ? group.expenses.find((candidate) => candidate.id === allocation.expenseId)
+    : undefined;
+  return expense?.paidBy ?? fallbackMemberId;
+}
+
+function outstandingExpensePositions(
+  group: Group,
+  expense: Expense,
+  statuses: Set<"pending" | "confirmed">,
+) {
+  const positions = new Map<string, number>();
+  const order: string[] = [];
+  const add = (memberId: string, cents: number) => {
+    if (!positions.has(memberId)) order.push(memberId);
+    positions.set(memberId, (positions.get(memberId) ?? 0) + cents);
+  };
+  for (const contribution of getExpenseContributions(expense)) {
+    add(contribution.memberId, Math.round(contribution.amount * 100));
+  }
+  for (const split of expense.splits) {
+    add(split.memberId, -Math.round(split.amount * 100));
+    if (
+      split.memberId !== expense.paidBy &&
+      split.paymentStatus &&
+      statuses.has(split.paymentStatus as "pending" | "confirmed")
+    ) {
+      const cents = Math.round(split.amount * 100);
+      add(split.memberId, cents);
+      add(expense.paidBy, -cents);
+    }
+  }
   for (const payment of group.payments ?? []) {
-    if (payment.fromMemberId !== fromMemberId || payment.status !== "confirmed") continue;
-    for (const allocation of payment.allocations) {
-      if (!allocation.expenseId) continue;
-      allocatedCents.set(
-        allocation.expenseId,
-        (allocatedCents.get(allocation.expenseId) ?? 0) + Math.round(allocation.amount * 100),
-      );
+    if (!statuses.has(payment.status as "pending" | "confirmed")) continue;
+    for (const allocation of payment.allocations ?? []) {
+      if (allocation.expenseId !== expense.id) continue;
+      const payee = inferredAllocationPayee(group, allocation, payment.toMemberId);
+      const cents = Math.round(allocation.amount * 100);
+      add(payment.fromMemberId, cents);
+      add(payee, -cents);
     }
   }
   for (const offset of group.balanceOffsets ?? []) {
-    if (offset.status !== "confirmed") continue;
-    const allocations =
-      offset.requesterMemberId === fromMemberId
-        ? offset.debitAllocations
-        : offset.counterpartyMemberId === fromMemberId
-          ? offset.creditAllocations
-          : [];
-    for (const allocation of allocations) {
-      if (!allocation.expenseId) continue;
-      allocatedCents.set(
-        allocation.expenseId,
-        (allocatedCents.get(allocation.expenseId) ?? 0) + Math.round(allocation.amount * 100),
-      );
-    }
+    if (!statuses.has(offset.status as "pending" | "confirmed")) continue;
+    const apply = (
+      allocations: PaymentAllocation[],
+      fromMemberId: string,
+      fallbackPayeeId: string,
+    ) => {
+      for (const allocation of allocations) {
+        if (allocation.expenseId !== expense.id) continue;
+        const cents = Math.round(allocation.amount * 100);
+        add(fromMemberId, cents);
+        add(allocation.payeeMemberId ?? fallbackPayeeId, -cents);
+      }
+    };
+    apply(offset.debitAllocations, offset.requesterMemberId, offset.counterpartyMemberId);
+    apply(offset.creditAllocations, offset.counterpartyMemberId, offset.requesterMemberId);
   }
+  return { positions, order };
+}
 
+function matchOutstandingPositions(
+  expense: Expense,
+  positions: Map<string, number>,
+  order: string[],
+): ExpenseObligation[] {
+  const debtors = order
+    .filter((memberId) => (positions.get(memberId) ?? 0) < -0.5)
+    .map((memberId) => ({ memberId, cents: -(positions.get(memberId) ?? 0) }));
+  const creditors = order
+    .filter((memberId) => (positions.get(memberId) ?? 0) > 0.5)
+    .map((memberId) => ({ memberId, cents: positions.get(memberId) ?? 0 }));
+  const obligations: ExpenseObligation[] = [];
+  let debtorIndex = 0;
+  let creditorIndex = 0;
+  while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
+    const debtor = debtors[debtorIndex];
+    const creditor = creditors[creditorIndex];
+    const cents = Math.min(debtor.cents, creditor.cents);
+    if (cents > 0) obligations.push({
+      expenseId: expense.id,
+      expenseDescription: expense.description,
+      fromMemberId: debtor.memberId,
+      toMemberId: creditor.memberId,
+      amount: cents / 100,
+    });
+    debtor.cents -= cents;
+    creditor.cents -= cents;
+    if (debtor.cents === 0) debtorIndex += 1;
+    if (creditor.cents === 0) creditorIndex += 1;
+  }
+  return obligations;
+}
+
+export function getExpensePayeeOptions(
+  group: Group,
+  fromMemberId: string,
+): PaymentAllocation[] {
+  const statuses = new Set<"pending" | "confirmed">(["pending", "confirmed"]);
   return [...group.expenses]
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
     .flatMap((expense) => {
-      const split = expense.splits.find((candidate) => candidate.memberId === fromMemberId);
-      if (
-        !split ||
-        split.memberId === getExpensePayerId(expense) ||
-        split.amount <= 0.005 ||
-        split.paymentStatus === "confirmed"
-      ) {
-        return [];
-      }
-      const remainingCents = Math.max(
-        0,
-        Math.round(split.amount * 100) - (allocatedCents.get(expense.id) ?? 0),
-      );
-      return remainingCents > 0
-        ? [{
-            expenseId: expense.id,
-            expenseDescription: expense.description,
-            amount: remainingCents / 100,
-          }]
-        : [];
+      const { positions } = outstandingExpensePositions(group, expense, statuses);
+      const debtorCents = Math.max(0, -(positions.get(fromMemberId) ?? 0));
+      if (debtorCents === 0) return [];
+      return getExpenseContributorIds(expense).flatMap((payeeMemberId) => {
+        const creditorCents = Math.max(0, positions.get(payeeMemberId) ?? 0);
+        if (payeeMemberId === fromMemberId || creditorCents === 0) return [];
+        return [{
+          expenseId: expense.id,
+          expenseDescription: expense.description,
+          ...(expense.payerContributions?.length ? { payeeMemberId } : {}),
+          amount: Math.min(debtorCents, creditorCents) / 100,
+        }];
+      });
+    });
+}
+
+function getOutstandingObligationAllocations(
+  group: Group,
+  fromMemberId: string,
+  statuses: Set<"pending" | "confirmed">,
+): PaymentAllocation[] {
+  return [...group.expenses]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+    .flatMap((expense) => {
+      const { positions, order } = outstandingExpensePositions(group, expense, statuses);
+      return matchOutstandingPositions(expense, positions, order)
+        .filter((obligation) => obligation.fromMemberId === fromMemberId)
+        .map((obligation) => ({
+                expenseId: expense.id,
+                expenseDescription: expense.description,
+                ...(expense.payerContributions?.length
+                  ? { payeeMemberId: obligation.toMemberId }
+                  : {}),
+                amount: obligation.amount,
+              }));
     });
 }
 
@@ -536,7 +607,9 @@ export function computeDirectExpenseSettlements(group: Group): Settlement[] {
         (candidate) => candidate.id === share.expenseId,
       );
       if (!expense) continue;
-      const recipient = getMemberById(group, getExpensePayerId(expense));
+      const recipient = share.payeeMemberId
+        ? getMemberById(group, share.payeeMemberId)
+        : getMemberById(group, getExpensePayerId(expense));
       if (!recipient || recipient.removedAt || recipient.id === sender.id) continue;
       const key = `${sender.id}:${recipient.id}`;
       const existing = settlements.get(key);
@@ -560,7 +633,7 @@ function directOutstandingShares(
   return getOutstandingExpenseShares(group, debtorMemberId).filter(
     (share) => {
       const expense = group.expenses.find((item) => item.id === share.expenseId);
-      return expense && getExpensePayerId(expense) === creditorMemberId;
+      return expense && (share.payeeMemberId ?? getExpensePayerId(expense)) === creditorMemberId;
     },
   );
 }
@@ -669,10 +742,10 @@ export function allocatePaymentToExpenses(
   const selectedIds = selectedExpenseIds
     ? new Set(selectedExpenseIds)
     : undefined;
-  const outstandingShares = getOutstandingExpenseShares(
-    group,
-    fromMemberId,
-  ).filter(
+  const sourceShares = recipientMemberId && selectedIds
+    ? getExpensePayeeOptions(group, fromMemberId)
+    : getOutstandingExpenseShares(group, fromMemberId);
+  const outstandingShares = sourceShares.filter(
     (allocation) => {
       if (!allocation.expenseId) return false;
       if (selectedIds && !selectedIds.has(allocation.expenseId)) return false;
@@ -680,7 +753,7 @@ export function allocatePaymentToExpenses(
       const expense = group.expenses.find(
         (candidate) => candidate.id === allocation.expenseId,
       );
-      return !!expense && getExpensePayerId(expense) === recipientMemberId;
+      return !!expense && (allocation.payeeMemberId ?? getExpensePayerId(expense)) === recipientMemberId;
     },
   );
   const allocations: PaymentAllocation[] = [];
@@ -887,9 +960,21 @@ export function mergeGroupMember(
         });
       }
 
+      const combinedContributions = new Map<string, number>();
+      for (const contribution of expense.payerContributions ?? []) {
+        const memberId = replace(contribution.memberId);
+        combinedContributions.set(
+          memberId,
+          (combinedContributions.get(memberId) ?? 0) + contribution.amount,
+        );
+      }
+
       return {
         ...expense,
         paidBy: replace(expense.paidBy),
+        payerContributions: expense.payerContributions
+          ? [...combinedContributions].map(([memberId, amount]) => ({ memberId, amount }))
+          : undefined,
         createdBy: expense.createdBy ? replace(expense.createdBy) : undefined,
         splits: [...combined.values()].map((split) => ({
           ...split,
@@ -913,6 +998,12 @@ export function mergeGroupMember(
     }),
     payments: group.payments?.map((payment) => ({
       ...payment,
+      allocations: payment.allocations?.map((allocation) => ({
+        ...allocation,
+        payeeMemberId: allocation.payeeMemberId
+          ? replace(allocation.payeeMemberId)
+          : undefined,
+      })),
       fromMemberId: replace(payment.fromMemberId),
       toMemberId: replace(payment.toMemberId),
       submittedBy: replace(payment.submittedBy),
@@ -931,6 +1022,18 @@ export function mergeGroupMember(
     })),
     balanceOffsets: group.balanceOffsets?.map((offset) => ({
       ...offset,
+      debitAllocations: offset.debitAllocations.map((allocation) => ({
+        ...allocation,
+        payeeMemberId: allocation.payeeMemberId
+          ? replace(allocation.payeeMemberId)
+          : undefined,
+      })),
+      creditAllocations: offset.creditAllocations.map((allocation) => ({
+        ...allocation,
+        payeeMemberId: allocation.payeeMemberId
+          ? replace(allocation.payeeMemberId)
+          : undefined,
+      })),
       requesterMemberId: replace(offset.requesterMemberId),
       counterpartyMemberId: replace(offset.counterpartyMemberId),
       requestedBy: replace(offset.requestedBy),

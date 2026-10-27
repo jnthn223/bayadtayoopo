@@ -3,7 +3,7 @@ import type {
   Group,
   NotificationPreferences,
 } from "./types";
-import { formatCurrency, getMemberById } from "./utils";
+import { formatCurrency, getExpenseContributorIds, getMemberById } from "./utils";
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   payments: true,
@@ -480,7 +480,7 @@ export function deriveNotifications(
       for (const expense of group.expenses) {
         const creatorId = expense.createdBy ?? expense.paidBy;
         const affectsCurrentMember =
-          expense.paidBy === currentMemberId ||
+          getExpenseContributorIds(expense).includes(currentMemberId) ||
           expense.splits.some((split) => split.memberId === currentMemberId);
         if (!affectsCurrentMember) continue;
 

@@ -24,6 +24,7 @@ const HEADERS = [
   "conversionRateDate",
   "conversionSource",
   "paidBy",
+  "payerContributions",
   "splitType",
   "splits",
   "items",
@@ -38,6 +39,7 @@ const OPTIONAL_HEADERS = new Set<(typeof HEADERS)[number]>([
   "conversionRate",
   "conversionRateDate",
   "conversionSource",
+  "payerContributions",
   "items",
   "dueDate",
   "notes",
@@ -84,6 +86,7 @@ export function exportExpensesTemplateCsv(group: Group): string {
       "N/A",
       "N/A",
       payer?.name ?? "Member name",
+      "N/A",
       "equal",
       members.map((member) => `${member.name}:300`).join(";"),
       "N/A",
@@ -103,6 +106,7 @@ export function exportExpensesTemplateCsv(group: Group): string {
       dateAt(1),
       "manual",
       payer?.name ?? "Member name",
+      "N/A",
       "custom",
       members.map((member) => `${member.name}:500`).join(";"),
       "N/A",
@@ -133,6 +137,7 @@ export function exportExpensesTemplateCsv(group: Group): string {
       "N/A",
       "N/A",
       payer?.name ?? "Member name",
+      `${members[0].name}:300;${members[1].name}:200`,
       "itemized",
       `${members[0].name}:400;${members[1].name}:100`,
       JSON.stringify(itemizedItems),
@@ -284,6 +289,13 @@ function expenseToRow(expense: Expense, group: Group): string[] {
     expense.conversionRateDate ?? "",
     expense.conversionSource ?? "",
     paidBy,
+    expense.payerContributions?.length
+      ? expense.payerContributions
+          .map((contribution) =>
+            `${getMemberName(historicalMembers, contribution.memberId)}:${contribution.amount}`,
+          )
+          .join(";")
+      : "",
     expense.splitType,
     expense.splits
       .map((split) => `${getMemberName(historicalMembers, split.memberId)}:${split.amount}`)
@@ -318,6 +330,12 @@ function parseExpenseRow(
   const originalAmount = row.originalAmount ? Number(row.originalAmount) : undefined;
   const conversionRate = row.conversionRate ? Number(row.conversionRate) : undefined;
   const conversionSource = row.conversionSource || undefined;
+  const contributions = parsePayerContributions(
+    row.payerContributions ?? "",
+    group,
+    createdBy,
+    lineNumber,
+  );
 
   if (!isValidDate(row.date)) errors.push(`Row ${lineNumber}: date must be YYYY-MM-DD`);
   if (!row.description) errors.push(`Row ${lineNumber}: description is required`);
@@ -357,6 +375,20 @@ function parseExpenseRow(
         ? `Row ${lineNumber}: paidBy "${row.paidBy}" is ambiguous; member names must be unique`
         : `Row ${lineNumber}: paidBy "${row.paidBy}" is not a group member`,
     );
+  }
+  if (!contributions.ok) errors.push(...contributions.errors);
+  if (contributions.ok && contributions.contributions && Number.isFinite(amount)) {
+    const contributionTotal = roundMoney(
+      contributions.contributions.reduce((sum, contribution) => sum + contribution.amount, 0),
+    );
+    if (Math.round(contributionTotal * 100) !== Math.round(amount * 100)) {
+      errors.push(
+        `Row ${lineNumber}: payer contribution total ${contributionTotal.toFixed(2)} does not match amount ${amount.toFixed(2)}`,
+      );
+    }
+    if (paidBy && !contributions.contributions.some((item) => item.memberId === paidBy.id)) {
+      errors.push(`Row ${lineNumber}: paidBy must also appear in payerContributions`);
+    }
   }
 
   const splits = parseSplits(row.splits, group, createdBy, lineNumber);
@@ -422,7 +454,11 @@ function parseExpenseRow(
         `Row ${lineNumber}: split total ${splitTotal.toFixed(2)} does not match amount ${amount.toFixed(2)}`,
       );
     }
-    if (paidBy && !hasNonPayerShare(paidBy.id, splits.splits)) {
+    if (
+      paidBy &&
+      !contributions.contributions &&
+      !hasNonPayerShare(paidBy.id, splits.splits)
+    ) {
       errors.push(`Row ${lineNumber}: ${SELF_ONLY_EXPENSE_ERROR}`);
     }
     if (
@@ -460,7 +496,7 @@ function parseExpenseRow(
     }
   }
 
-  if (errors.length || !paidBy || !splits.ok || !items.ok) {
+  if (errors.length || !paidBy || !splits.ok || !items.ok || !contributions.ok) {
     return { ok: false, errors };
   }
 
@@ -481,6 +517,7 @@ function parseExpenseRow(
         ? (conversionSource as Expense["conversionSource"] | undefined) ?? "manual"
         : undefined,
       paidBy: paidBy.id,
+      payerContributions: contributions.contributions,
       createdBy,
       splitType,
       splits: splits.splits,
@@ -492,6 +529,60 @@ function parseExpenseRow(
       createdAt: new Date().toISOString(),
     },
   };
+}
+
+function parsePayerContributions(
+  value: string,
+  group: Group,
+  currentMemberId: string,
+  lineNumber: number,
+):
+  | { ok: true; contributions: Expense["payerContributions"] }
+  | { ok: false; errors: string[] } {
+  if (!value) return { ok: true, contributions: undefined };
+
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  const contributions = value
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const separator = part.lastIndexOf(":");
+      if (separator <= 0) {
+        errors.push(`Row ${lineNumber}: payer contribution "${part}" must use member:amount`);
+        return null;
+      }
+      const memberName = part.slice(0, separator).trim();
+      const contributionAmount = Number(part.slice(separator + 1).trim());
+      const member = findMemberByName(group.members, memberName, currentMemberId);
+      if (!member) {
+        errors.push(
+          memberNameIsAmbiguous(group.members, memberName, currentMemberId)
+            ? `Row ${lineNumber}: payer contributor "${memberName}" is ambiguous; member names must be unique`
+            : `Row ${lineNumber}: payer contributor "${memberName}" is not a group member`,
+        );
+        return null;
+      }
+      if (seen.has(member.id)) {
+        errors.push(`Row ${lineNumber}: payer contributor "${memberName}" appears more than once`);
+        return null;
+      }
+      if (!Number.isFinite(contributionAmount) || contributionAmount <= 0) {
+        errors.push(`Row ${lineNumber}: payer contribution for "${memberName}" must be greater than zero`);
+        return null;
+      }
+      seen.add(member.id);
+      return { memberId: member.id, amount: roundMoney(contributionAmount) };
+    })
+    .filter((item): item is NonNullable<Expense["payerContributions"]>[number] => Boolean(item));
+
+  if (contributions.length < 2) {
+    errors.push(`Row ${lineNumber}: payerContributions must include at least two members`);
+  }
+  return errors.length
+    ? { ok: false, errors }
+    : { ok: true, contributions };
 }
 
 function parseItems(
@@ -768,6 +859,10 @@ function expenseFingerprint(expense: Expense): string {
     expense.category,
     roundMoney(expense.amount).toFixed(2),
     expense.paidBy,
+    (expense.payerContributions ?? [])
+      .map((contribution) => `${contribution.memberId}:${roundMoney(contribution.amount).toFixed(2)}`)
+      .sort()
+      .join("|"),
     expense.splitType,
     splits,
   ].join("::");

@@ -3,7 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Check, ChevronDown, ImagePlus, Loader2, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { EXPENSE_CATEGORIES } from "./types";
 import type { CurrentUser, Group, Expense, ExpenseItem, SplitType, Category } from "./types";
-import { allocateCustomShares, formatCurrency, generateId, CATEGORY_ICONS, getCurrencySymbol, getExpensePayerId } from "./utils";
+import { allocateCustomShares, formatCurrency, generateId, CATEGORY_ICONS, getCurrencySymbol, getExpenseContributions, getExpenseObligations, getExpensePayerId, getMemberById } from "./utils";
 import { UserAvatar } from "./UserAvatar";
 import { ImagePasteControl } from "./ImagePasteControl";
 import { hasNonPayerShare, SELF_ONLY_EXPENSE_ERROR } from "./expenseValidation";
@@ -39,7 +39,7 @@ export function AddExpenseModal({
 }: Props) {
   const historicalMemberIds = new Set([
     ...(editExpense?.splits.map((split) => split.memberId) ?? []),
-    ...(editExpense ? [editExpense.paidBy] : []),
+    ...(editExpense ? getExpenseContributions(editExpense).map((item) => item.memberId) : []),
   ]);
   const historicalMembers = (group.formerMembers ?? []).filter((member) =>
     historicalMemberIds.has(member.id),
@@ -60,6 +60,8 @@ export function AddExpenseModal({
   const [rateLoading, setRateLoading] = useState(false);
   const [rateError, setRateError] = useState("");
   const [paidBy, setPaidBy] = useState(defaultPayerId);
+  const [multiplePayers, setMultiplePayers] = useState(false);
+  const [contributionInputs, setContributionInputs] = useState<Record<string, string>>({});
   const [splitType, setSplitType] = useState<SplitType>("equal");
   const [category, setCategory] = useState<Category>("food");
   const [categoryDetail, setCategoryDetail] = useState("");
@@ -88,7 +90,12 @@ export function AddExpenseModal({
         editExpense.conversionSource === "online-suggestion" ? editExpense.amount : null,
       );
       setSuggestedRateDate(editExpense.conversionRateDate ?? "");
-      setPaidBy(isAdmin ? editExpense.paidBy : defaultPayerId);
+      const contributions = getExpenseContributions(editExpense);
+      setMultiplePayers(contributions.length > 1);
+      setContributionInputs(
+        Object.fromEntries(contributions.map((item) => [item.memberId, String(item.amount)])),
+      );
+      setPaidBy(editExpense.paidBy);
       setSplitType(editExpense.splitType);
       setCategory(editExpense.category);
       setCategoryDetail(editExpense.categoryDetail ?? "");
@@ -119,6 +126,8 @@ export function AddExpenseModal({
       setSuggestedBaseAmount(null);
       setSuggestedRateDate("");
       setPaidBy(defaultPayerId);
+      setMultiplePayers(false);
+      setContributionInputs({ [defaultPayerId]: "" });
       setSplitType("equal");
       setCategory("food");
       setCategoryDetail("");
@@ -135,6 +144,29 @@ export function AddExpenseModal({
   }, [open, editExpense, isAdmin, defaultPayerId]);
 
   const totalAmount = parseFloat(amount) || 0;
+  const selectedContributorIds = availableMembers
+    .filter((member) => member.id in contributionInputs)
+    .map((member) => member.id);
+  const contributionOverrides = Object.fromEntries(
+    Object.entries(contributionInputs)
+      .filter(([memberId, value]) => selectedContributorIds.includes(memberId) && value !== "")
+      .map(([memberId, value]) => [memberId, parseFloat(value) || 0]),
+  );
+  const contributionAllocation = allocateCustomShares(
+    selectedContributorIds,
+    totalAmount,
+    contributionOverrides,
+  );
+  const payerContributions = multiplePayers
+    ? selectedContributorIds
+        .map((memberId) => ({
+          memberId,
+          amount: contributionAllocation[memberId] ?? 0,
+        }))
+        .filter((item) => item.amount > 0)
+    : [{ memberId: isAdmin ? paidBy : defaultPayerId, amount: totalAmount }];
+  const contributionTotal = payerContributions.reduce((sum, item) => sum + item.amount, 0);
+  const contributionDifference = Math.round((totalAmount - contributionTotal) * 100) / 100;
   const numericOriginalAmount = parseFloat(originalAmount) || 0;
   const itemizedItems: ExpenseItem[] = itemDrafts.map((item) => ({
     id: item.id,
@@ -166,6 +198,34 @@ export function AddExpenseModal({
   const equalAllocation = allocateCustomShares(includedMemberIds, totalAmount, {});
   const customTotal = Object.values(customAllocation).reduce((sum, value) => sum + value, 0);
   const customDiff = Math.abs(customTotal - totalAmount);
+  const previewAllocation = splitType === "custom"
+    ? customAllocation
+    : splitType === "itemized"
+      ? itemizedAllocation
+      : equalAllocation;
+  const previewSplits = includedMembers.map((member) => ({
+    memberId: member.id,
+    amount: Math.round((previewAllocation[member.id] ?? 0) * 100) / 100,
+  }));
+  const previewReady =
+    totalAmount > 0 &&
+    payerContributions.length > 0 &&
+    Math.round(contributionTotal * 100) === Math.round(totalAmount * 100) &&
+    Math.round(previewSplits.reduce((sum, split) => sum + split.amount, 0) * 100) ===
+      Math.round(totalAmount * 100);
+  const previewObligations = previewReady
+    ? getExpenseObligations({
+        id: editExpense?.id ?? "preview",
+        description: description.trim() || "This expense",
+        amount: totalAmount,
+        paidBy: payerContributions[0].memberId,
+        payerContributions: multiplePayers ? payerContributions : undefined,
+        splitType,
+        splits: previewSplits,
+        category,
+        date,
+      })
+    : [];
 
   const currencySymbol = getCurrencySymbol(group.currency);
   const displayMemberName = (memberId: string, fallback: string) =>
@@ -179,6 +239,17 @@ export function AddExpenseModal({
       errs.originalAmount = "Enter the amount that was originally paid";
     }
     if (!paidBy) errs.paidBy = "Choose who paid the expense";
+    if (multiplePayers) {
+      if (Object.values(contributionInputs).some((value) => value !== "" && parseFloat(value) < 0)) {
+        errs.contributions = "Contributions cannot be negative";
+      } else if (payerContributions.length < 2) {
+        errs.contributions = "Choose at least two people who paid upfront";
+      } else if (
+        Math.round(contributionTotal * 100) !== Math.round(totalAmount * 100)
+      ) {
+        errs.contributions = `Contributions must equal the total (${formatCurrency(Math.abs(contributionDifference), group.currency)} ${contributionDifference > 0 ? "remaining" : "over"})`;
+      }
+    }
     if (dueDate && dueDate < date) {
       errs.dueDate = "Deadline cannot be earlier than the expense date";
     }
@@ -211,6 +282,7 @@ export function AddExpenseModal({
         ? itemizedAllocation
         : equalAllocation;
     if (
+      !multiplePayers &&
       paidBy &&
       includedMembers.length > 0 &&
       !hasNonPayerShare(
@@ -231,9 +303,24 @@ export function AddExpenseModal({
     if (!validate()) return;
     const savedAt = new Date().toISOString();
     const creatorId = editExpense?.createdBy ?? currentMember?.id ?? currentUser.id;
-    const payerId = isAdmin ? paidBy : creatorId;
+    const primaryContribution = [...payerContributions].sort(
+      (a, b) => b.amount - a.amount || (a.memberId === creatorId ? -1 : 1),
+    )[0];
+    const payerId = multiplePayers
+      ? (primaryContribution?.memberId ?? creatorId)
+      : isAdmin ? paidBy : creatorId;
+    const previousContributionSignature = editExpense
+      ? getExpenseContributions(editExpense)
+          .map((item) => `${item.memberId}:${Math.round(item.amount * 100)}`)
+          .sort()
+          .join("|")
+      : "";
+    const nextContributionSignature = payerContributions
+      .map((item) => `${item.memberId}:${Math.round(item.amount * 100)}`)
+      .sort()
+      .join("|");
     const previousSplitsByMember = new Map(
-      editExpense && getExpensePayerId(editExpense) === payerId
+      editExpense && previousContributionSignature === nextContributionSignature
         ? editExpense.splits.map((s) => [s.memberId, s])
         : [],
     );
@@ -300,6 +387,7 @@ export function AddExpenseModal({
               : "manual"
             : undefined,
           paidBy: payerId,
+          payerContributions: multiplePayers ? payerContributions : undefined,
           createdBy: creatorId,
           splitType,
           splits,
@@ -373,6 +461,19 @@ export function AddExpenseModal({
       return next;
     });
     setErrors((current) => ({ ...current, members: "", splits: "" }));
+  }
+
+  function toggleContributor(memberId: string) {
+    setContributionInputs((current) => {
+      if (memberId in current) {
+        if (!isAdmin && memberId === defaultPayerId) return current;
+        const next = { ...current };
+        delete next[memberId];
+        return next;
+      }
+      return { ...current, [memberId]: "" };
+    });
+    setErrors((current) => ({ ...current, contributions: "" }));
   }
 
   function addItem() {
@@ -623,10 +724,29 @@ export function AddExpenseModal({
 
             {/* Initial payer */}
             <div>
-              <label className="block text-sm text-muted-foreground mb-1.5">
-                Initially paid by
-              </label>
-              {isAdmin ? (
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <label className="block text-sm text-muted-foreground">
+                  Initially paid by
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMultiplePayers((current) => {
+                      const next = !current;
+                      if (next) {
+                        const initialPayer = isAdmin ? paidBy : defaultPayerId;
+                        setContributionInputs({ [initialPayer]: "" });
+                      }
+                      setErrors((errors) => ({ ...errors, contributions: "" }));
+                      return next;
+                    });
+                  }}
+                  className="text-xs font-semibold text-primary"
+                >
+                  {multiplePayers ? "Use one payer" : "Multiple people paid"}
+                </button>
+              </div>
+              {!multiplePayers && (isAdmin ? (
                 <>
                   <div className="relative">
                     <select
@@ -664,6 +784,85 @@ export function AddExpenseModal({
                     <p className="text-sm font-medium text-foreground">You</p>
                     <p className="text-xs text-muted-foreground">You paid this expense upfront</p>
                   </div>
+                </div>
+              ))}
+              {multiplePayers && (
+                <div className="space-y-2 rounded-2xl border border-border bg-muted/20 p-3">
+                  <div className="flex items-start justify-between gap-3 px-1">
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">Upfront contributions</p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                        Starts equally. Amounts you edit stay fixed while the rest rebalance.
+                      </p>
+                    </div>
+                    <span className={`shrink-0 text-xs font-semibold ${Math.abs(contributionDifference) <= 0.005 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                      {contributionDifference > 0.005
+                        ? `${formatCurrency(contributionDifference, group.currency)} left`
+                        : contributionDifference < -0.005
+                          ? `${formatCurrency(Math.abs(contributionDifference), group.currency)} over`
+                          : "Fully allocated"}
+                    </span>
+                  </div>
+                  <div className="flex justify-end px-1">
+                    <button
+                      type="button"
+                      onClick={() => setContributionInputs((current) =>
+                        Object.fromEntries(Object.keys(current).map((memberId) => [memberId, ""])),
+                      )}
+                      className="text-[11px] font-semibold text-primary"
+                    >
+                      Rebalance equally
+                    </button>
+                  </div>
+                  {availableMembers.map((member) => {
+                    const selected = member.id in contributionInputs;
+                    const locked = !isAdmin && member.id === defaultPayerId;
+                    const isFixed = selected && contributionInputs[member.id] !== "";
+                    return (
+                      <div key={member.id} className={`rounded-xl border px-3 py-2.5 ${selected ? "border-primary/20 bg-card" : "border-border bg-muted/30 opacity-65"}`}>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            disabled={locked}
+                            onClick={() => toggleContributor(member.id)}
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card"}`}
+                            aria-label={`${selected ? "Remove" : "Add"} ${member.name} as contributor`}
+                          >
+                            {selected && <Check size={13} />}
+                          </button>
+                          <UserAvatar name={member.name} color={member.color} seed={member.avatarSeed} uid={member.uid} photoVersion={member.profileImageVersion} className="h-8 w-8 shrink-0 rounded-full text-sm" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm text-foreground">{displayMemberName(member.id, member.name)}</p>
+                            {selected && (
+                              <p className="text-[10px] text-muted-foreground">{isFixed ? "Fixed" : "Auto"}</p>
+                            )}
+                          </div>
+                          {selected && (
+                            <div className="relative w-28 shrink-0">
+                              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{currencySymbol}</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                inputMode="decimal"
+                                value={isFixed
+                                  ? contributionInputs[member.id]
+                                  : (contributionAllocation[member.id] ?? 0).toFixed(2)}
+                                onFocus={(event) => event.currentTarget.select()}
+                                onChange={(event) => {
+                                  setContributionInputs((current) => ({ ...current, [member.id]: event.target.value }));
+                                  setErrors((current) => ({ ...current, contributions: "" }));
+                                }}
+                                className="w-full rounded-lg border border-border bg-input-background py-2 pl-7 pr-2 text-right text-sm text-foreground outline-none focus:border-primary"
+                                aria-label={`${member.name} contribution`}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {errors.contributions && <p className="px-1 text-xs text-destructive">{errors.contributions}</p>}
                 </div>
               )}
               {errors.paidBy && <p className="text-destructive text-xs mt-1.5">{errors.paidBy}</p>}
@@ -979,6 +1178,30 @@ export function AddExpenseModal({
                   <p className="text-destructive text-xs">{errors.splits}</p>
                 )}
                 {errors.members && <p className="text-destructive text-xs">{errors.members}</p>}
+              </div>
+            )}
+
+            {previewReady && (
+              <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4">
+                <p className="text-sm font-semibold text-foreground">After this expense</p>
+                {previewObligations.length > 0 ? (
+                  <div className="mt-2 space-y-1.5">
+                    {previewObligations.map((obligation) => {
+                      const from = getMemberById(group, obligation.fromMemberId);
+                      const to = getMemberById(group, obligation.toMemberId);
+                      return (
+                        <p key={`${obligation.fromMemberId}-${obligation.toMemberId}`} className="text-xs leading-relaxed text-muted-foreground">
+                          <span className="font-semibold text-foreground">{displayMemberName(obligation.fromMemberId, from?.name ?? "Member")}</span>
+                          {" owes "}
+                          <span className="font-semibold text-foreground">{displayMemberName(obligation.toMemberId, to?.name ?? "Member")}</span>
+                          {" "}<span className="font-semibold text-primary">{formatCurrency(obligation.amount, group.currency)}</span>
+                        </p>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">No payment will be needed for this expense.</p>
+                )}
               </div>
             )}
 

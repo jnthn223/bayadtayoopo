@@ -73,6 +73,141 @@ const group: Group = {
 };
 
 describe("expense business logic", () => {
+  it("distributes a multi-payer expense by each member's net contribution", () => {
+    const multiPayer: Group = {
+      ...group,
+      expenses: [{
+        id: "shared-booking",
+        description: "Shared booking",
+        amount: 3000,
+        paidBy: "alice",
+        payerContributions: [
+          { memberId: "alice", amount: 1500 },
+          { memberId: "bob", amount: 1500 },
+        ],
+        createdBy: "alice",
+        splitType: "custom",
+        category: "accommodation",
+        date: "2026-01-02",
+        splits: [
+          { memberId: "alice", amount: 1000 },
+          { memberId: "bob", amount: 500 },
+          { memberId: "carol", amount: 1500 },
+        ],
+      }],
+      payments: [],
+      balanceOffsets: [],
+    };
+
+    expect(computeBalances(multiPayer).map(({ memberId, net }) => ({ memberId, net }))).toEqual([
+      { memberId: "alice", net: 500 },
+      { memberId: "bob", net: 1000 },
+      { memberId: "carol", net: -1500 },
+    ]);
+    expect(getOutstandingExpenseShares(multiPayer, "carol")).toEqual([
+      {
+        expenseId: "shared-booking",
+        expenseDescription: "Shared booking",
+        payeeMemberId: "alice",
+        amount: 500,
+      },
+      {
+        expenseId: "shared-booking",
+        expenseDescription: "Shared booking",
+        payeeMemberId: "bob",
+        amount: 1000,
+      },
+    ]);
+    expect(computeDirectExpenseSettlements(multiPayer)).toEqual([
+      { from: "carol", fromName: "Carol", to: "alice", toName: "Alice", amount: 500 },
+      { from: "carol", fromName: "Carol", to: "bob", toName: "Bob", amount: 1000 },
+    ]);
+
+    expect(
+      allocatePaymentToExpenses(
+        multiPayer,
+        "carol",
+        250,
+        ["shared-booking"],
+        "bob",
+      ),
+    ).toEqual([{
+      expenseId: "shared-booking",
+      expenseDescription: "Shared booking",
+      payeeMemberId: "bob",
+      amount: 250,
+    }]);
+
+    const partiallyPaid: Group = {
+      ...multiPayer,
+      payments: [{
+        id: "pay-alice",
+        fromMemberId: "carol",
+        toMemberId: "alice",
+        amount: 250,
+        method: "Cash",
+        allocations: [{
+          expenseId: "shared-booking",
+          expenseDescription: "Shared booking",
+          payeeMemberId: "alice",
+          amount: 250,
+        }],
+        status: "confirmed",
+        submittedAt: "2026-01-03T00:00:00.000Z",
+        submittedBy: "carol",
+      }],
+    };
+    expect(getConfirmedOutstandingExpenseShares(partiallyPaid, "carol")).toEqual([
+      {
+        expenseId: "shared-booking",
+        expenseDescription: "Shared booking",
+        payeeMemberId: "alice",
+        amount: 250,
+      },
+      {
+        expenseId: "shared-booking",
+        expenseDescription: "Shared booking",
+        payeeMemberId: "bob",
+        amount: 1000,
+      },
+    ]);
+
+    const paidChosenContributor: Group = {
+      ...multiPayer,
+      payments: [{
+        id: "pay-bob-first",
+        fromMemberId: "carol",
+        toMemberId: "bob",
+        amount: 250,
+        method: "Cash",
+        allocations: [{
+          expenseId: "shared-booking",
+          expenseDescription: "Shared booking",
+          payeeMemberId: "bob",
+          amount: 250,
+        }],
+        status: "confirmed",
+        submittedAt: "2026-01-03T00:00:00.000Z",
+        submittedBy: "carol",
+      }],
+    };
+    expect(getConfirmedOutstandingExpenseShares(paidChosenContributor, "carol"))
+      .toEqual([
+        {
+          expenseId: "shared-booking",
+          expenseDescription: "Shared booking",
+          payeeMemberId: "alice",
+          amount: 500,
+        },
+        {
+          expenseId: "shared-booking",
+          expenseDescription: "Shared booking",
+          payeeMemberId: "bob",
+          amount: 750,
+        },
+      ]);
+  });
+
   it("uses the remaining amount after partial payments for the unsettled total", () => {
     const partial: Group = {
       id: "partial",

@@ -38,6 +38,7 @@ import {
   computeSettlements,
   formatCurrency,
   generateId,
+  getExpenseContributorIds,
   getExpensePayerId,
   getOutstandingExpenseShares,
   getConfirmedOutstandingExpenseShares,
@@ -663,6 +664,8 @@ export function GroupScreen({
   function handleDeleteExpense() {
     if (!deleteExpense || !currentMember) return;
     const settled = isExpenseSettled(group, deleteExpense);
+    const directApprovalRequired =
+      group.kind === "direct" && group.directStatus === "active";
     if (settled && !isAdmin) {
       setDeleteReasonError("Only a group admin can delete a settled expense.");
       return;
@@ -693,15 +696,20 @@ export function GroupScreen({
       return;
     }
 
-    if (settled) {
+    if (settled || directApprovalRequired) {
+      const adminMemberId = getMemberById(
+        group,
+        group.adminId ?? group.members[0]?.id ?? currentMember.id,
+      )?.id ?? currentMember.id;
       const requiredApproverIds = Array.from(
         new Set([
-          getExpensePayerId(deleteExpense),
+          ...getExpenseContributorIds(deleteExpense),
           deleteExpense.createdBy ?? getExpensePayerId(deleteExpense),
           ...deleteExpense.splits
             .filter((split) => split.amount > 0.005)
             .map((split) => split.memberId),
-        ]),
+          ...(directApprovalRequired ? group.members.filter((member) => !member.removedAt).map((member) => member.id) : []),
+        ].map((memberId) => getMemberById(group, memberId)?.uid ? memberId : adminMemberId)),
       );
       const approvedByIds = requiredApproverIds.includes(currentMember.id)
         ? [currentMember.id]
@@ -1200,7 +1208,7 @@ export function GroupScreen({
     const isUsed =
       group.expenses.some(
         (expense) =>
-          expense.paidBy === memberId ||
+          getExpenseContributorIds(expense).includes(memberId) ||
           expense.createdBy === memberId ||
           expense.splits.some((split) => split.memberId === memberId),
       ) ||
@@ -1551,17 +1559,16 @@ export function GroupScreen({
           return candidate.expenses
             .filter((expense) => {
               const participantIds = new Set([
-                getExpensePayerId(expense),
+                ...getExpenseContributorIds(expense),
                 ...expense.splits.filter((split) => split.amount > 0).map((split) => split.memberId),
               ]);
               return participantIds.has(me.id) && participantIds.has(person.id);
             })
             .map((expense) => {
-              const payerId = getExpensePayerId(expense);
-              const relevantDebtorIds = [me.id, person.id].filter(
-                (memberId) =>
-                  memberId !== payerId &&
-                  expense.splits.some((split) => split.memberId === memberId && split.amount > 0.005),
+              const relevantDebtorIds = [me.id, person.id].filter((memberId) =>
+                getOutstandingExpenseShares(candidate, memberId).some(
+                  (allocation) => allocation.expenseId === expense.id && allocation.amount > 0.005,
+                ),
               );
               const settled = relevantDebtorIds.length > 0 && relevantDebtorIds.every((memberId) =>
                 !getOutstandingExpenseShares(candidate, memberId).some(
@@ -1678,7 +1685,7 @@ export function GroupScreen({
           ]);
           sourceGroup.expenses
             .filter((expense) => {
-              const participants = new Set([getExpensePayerId(expense), ...expense.splits.filter((split) => split.amount > 0.005).map((split) => split.memberId)]);
+              const participants = new Set([...getExpenseContributorIds(expense), ...expense.splits.filter((split) => split.amount > 0.005).map((split) => split.memberId)]);
               return participants.has(me.id) && participants.has(person.id);
             })
             .forEach((expense) => addExpense(sourceGroup, expense, ids, canonical));
@@ -2422,15 +2429,17 @@ export function GroupScreen({
           <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
           <Dialog.Content className="fixed inset-x-4 bottom-8 z-50 bg-card rounded-3xl p-6 shadow-2xl">
             <Dialog.Title className="text-base font-semibold text-foreground mb-1">
-              {deleteExpense && isExpenseSettled(group, deleteExpense)
+              {deleteExpense && (isExpenseSettled(group, deleteExpense) || (group.kind === "direct" && group.directStatus === "active"))
                 ? "Request expense deletion?"
                 : "Delete expense?"}
             </Dialog.Title>
             <Dialog.Description className="text-sm text-muted-foreground mb-4">
               Give a reason for deleting "{deleteExpense?.description}". This
               will be saved with the group history.
-              {deleteExpense && isExpenseSettled(group, deleteExpense)
-                ? " Because it is settled, every financially involved member must approve before it is removed from totals and balances."
+              {deleteExpense && (isExpenseSettled(group, deleteExpense) || (group.kind === "direct" && group.directStatus === "active"))
+                ? group.kind === "direct" && group.directStatus === "active"
+                  ? " The other person must approve before it is removed from the shared history and balances."
+                  : " Because it is settled, every financially involved member must approve before it is removed from totals and balances."
                 : ""}
             </Dialog.Description>
             <textarea
@@ -2462,7 +2471,7 @@ export function GroupScreen({
                 onClick={handleDeleteExpense}
                 className="flex-1 py-3.5 rounded-2xl bg-destructive text-white text-sm font-semibold transition-all active:scale-95"
               >
-                {deleteExpense && isExpenseSettled(group, deleteExpense)
+                {deleteExpense && (isExpenseSettled(group, deleteExpense) || (group.kind === "direct" && group.directStatus === "active"))
                   ? "Request deletion"
                   : "Delete"}
               </button>

@@ -2,7 +2,13 @@ import { useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AlertTriangle, Check, CreditCard, Receipt, X } from "lucide-react";
 import type { DirectHistoryDispute, Group, Member } from "./types";
-import { formatCurrency, generateId, getMemberById } from "./utils";
+import {
+  formatCurrency,
+  generateId,
+  getExpenseContributions,
+  getExpenseObligations,
+  getMemberById,
+} from "./utils";
 
 interface Props {
   open: boolean;
@@ -19,6 +25,7 @@ type ReviewItem = {
   label: string;
   detail: string;
   amount: number;
+  breakdown?: string[];
 };
 
 export function DirectHistoryReview({ open, group, member, onClose, onComplete }: Props) {
@@ -26,14 +33,30 @@ export function DirectHistoryReview({ open, group, member, onClose, onComplete }
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const items = useMemo<ReviewItem[]>(() => {
-    const expenses = group.expenses.map((expense) => ({
-      key: `expense:${expense.id}`,
-      entityType: "expense" as const,
-      entityId: expense.id,
-      label: expense.description,
-      detail: `Paid by ${getMemberById(group, expense.paidBy)?.name ?? "a member"} · ${expense.date}`,
-      amount: expense.amount,
-    }));
+    const expenses = group.expenses.map((expense) => {
+      const contributions = getExpenseContributions(expense);
+      return {
+        key: `expense:${expense.id}`,
+        entityType: "expense" as const,
+        entityId: expense.id,
+        label: expense.description,
+        detail: `${expense.splitType === "equal" ? "Equal split" : expense.splitType === "itemized" ? "Split by item" : "Custom split"} · ${expense.date}`,
+        amount: expense.amount,
+        breakdown: [
+          ...contributions.map((contribution) =>
+            `${getMemberById(group, contribution.memberId)?.name ?? "A member"} paid ${formatCurrency(contribution.amount, group.currency)} upfront`,
+          ),
+          ...expense.splits
+            .filter((split) => split.amount > 0.005)
+            .map((split) =>
+              `${getMemberById(group, split.memberId)?.name ?? "A member"} share: ${formatCurrency(split.amount, group.currency)}`,
+            ),
+          ...getExpenseObligations(expense).map((obligation) =>
+            `${getMemberById(group, obligation.fromMemberId)?.name ?? "A member"} owes ${getMemberById(group, obligation.toMemberId)?.name ?? "a member"} ${formatCurrency(obligation.amount, group.currency)}`,
+          ),
+        ],
+      };
+    });
     const payments = (group.payments ?? [])
       .filter((payment) => payment.status === "confirmed" || payment.status === "pending")
       .map((payment) => ({
@@ -124,6 +147,13 @@ export function DirectHistoryReview({ open, group, member, onClose, onComplete }
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-foreground">{item.label}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">{item.detail}</p>
+                      {item.breakdown?.length ? (
+                        <div className="mt-2 space-y-1 rounded-xl bg-muted/55 p-2.5">
+                          {item.breakdown.map((line) => (
+                            <p key={line} className="text-[11px] leading-relaxed text-muted-foreground">{line}</p>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     <p className="shrink-0 text-sm font-semibold text-foreground">{formatCurrency(item.amount, group.currency)}</p>
                   </div>

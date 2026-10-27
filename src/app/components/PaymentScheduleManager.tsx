@@ -77,7 +77,8 @@ export function PaymentScheduleManager({
   const availableShares = useMemo(() => {
     const covered = coveredByOpenSchedule(group);
     return directSharesOwedTo(group, balanceMember.id, currentMember.id).filter(
-      (share) => !covered.has(`${balanceMember.id}:${share.expenseId}`),
+      (share) =>
+        !covered.has(`${balanceMember.id}:${currentMember.id}:${share.expenseId}`),
     );
   }, [balanceMember.id, currentMember.id, group]);
   const canPropose = availableShares.length > 0;

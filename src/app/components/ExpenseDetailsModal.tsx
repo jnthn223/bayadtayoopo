@@ -1,8 +1,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { CalendarDays, Edit2, Receipt, Trash2, Users, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Edit2, Receipt, Trash2, Users, X } from "lucide-react";
 import type { Expense, Group } from "./types";
 import { allocateItemizedShares } from "./itemizedExpense";
-import { CATEGORY_ICONS, formatCurrency, getExpensePayerId, getMemberById } from "./utils";
+import { CATEGORY_ICONS, formatCurrency, getExpenseContributions, getMemberById } from "./utils";
 import { UserAvatar } from "./UserAvatar";
 
 interface Props {
@@ -13,6 +13,7 @@ interface Props {
   onViewReceipt: (imageId: string, title: string) => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  onDispute?: () => void;
 }
 
 export function ExpenseDetailsModal({
@@ -23,11 +24,11 @@ export function ExpenseDetailsModal({
   onViewReceipt,
   onEdit,
   onDelete,
+  onDispute,
 }: Props) {
   if (!expense) return null;
 
-  const payerId = getExpensePayerId(expense);
-  const payer = getMemberById(group, payerId);
+  const contributions = getExpenseContributions(expense);
   const includedIds = new Set(expense.splits.filter((split) => split.amount > 0.005).map((split) => split.memberId));
   const excludedMembers = group.members.filter((member) => !includedIds.has(member.id));
   const itemizedShares = expense.splitType === "itemized" && expense.items?.length
@@ -71,7 +72,10 @@ export function ExpenseDetailsModal({
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Detail label="Paid by" value={displayMemberName(payerId, payer?.name)} />
+              <Detail
+                label="Paid by"
+                value={contributions.map((item) => displayMemberName(item.memberId, getMemberById(group, item.memberId)?.name)).join(" & ")}
+              />
               <Detail label="Split method" value={splitLabel} />
               <Detail
                 label="Date"
@@ -96,6 +100,24 @@ export function ExpenseDetailsModal({
               <section>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notes</p>
                 <p className="mt-2 whitespace-pre-line rounded-xl bg-muted/55 p-3 text-sm leading-relaxed text-foreground">{expense.notes}</p>
+              </section>
+            )}
+
+            {contributions.length > 1 && (
+              <section>
+                <p className="text-sm font-semibold text-foreground">Paid upfront</p>
+                <div className="mt-3 overflow-hidden rounded-2xl border border-border">
+                  {contributions.map((contribution, index) => {
+                    const member = getMemberById(group, contribution.memberId);
+                    return (
+                      <div key={contribution.memberId} className={`flex items-center gap-3 px-3 py-2.5 ${index < contributions.length - 1 ? "border-b border-border" : ""}`}>
+                        <UserAvatar name={member?.name ?? "Unknown member"} color={member?.color ?? "#7c3aed"} seed={member?.avatarSeed} uid={member?.uid} photoVersion={member?.profileImageVersion} className="h-8 w-8 shrink-0 rounded-full text-xs" />
+                        <span className="min-w-0 flex-1 truncate text-sm text-foreground">{displayMemberName(contribution.memberId, member?.name)}</span>
+                        <span className="text-sm font-semibold text-foreground">{formatCurrency(contribution.amount, group.currency)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </section>
             )}
 
@@ -168,10 +190,11 @@ export function ExpenseDetailsModal({
               </section>
             )}
 
-            {(onEdit || onDelete) && (
-              <div className={`grid gap-2 border-t border-border pt-4 ${onEdit && onDelete ? "grid-cols-2" : "grid-cols-1"}`}>
+            {(onEdit || onDelete || onDispute) && (
+              <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-2">
                 {onEdit && <button type="button" onClick={onEdit} className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground"><Edit2 size={15} /> Edit expense</button>}
                 {onDelete && <button type="button" onClick={onDelete} className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive"><Trash2 size={15} /> Delete expense</button>}
+                {onDispute && <button type="button" onClick={onDispute} className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800"><AlertTriangle size={15} /> I don’t agree</button>}
               </div>
             )}
           </div>

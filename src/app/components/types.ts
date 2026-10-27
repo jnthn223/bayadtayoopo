@@ -42,6 +42,8 @@ export interface PaymentAllocation {
   expenseId?: string;
   expenseDescription: string;
   amount: number;
+  /** Original contributor whose reimbursement this allocation reduces. */
+  payeeMemberId?: string;
 }
 
 export type PaymentScheduleFrequency = "weekly" | "biweekly" | "monthly";
@@ -183,6 +185,11 @@ export interface ExpenseItem {
   amount: number;
   memberIds: string[];
 }
+
+export interface PayerContribution {
+  memberId: string;
+  amount: number;
+}
 export const EXPENSE_CATEGORIES = [
   "food",
   "drinks",
@@ -209,6 +216,8 @@ export interface Expense {
   conversionRateDate?: string;
   conversionSource?: "online-suggestion" | "manual";
   paidBy: string;
+  /** Present for multi-payer expenses. Legacy records fall back to paidBy for the full amount. */
+  payerContributions?: PayerContribution[];
   createdBy?: string;
   splitType: SplitType;
   splits: Split[];
