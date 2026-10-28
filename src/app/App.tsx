@@ -79,6 +79,7 @@ import {
 } from "./components/quickAddExpense";
 import { deletePaymentImage, savePaymentImage } from "../lib/paymentImageService";
 import { SyncStatus } from "./components/SyncStatus";
+import { GroupScreenErrorBoundary } from "./components/GroupScreenErrorBoundary";
 
 /* MARKER-MAKE-KIT-INVOKED */
 
@@ -1515,7 +1516,16 @@ export default function App() {
               />
             )}
             {screen === "group" && selectedGroup && (
-              <GroupScreen
+              <GroupScreenErrorBoundary
+                key={selectedGroup.id}
+                groupId={selectedGroup.id}
+                userId={currentUser.id}
+                onBack={() => {
+                  setNotificationDestination(null);
+                  setScreen("home");
+                }}
+              >
+                <GroupScreen
                 group={selectedGroup}
                 currentUser={currentUser}
                 destination={notificationDestination}
@@ -1534,7 +1544,8 @@ export default function App() {
                 onUpdateUser={handleUpdateUser}
                 onArchiveGroup={handleArchiveItem}
                 pendingExpenseIds={Object.keys(pendingExpenseNames[selectedGroup.id] ?? {})}
-              />
+                />
+              </GroupScreenErrorBoundary>
             )}
             {screen === "home" && (
               <HomeScreen

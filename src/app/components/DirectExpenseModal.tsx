@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronRight, Plus, Search, X } from "lucide-react";
 import type { CurrentUser, Expense, Group } from "./types";
@@ -11,6 +11,7 @@ import {
 import { UserAvatar } from "./UserAvatar";
 import { SUPPORTED_CURRENCIES } from "./currencies";
 import { generateId, MEMBER_COLORS } from "./utils";
+import { deleteOfflineExpenseDraft, saveOfflineExpenseDraft } from "./offlineExpenseDrafts";
 
 interface Props {
   open: boolean;
@@ -31,6 +32,14 @@ export function DirectExpenseModal({ open, groups, user, onClose, onAdd, onCreat
   const filteredContacts = contacts.filter((contact) =>
     contact.member.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
+
+  useEffect(() => {
+    if (open) return;
+    setSearch("");
+    setLedger(null);
+    setExpenseFormOpen(false);
+    setError("");
+  }, [open]);
 
   function close() {
     setSearch("");
@@ -220,6 +229,19 @@ export function DirectExpenseModal({ open, groups, user, onClose, onAdd, onCreat
           onAdd={(expense, receiptFiles) => onAdd(ledger, expense, receiptFiles)}
           currentUser={user}
           isAdmin
+          onSaveDraft={async (draft) => {
+            saveOfflineExpenseDraft(draft);
+            try {
+              if (!groups.some((group) => group.id === ledger.id)) {
+                await onCreateTracker(ledger);
+              } else {
+                close();
+              }
+            } catch (error) {
+              deleteOfflineExpenseDraft(user.id, draft.id);
+              throw error;
+            }
+          }}
         />
       )}
     </>

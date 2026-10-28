@@ -10,6 +10,7 @@ import { hasNonPayerShare, SELF_ONLY_EXPENSE_ERROR } from "./expenseValidation";
 import { SUPPORTED_CURRENCIES } from "./currencies";
 import { fetchExchangeRate } from "../../lib/exchangeRateService";
 import { allocateItemizedShares, itemizedTotal } from "./itemizedExpense";
+import type { OfflineExpenseDraft } from "./offlineExpenseDrafts";
 
 interface ItemDraft {
   id: string;
@@ -26,6 +27,8 @@ interface Props {
   currentUser: CurrentUser;
   editExpense?: Expense | null;
   isAdmin?: boolean;
+  offlineDraft?: OfflineExpenseDraft | null;
+  onSaveDraft?: (draft: OfflineExpenseDraft) => Promise<void> | void;
 }
 
 export function AddExpenseModal({
@@ -36,6 +39,8 @@ export function AddExpenseModal({
   currentUser,
   editExpense,
   isAdmin,
+  offlineDraft,
+  onSaveDraft,
 }: Props) {
   const historicalMemberIds = new Set([
     ...(editExpense?.splits.map((split) => split.memberId) ?? []),
@@ -75,11 +80,43 @@ export function AddExpenseModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const connected = () => setOnline(true);
+    const disconnected = () => setOnline(false);
+    window.addEventListener("online", connected);
+    window.addEventListener("offline", disconnected);
+    return () => {
+      window.removeEventListener("online", connected);
+      window.removeEventListener("offline", disconnected);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
 
-    if (editExpense) {
+    if (offlineDraft && !editExpense) {
+      setDescription(offlineDraft.description);
+      setNotes(offlineDraft.notes);
+      setAmount(offlineDraft.amount);
+      setForeignCurrencyOpen(offlineDraft.foreignCurrencyOpen);
+      setOriginalAmount(offlineDraft.originalAmount);
+      setOriginalCurrency(offlineDraft.originalCurrency);
+      setSuggestedBaseAmount(null);
+      setSuggestedRateDate("");
+      setPaidBy(offlineDraft.paidBy);
+      setMultiplePayers(offlineDraft.multiplePayers);
+      setContributionInputs(offlineDraft.contributionInputs);
+      setSplitType(offlineDraft.splitType);
+      setCategory(offlineDraft.category);
+      setCategoryDetail(offlineDraft.categoryDetail);
+      setDate(offlineDraft.date);
+      setDueDate(offlineDraft.dueDate);
+      setIncludedMemberIds(offlineDraft.includedMemberIds);
+      setCustomOverrides(offlineDraft.customOverrides);
+      setItemDrafts(offlineDraft.itemDrafts);
+    } else if (editExpense) {
       setDescription(editExpense.description);
       setNotes(editExpense.notes ?? "");
       setAmount(String(editExpense.amount));
@@ -141,7 +178,7 @@ export function AddExpenseModal({
     setErrors({});
     setRateError("");
     setReceiptFiles([]);
-  }, [open, editExpense, isAdmin, defaultPayerId]);
+  }, [open, editExpense, offlineDraft, isAdmin, defaultPayerId]);
 
   const totalAmount = parseFloat(amount) || 0;
   const selectedContributorIds = availableMembers
@@ -415,6 +452,38 @@ export function AddExpenseModal({
       }));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSaveDraft() {
+    if (!onSaveDraft) return;
+    try {
+      await onSaveDraft({
+        id: offlineDraft?.id ?? generateId(),
+        groupId: group.id,
+        userId: currentUser.id,
+        updatedAt: new Date().toISOString(),
+        description,
+        notes,
+        amount,
+        foreignCurrencyOpen,
+        originalAmount,
+        originalCurrency,
+        paidBy,
+        multiplePayers,
+        contributionInputs,
+        splitType,
+        category,
+        categoryDetail,
+        customOverrides,
+        itemDrafts,
+        includedMemberIds,
+        date,
+        dueDate,
+      });
+      onClose();
+    } catch {
+      setErrors((current) => ({ ...current, draft: "This device could not store the draft. Free some browser storage and try again." }));
     }
   }
 
@@ -1209,7 +1278,7 @@ export function AddExpenseModal({
               <label className="block text-sm text-muted-foreground mb-1.5">
                 Expense receipts <span className="text-xs">(optional)</span>
               </label>
-              <label className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-muted/20 px-4 py-3 cursor-pointer">
+              <label className={`flex items-center gap-3 rounded-xl border border-dashed border-border bg-muted/20 px-4 py-3 ${online ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}>
                 <ImagePlus size={18} className="text-primary shrink-0" />
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">
@@ -1223,6 +1292,7 @@ export function AddExpenseModal({
                   type="file"
                   accept="image/*"
                   multiple
+                  disabled={!online}
                   className="hidden"
                   onChange={(event) => {
                     const files = Array.from(event.target.files ?? []);
@@ -1234,7 +1304,7 @@ export function AddExpenseModal({
               </label>
               <ImagePasteControl
                 enabled={open}
-                disabled={saving || receiptFiles.length >= 5}
+                disabled={!online || saving || receiptFiles.length >= 5}
                 label="Paste receipt"
                 onImages={(files) => {
                   setReceiptFiles((current) => [...current, ...files].slice(0, 5));
@@ -1244,6 +1314,9 @@ export function AddExpenseModal({
                   setErrors((current) => ({ ...current, receipts: message }))
                 }
               />
+              {!online && (
+                <p className="mt-2 text-xs text-muted-foreground">Reconnect to attach receipt images. Image drafts will be added in a later offline phase.</p>
+              )}
               {(editExpense?.receipts?.length ?? 0) > 0 && (
                 <p className="mt-2 text-xs text-muted-foreground">
                   {editExpense!.receipts!.length} saved receipt
@@ -1283,18 +1356,45 @@ export function AddExpenseModal({
               )}
             </div>
 
-            <button
-              onClick={handleSubmit}
-              disabled={saving}
-              className="w-full py-4 rounded-2xl text-primary-foreground font-semibold text-base transition-all active:scale-95"
-              style={{ backgroundColor: "var(--primary)" }}
-            >
-              {saving
-                ? "Saving…"
-                : editExpense
-                  ? "Save Changes"
-                  : "Add Expense"}
-            </button>
+            {!online && !editExpense ? (
+              <div className="space-y-2">
+                {errors.draft && <p className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">{errors.draft}</p>}
+                {receiptFiles.length > 0 && (
+                  <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">Receipt images are not stored in offline drafts yet. Add them after reconnecting.</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleSaveDraft()}
+                  className="w-full rounded-2xl bg-primary py-4 text-base font-semibold text-primary-foreground transition-all active:scale-95"
+                >
+                  Save offline draft
+                </button>
+                <p className="text-center text-[11px] text-muted-foreground">This will not affect balances until you submit it online.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {errors.draft && <p className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">{errors.draft}</p>}
+                {!editExpense && onSaveDraft && (
+                  <button type="button" onClick={() => void handleSaveDraft()} className="w-full rounded-2xl border border-border bg-card py-3 text-sm font-semibold text-foreground">
+                    {offlineDraft ? "Update draft" : "Save as draft"}
+                  </button>
+                )}
+                <button
+                  onClick={handleSubmit}
+                  disabled={saving}
+                  className="w-full py-4 rounded-2xl text-primary-foreground font-semibold text-base transition-all active:scale-95"
+                  style={{ backgroundColor: "var(--primary)" }}
+                >
+                  {saving
+                    ? "Saving…"
+                    : editExpense
+                      ? "Save Changes"
+                      : offlineDraft
+                        ? "Submit Expense"
+                        : "Add Expense"}
+                </button>
+              </div>
+            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

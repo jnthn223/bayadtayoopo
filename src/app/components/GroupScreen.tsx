@@ -10,6 +10,8 @@ import {
   Shuffle,
   Camera,
   ImageOff,
+  FilePenLine,
+  Trash2,
   X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -51,6 +53,12 @@ import {
 } from "./utils";
 import { upsertExpense } from "./quickAddExpense";
 import { AddExpenseModal } from "./AddExpenseModal";
+import {
+  deleteOfflineExpenseDraft,
+  loadOfflineExpenseDrafts,
+  saveOfflineExpenseDraft,
+  type OfflineExpenseDraft,
+} from "./offlineExpenseDrafts";
 import { QRModal } from "./QRModal";
 import { InviteModal } from "./InviteModal";
 import { DirectClaimInviteModal } from "./DirectClaimInviteModal";
@@ -150,6 +158,10 @@ export function GroupScreen({
   const firstUnreadMessageRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [offlineDrafts, setOfflineDrafts] = useState<OfflineExpenseDraft[]>(() =>
+    loadOfflineExpenseDrafts(currentUser.id),
+  );
+  const [selectedOfflineDraft, setSelectedOfflineDraft] = useState<OfflineExpenseDraft | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [sharedGroupSummaryOpen, setSharedGroupSummaryOpen] = useState(true);
@@ -185,6 +197,12 @@ export function GroupScreen({
   const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(
     null,
   );
+  const groupOfflineDrafts = offlineDrafts.filter((draft) => draft.groupId === group.id);
+
+  useEffect(() => {
+    setOfflineDrafts(loadOfflineExpenseDrafts(currentUser.id));
+    setSelectedOfflineDraft(null);
+  }, [currentUser.id, group.id]);
   const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
@@ -1757,6 +1775,47 @@ export function GroupScreen({
       <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">Shared-group expenses stay read-only here. Open the group to edit or settle them.</p>
     </div>
   );
+  const offlineDraftPrelude = groupOfflineDrafts.length > 0 ? (
+    <section className="rounded-2xl border border-primary/15 bg-primary/5 p-3">
+      <div className="flex items-center gap-2">
+        <FilePenLine size={16} className="text-primary" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">Expense drafts</p>
+          <p className="text-[11px] text-muted-foreground">Private to this device until submitted</p>
+        </div>
+        <span className="rounded-full bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">{groupOfflineDrafts.length}</span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {groupOfflineDrafts.map((draft) => (
+          <div key={draft.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+            <button
+              type="button"
+              onClick={() => {
+                setEditExpense(null);
+                setSelectedOfflineDraft(draft);
+                setAddOpen(true);
+              }}
+              className="min-w-0 flex-1 text-left"
+            >
+              <p className="truncate text-sm font-semibold text-foreground">{draft.description.trim() || "Untitled expense"}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {draft.amount ? formatCurrency(Number(draft.amount) || 0, group.currency) : "Amount not added"}
+                {` · Saved ${new Date(draft.updatedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`}
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setOfflineDrafts(deleteOfflineExpenseDraft(currentUser.id, draft.id))}
+              className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              aria-label={`Delete draft ${draft.description || "Untitled expense"}`}
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  ) : undefined;
   const personExpensePrelude = group.kind === "direct" && sharedExpenseItems.length > 0 ? (
     <div className="space-y-3">
       <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
@@ -2094,7 +2153,7 @@ export function GroupScreen({
         reviewPayment={reviewPayment}
         setCreatorPaidConfirmation={setCreatorPaidConfirmation}
         onReplyToMessage={replyToMessage}
-        expensePrelude={personExpensePrelude}
+        expensePrelude={(offlineDraftPrelude || personExpensePrelude) ? <>{offlineDraftPrelude}{personExpensePrelude}</> : undefined}
         expensePostlude={group.kind === "direct" && personExpenseScope === "all" && sharedExpenseItems.length > 0 ? sharedPersonExpenseList : undefined}
         hideDirectExpenseContent={group.kind === "direct" && personExpenseScope === "shared"}
         expenseTotalView={expenseTotalView}
@@ -2209,6 +2268,7 @@ export function GroupScreen({
           <button
             onClick={() => {
               setEditExpense(null);
+              setSelectedOfflineDraft(null);
               setAddOpen(true);
             }}
             className={`w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-primary-foreground font-semibold transition-all active:scale-95 ${
@@ -2969,11 +3029,22 @@ export function GroupScreen({
         onClose={() => {
           setAddOpen(false);
           setEditExpense(null);
+          setSelectedOfflineDraft(null);
         }}
-        onAdd={handleAddExpense}
+        onAdd={async (expense, receiptFiles) => {
+          await handleAddExpense(expense, receiptFiles);
+          if (selectedOfflineDraft) {
+            setOfflineDrafts(deleteOfflineExpenseDraft(currentUser.id, selectedOfflineDraft.id));
+          }
+        }}
         currentUser={currentUser}
         editExpense={editExpense}
         isAdmin={isAdmin}
+        offlineDraft={selectedOfflineDraft}
+        onSaveDraft={(draft) => {
+          setOfflineDrafts(saveOfflineExpenseDraft(draft));
+          setSelectedOfflineDraft(null);
+        }}
       />
       {group.kind === "direct" && currentMember && (
         <DirectHistoryReview
