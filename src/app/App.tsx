@@ -33,6 +33,7 @@ import {
   subscribeGroup,
   loadOrCreateUserProfile,
   saveUserProfile,
+  GROUP_SYNC_ERROR_EVENT,
 } from "../lib/groupService";
 import { computeProjectedBalances, generateId, MEMBER_COLORS } from "./components/utils";
 import { compactGroupHistory, mergeGroupChanges } from "./components/groupMerge";
@@ -77,6 +78,7 @@ import {
   upsertExpense,
 } from "./components/quickAddExpense";
 import { deletePaymentImage, savePaymentImage } from "../lib/paymentImageService";
+import { SyncStatus } from "./components/SyncStatus";
 
 /* MARKER-MAKE-KIT-INVOKED */
 
@@ -133,6 +135,11 @@ export default function App() {
   const [splashMinimumElapsed, setSplashMinimumElapsed] = useState(false);
   const [waitingUpdate, setWaitingUpdate] = useState<ServiceWorker | null>(null);
   const [restartingForUpdate, setRestartingForUpdate] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [groupSync, setGroupSync] = useState<Record<string, { fromCache: boolean; hasPendingWrites: boolean }>>({});
+  const [pendingExpenseNames, setPendingExpenseNames] = useState<Record<string, Record<string, string>>>({});
+  const [lastSyncedAt, setLastSyncedAt] = useState<string>();
+  const [syncErrors, setSyncErrors] = useState<Record<string, string>>({});
   const [similarMemberJoin, setSimilarMemberJoin] = useState<{
     groupId: string;
     user: AuthUser;
@@ -151,6 +158,43 @@ export default function App() {
   const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   const notificationStreamReadyRef = useRef(false);
   const bannerTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleSyncError = (event: Event) => {
+      const detail = (event as CustomEvent<{ groupId: string; message: string }>).detail;
+      if (!detail?.groupId) return;
+      setSyncErrors((current) => ({ ...current, [detail.groupId]: detail.message }));
+    };
+    window.addEventListener(GROUP_SYNC_ERROR_EVENT, handleSyncError);
+    return () => window.removeEventListener(GROUP_SYNC_ERROR_EVENT, handleSyncError);
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const prefix = `bayadtayoopo:sync:${currentUser.id}`;
+    setLastSyncedAt(localStorage.getItem(`${prefix}:last`) ?? undefined);
+    try {
+      setPendingExpenseNames(JSON.parse(localStorage.getItem(`${prefix}:expenses`) ?? "{}"));
+    } catch {
+      setPendingExpenseNames({});
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    localStorage.setItem(`bayadtayoopo:sync:${currentUser.id}:expenses`, JSON.stringify(pendingExpenseNames));
+  }, [currentUser?.id, pendingExpenseNames]);
 
   useEffect(() => {
     const handleLocationChange = () =>
@@ -418,6 +462,24 @@ export default function App() {
     return groupToSave;
   }
 
+  function applyGroupSync(
+    groupId: string,
+    sync: { fromCache: boolean; hasPendingWrites: boolean },
+  ) {
+    setGroupSync((current) => ({ ...current, [groupId]: sync }));
+    if (!sync.fromCache && !sync.hasPendingWrites) {
+      const syncedAt = new Date().toISOString();
+      setLastSyncedAt(syncedAt);
+      if (currentUser) localStorage.setItem(`bayadtayoopo:sync:${currentUser.id}:last`, syncedAt);
+      setPendingExpenseNames((current) => {
+        if (!current[groupId]) return current;
+        const next = { ...current };
+        delete next[groupId];
+        return next;
+      });
+    }
+  }
+
   // ── Keep open group in sync ─────────────────────────────────────────────
   useEffect(() => {
     syncRef.current.unsubscribe?.();
@@ -425,7 +487,11 @@ export default function App() {
     syncRef.current = {};
     if (screen !== "group" || !selectedGroup) return;
 
-    const applyFreshGroup = (fresh: Group | null) => {
+    const applyFreshGroup = (
+      fresh: Group | null,
+      sync?: { fromCache: boolean; hasPendingWrites: boolean },
+    ) => {
+      if (sync) applyGroupSync(selectedGroup.id, sync);
       if (!fresh) return;
       if (
         session &&
@@ -481,7 +547,8 @@ export default function App() {
     const unsubscribes = groups
       .filter((group) => group.id !== foregroundGroupId)
       .map((group) =>
-        subscribeGroup(group.id, (fresh) => {
+        subscribeGroup(group.id, (fresh, sync) => {
+          applyGroupSync(group.id, sync);
           if (!fresh) return;
           setGroups((current) =>
             current.map((item) => (item.id === fresh.id ? fresh : item)),
@@ -802,6 +869,31 @@ export default function App() {
     base: Group | null,
   ): Promise<Group> {
     if (!session) throw new Error("Sign in again to save this expense.");
+    setSyncErrors((current) => {
+      if (!current[group.id]) return current;
+      const next = { ...current };
+      delete next[group.id];
+      return next;
+    });
+    if (!navigator.onLine) {
+      const baseExpenses = new Map((base?.expenses ?? []).map((expense) => [expense.id, expense]));
+      const changedExpenses = group.expenses.filter((expense) =>
+        JSON.stringify(baseExpenses.get(expense.id)) !== JSON.stringify(expense),
+      );
+      setGroupSync((current) => ({
+        ...current,
+        [group.id]: { fromCache: true, hasPendingWrites: true },
+      }));
+      if (changedExpenses.length > 0) {
+        setPendingExpenseNames((current) => ({
+          ...current,
+          [group.id]: {
+            ...(current[group.id] ?? {}),
+            ...Object.fromEntries(changedExpenses.map((expense) => [expense.id, expense.description])),
+          },
+        }));
+      }
+    }
     const saved = await saveGroupSafely(group, base);
     const pushEvents = collectPushEvents(base, saved, session.uid);
     if (pushEvents.length > 0) {
@@ -1441,6 +1533,7 @@ export default function App() {
                 }}
                 onUpdateUser={handleUpdateUser}
                 onArchiveGroup={handleArchiveItem}
+                pendingExpenseIds={Object.keys(pendingExpenseNames[selectedGroup.id] ?? {})}
               />
             )}
             {screen === "home" && (
@@ -1476,6 +1569,23 @@ export default function App() {
                 !localStorage.getItem("pendingJoinGroupId")
               }
               onUpdateUser={handleUpdateUser}
+            />
+            <SyncStatus
+              online={online}
+              lastSyncedAt={lastSyncedAt}
+              cachedGroupCount={Object.values(groupSync).filter((sync) => sync.fromCache).length}
+              pendingGroups={Object.entries(groupSync)
+                .filter(([, sync]) => sync.hasPendingWrites)
+                .map(([groupId]) => ({
+                  id: groupId,
+                  name: groups.find((group) => group.id === groupId)?.name ?? "Group changes",
+                  expenseNames: Object.values(pendingExpenseNames[groupId] ?? {}),
+                }))}
+              failedGroups={Object.entries(syncErrors).map(([groupId, message]) => ({
+                id: groupId,
+                name: groups.find((group) => group.id === groupId)?.name ?? "group changes",
+                message,
+              }))}
             />
             </>
           )

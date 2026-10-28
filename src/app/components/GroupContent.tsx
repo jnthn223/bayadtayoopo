@@ -101,6 +101,7 @@ interface Props {
   expensePostlude?: ReactNode;
   hideDirectExpenseContent?: boolean;
   expenseTotalView?: "unsettled" | "all";
+  pendingExpenseIds?: string[];
 }
 
 export function GroupContent({
@@ -137,6 +138,7 @@ export function GroupContent({
   expensePostlude,
   hideDirectExpenseContent = false,
   expenseTotalView = "all",
+  pendingExpenseIds = [],
 }: Props) {
   const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false);
   const [detailExpense, setDetailExpense] = useState<Expense | null>(null);
@@ -586,6 +588,7 @@ export function GroupContent({
                       const itemizedShares = hasItemBreakdown
                         ? allocateItemizedShares(exp.items!)
                         : {};
+                      const pendingSync = pendingExpenseIds.includes(exp.id);
                       return (
                         <div
                           key={exp.id}
@@ -616,6 +619,11 @@ export function GroupContent({
                             <p className="text-sm font-medium text-foreground truncate">
                               {exp.description}
                             </p>
+                            {pendingSync && (
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                <Clock3 size={10} /> Saved on this device
+                              </span>
+                            )}
                             <p className="text-xs text-muted-foreground mt-0.5">
                               Paid by{" "}
                               <span

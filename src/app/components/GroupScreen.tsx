@@ -93,6 +93,7 @@ interface Props {
   onOpenGroup?: (group: Group) => void;
   onUpdateUser: (user: CurrentUser) => void;
   onArchiveGroup: (group: Group) => void;
+  pendingExpenseIds?: string[];
 }
 
 export function GroupScreen({
@@ -106,6 +107,7 @@ export function GroupScreen({
   onOpenGroup,
   onUpdateUser,
   onArchiveGroup,
+  pendingExpenseIds = [],
 }: Props) {
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const chatReadKey = `bayadtayoopo:chat-read:${currentUser.id}:${group.id}`;
@@ -2096,6 +2098,7 @@ export function GroupScreen({
         expensePostlude={group.kind === "direct" && personExpenseScope === "all" && sharedExpenseItems.length > 0 ? sharedPersonExpenseList : undefined}
         hideDirectExpenseContent={group.kind === "direct" && personExpenseScope === "shared"}
         expenseTotalView={expenseTotalView}
+        pendingExpenseIds={pendingExpenseIds}
       />
       {/* FAB */}
       {tab === "chat" ? (

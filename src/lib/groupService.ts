@@ -23,6 +23,20 @@ import { MEMBER_COLORS, generateId } from "../app/components/utils";
 import { normalizeNotificationPreferences } from "../app/components/notifications";
 import { normalizePaymentReminderPreferences } from "../app/components/reminderPreferences";
 
+export const GROUP_SYNC_ERROR_EVENT = "bayadtayoopo:group-sync-error";
+
+function reportQueuedGroupWriteFailure(groupId: string, write: Promise<void>) {
+  if (typeof navigator === "undefined" || navigator.onLine) return;
+  void write.catch((error) => {
+    window.dispatchEvent(new CustomEvent(GROUP_SYNC_ERROR_EVENT, {
+      detail: {
+        groupId,
+        message: error instanceof Error ? error.message : "This change could not be synced.",
+      },
+    }));
+  });
+}
+
 // ─── User document ─────────────────────────────────────────────────────────
 
 async function getUserGroupIds(uid: string): Promise<string[]> {
@@ -178,18 +192,26 @@ function unpackGroup(doc: Record<string, unknown>): Group | null {
 
 export function subscribeGroup(
   groupId: string,
-  onChange: (group: Group | null) => void,
+  onChange: (
+    group: Group | null,
+    sync: { fromCache: boolean; hasPendingWrites: boolean },
+  ) => void,
   onError?: (error: Error) => void,
 ): () => void {
   return onSnapshot(
     doc(db, "groups", groupId),
+    { includeMetadataChanges: true },
     (snapshot) => {
+      const sync = {
+        fromCache: snapshot.metadata.fromCache,
+        hasPendingWrites: snapshot.metadata.hasPendingWrites,
+      };
       if (!snapshot.exists() || snapshot.data().deleted) {
-        onChange(null);
+        onChange(null, sync);
         return;
       }
 
-      onChange(unpackGroup(snapshot.data()));
+      onChange(unpackGroup(snapshot.data()), sync);
     },
     (error) => onError?.(error),
   );
@@ -206,7 +228,9 @@ export async function saveGroup(group: Group, uid: string): Promise<void> {
     { groupIds: arrayUnion(group.id) },
     { merge: true },
   );
-  await finishFirestoreWrite(batch.commit());
+  const write = batch.commit();
+  reportQueuedGroupWriteFailure(group.id, write);
+  await finishFirestoreWrite(write);
 }
 
 /**
@@ -216,9 +240,9 @@ export async function saveGroup(group: Group, uid: string): Promise<void> {
  * valid group update fail when a legacy profile needs repair.
  */
 export async function updateGroup(group: Group): Promise<void> {
-  await finishFirestoreWrite(
-    setDoc(doc(db, "groups", group.id), packGroup(group)),
-  );
+  const write = setDoc(doc(db, "groups", group.id), packGroup(group));
+  reportQueuedGroupWriteFailure(group.id, write);
+  await finishFirestoreWrite(write);
 }
 
 /** Load all groups the current user is a member of. */
