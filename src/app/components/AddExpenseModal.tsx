@@ -1364,12 +1364,21 @@ export function AddExpenseModal({
                 )}
                 <button
                   type="button"
-                  onClick={() => void handleSaveDraft()}
-                  className="w-full rounded-2xl bg-primary py-4 text-base font-semibold text-primary-foreground transition-all active:scale-95"
+                  onClick={handleSubmit}
+                  disabled={saving}
+                  className="w-full rounded-2xl bg-primary py-4 text-base font-semibold text-primary-foreground transition-all active:scale-95 disabled:opacity-60"
                 >
-                  Save offline draft
+                  {saving ? "Queueing…" : "Queue expense to sync"}
                 </button>
-                <p className="text-center text-[11px] text-muted-foreground">This will not affect balances until you submit it online.</p>
+                <button type="button" onClick={() => void handleSaveDraft()} className="w-full rounded-2xl border border-border bg-card py-3 text-sm font-semibold text-foreground">
+                  Save offline draft instead
+                </button>
+                <p className="text-center text-[11px] text-muted-foreground">The expense appears on this device now. Other members will see it after server sync.</p>
+              </div>
+            ) : !online && editExpense ? (
+              <div className="space-y-2">
+                <button type="button" disabled className="w-full rounded-2xl bg-muted py-4 text-base font-semibold text-muted-foreground">Reconnect to save changes</button>
+                <p className="text-center text-[11px] text-muted-foreground">Submitted expenses need the latest group record before they can be edited safely.</p>
               </div>
             ) : (
               <div className="space-y-2">

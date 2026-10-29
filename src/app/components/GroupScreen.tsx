@@ -102,6 +102,7 @@ interface Props {
   onUpdateUser: (user: CurrentUser) => void;
   onArchiveGroup: (group: Group) => void;
   pendingExpenseIds?: string[];
+  onQueueExpense?: (group: Group, expense: Expense) => Promise<void> | void;
 }
 
 export function GroupScreen({
@@ -116,6 +117,7 @@ export function GroupScreen({
   onUpdateUser,
   onArchiveGroup,
   pendingExpenseIds = [],
+  onQueueExpense,
 }: Props) {
   const kofiUrl = import.meta.env.VITE_KOFI_URL?.trim();
   const chatReadKey = `bayadtayoopo:chat-read:${currentUser.id}:${group.id}`;
@@ -502,6 +504,10 @@ export function GroupScreen({
     const existingExpense = group.expenses.find(
       (candidate) => candidate.id === expense.id,
     );
+    if (!navigator.onLine && !existingExpense && onQueueExpense) {
+      await onQueueExpense(group, expense);
+      return;
+    }
     if (existingExpense && isExpenseSettled(group, existingExpense)) {
       throw new Error("A settled direct expense needs a reversal request before it can be corrected.");
     }
