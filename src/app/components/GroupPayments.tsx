@@ -190,7 +190,11 @@ function paymentRouteDetails(payment: GroupPayment, group: Group) {
     const expense = group.expenses.find(
       (candidate) => candidate.id === allocation.expenseId,
     );
-    const intendedPayee = allocation.payeeMemberId ?? getExpensePayerId(expense);
+    // A historical payment can outlive an expense that an admin later deletes.
+    // Keep the saved recipient as the fallback so opening Settle Up/history
+    // remains safe even when the original expense is no longer present.
+    const intendedPayee =
+      allocation.payeeMemberId ?? expense?.paidBy ?? payment.toMemberId;
     return intendedPayee !== payment.toMemberId;
   });
   const route = payment.settlementRoute ??
