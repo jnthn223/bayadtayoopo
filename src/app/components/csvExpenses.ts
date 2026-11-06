@@ -7,7 +7,7 @@ import type {
   Member,
   SplitType,
 } from "./types";
-import { generateId } from "./utils";
+import { generateId, getMemberDisplayName } from "./utils";
 import { hasNonPayerShare, SELF_ONLY_EXPENSE_ERROR } from "./expenseValidation";
 import { allocateItemizedShares, itemizedTotal } from "./itemizedExpense";
 
@@ -816,7 +816,9 @@ function findMemberByName(
   }
 
   const matches = members.filter(
-    (member) => member.name.trim().toLowerCase() === normalized,
+    (member) =>
+      member.name.trim().toLowerCase() === normalized ||
+      member.groupNickname?.trim().toLowerCase() === normalized,
   );
   return matches.length === 1 ? matches[0] : undefined;
 }
@@ -829,12 +831,14 @@ function memberNameIsAmbiguous(
   const normalized = name.trim().toLowerCase();
   if (normalized === "you" && currentMemberId) return false;
   return members.filter(
-    (member) => member.name.trim().toLowerCase() === normalized,
+    (member) =>
+      member.name.trim().toLowerCase() === normalized ||
+      member.groupNickname?.trim().toLowerCase() === normalized,
   ).length > 1;
 }
 
 function getMemberName(members: Member[], memberId: string): string {
-  return members.find((member) => member.id === memberId)?.name ?? memberId;
+  return getMemberDisplayName(members.find((member) => member.id === memberId), memberId);
 }
 
 function roundMoney(value: number): number {

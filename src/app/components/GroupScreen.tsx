@@ -45,6 +45,7 @@ import {
   getOutstandingExpenseShares,
   getConfirmedOutstandingExpenseShares,
   getMemberById,
+  getMemberDisplayName,
   isExpenseSettled,
   isGroupAdmin,
   getTotalExpenses,
@@ -257,7 +258,9 @@ export function GroupScreen({
   const isAdmin = isGroupAdmin(group, currentMember);
   const activeGroupTourTarget = getGroupTourTarget(groupTourStep);
   const displayMemberName = (memberId: string, fallback?: string) =>
-    memberId === currentMember?.id ? "You" : (fallback ?? "Unknown");
+    memberId === currentMember?.id
+      ? "You"
+      : getMemberDisplayName(getMemberById(group, memberId), fallback ?? "Unknown");
 
   const paymentItems = group.expenses.flatMap((expense) =>
     expense.splits
@@ -331,7 +334,7 @@ export function GroupScreen({
     detectedMentionRange?.query.endsWith(" ") &&
     group.members.some(
       (member) =>
-        member.name.toLocaleLowerCase() ===
+        getMemberDisplayName(member).toLocaleLowerCase() ===
         detectedMentionRange.query.trim().toLocaleLowerCase(),
     )
       ? null
@@ -343,9 +346,11 @@ export function GroupScreen({
             !!member.uid &&
             member.id !== currentMember?.id &&
             member.uid !== currentMember?.uid &&
-            member.name
-              .toLocaleLowerCase()
-              .includes(activeMentionRange.query.trim().toLocaleLowerCase()),
+            [getMemberDisplayName(member), member.name].some((name) =>
+              name.toLocaleLowerCase().includes(
+                activeMentionRange.query.trim().toLocaleLowerCase(),
+              ),
+            ),
         )
         .slice(0, 5)
     : [];
@@ -1119,7 +1124,7 @@ export function GroupScreen({
 
   function selectChatMention(member: (typeof group.members)[number]) {
     if (!activeMentionRange) return;
-    const inserted = insertMention(messageText, activeMentionRange, member.name);
+    const inserted = insertMention(messageText, activeMentionRange, getMemberDisplayName(member));
     setMessageText(inserted.text);
     setMessageCursor(inserted.cursor);
     window.requestAnimationFrame(() => {
@@ -1286,6 +1291,36 @@ export function GroupScreen({
     onUpdate({
       ...group,
       adminIds: [...new Set([adminId, ...nextAdminIds].filter(Boolean) as string[])],
+    });
+    return undefined;
+  }
+
+  function handleSetMemberNickname(memberId: string, nickname: string): string | undefined {
+    if (!isAdmin || !currentMember) return "Only a group admin can manage nicknames";
+    const member = group.members.find((candidate) => candidate.id === memberId);
+    if (!member) return "Member not found";
+    const nextNickname = nickname.trim();
+    if (nextNickname.length > 50) return "Keep the nickname under 50 characters";
+    if (nextNickname === (member.groupNickname ?? "").trim()) return undefined;
+
+    onUpdate({
+      ...group,
+      members: group.members.map((candidate) =>
+        candidate.id === memberId
+          ? { ...candidate, groupNickname: nextNickname || undefined }
+          : candidate,
+      ),
+      memberNicknameChanges: [
+        ...(group.memberNicknameChanges ?? []),
+        {
+          id: generateId(),
+          memberId,
+          previousNickname: member.groupNickname?.trim() || undefined,
+          nickname: nextNickname || undefined,
+          changedBy: currentMember.id,
+          changedAt: new Date().toISOString(),
+        },
+      ],
     });
     return undefined;
   }
@@ -2182,7 +2217,7 @@ export function GroupScreen({
                   className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-muted"
                 >
                   <UserAvatar
-                    name={member.name}
+                    name={getMemberDisplayName(member)}
                     color={member.color}
                     seed={member.avatarSeed}
                     uid={member.uid}
@@ -2190,7 +2225,7 @@ export function GroupScreen({
                     className="h-8 w-8 shrink-0 rounded-full text-xs"
                   />
                   <span className="truncate text-sm font-medium text-foreground">
-                    {member.name}
+                    {getMemberDisplayName(member)}
                   </span>
                 </button>
               ))}
@@ -3084,6 +3119,7 @@ export function GroupScreen({
           onDeletePending={handleDeletePendingMember}
           onRemoveMember={handleRemoveMember}
           onSetMemberAdmin={handleSetMemberAdmin}
+          onSetMemberNickname={handleSetMemberNickname}
         />
       )}
     </div>

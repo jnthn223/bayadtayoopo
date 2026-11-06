@@ -5,6 +5,7 @@ import { X, Copy, Check, ChevronDown, Share2 } from "lucide-react";
 import type { Group } from "./types";
 import { buildInviteMessage } from "./inviteMessage";
 import { ensureRequiredShareLinks } from "./requiredShareLinks";
+import { getMemberDisplayName } from "./utils";
 
 interface Props {
   group: Group;
@@ -241,7 +242,7 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
                     >
                       {pendingMembers.map((member) => (
                         <option key={member.id} value={member.id}>
-                          {member.name} — claim existing expenses
+                          {getMemberDisplayName(member)} — claim existing expenses
                         </option>
                       ))}
                     </select>
@@ -260,7 +261,7 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
                     Include current balance
                   </span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">
-                    Adds what {selectedMember.name} currently needs to settle or receive.
+                    Adds what {getMemberDisplayName(selectedMember)} currently needs to settle or receive.
                   </span>
                 </span>
                 <input
@@ -333,7 +334,7 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
                             key={member.id}
                             className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-muted/50"
                           >
-                            <span className="text-sm text-foreground">{member.name}</span>
+                            <span className="text-sm text-foreground">{getMemberDisplayName(member)}</span>
                             <input
                               type="checkbox"
                               checked={checked}
@@ -365,7 +366,7 @@ export function QRModal({ group, open, onClose, isAdmin }: Props) {
             <p className="text-center text-sm text-muted-foreground max-w-xs">
               {selectedMember ? (
                 <>
-                  This personal QR lets <span className="font-medium text-foreground">{selectedMember.name}</span> claim their existing expenses in <span className="font-medium text-foreground">{group.name}</span>.
+                  This personal QR lets <span className="font-medium text-foreground">{getMemberDisplayName(selectedMember)}</span> claim their existing expenses in <span className="font-medium text-foreground">{group.name}</span>.
                 </>
               ) : (
                 <>

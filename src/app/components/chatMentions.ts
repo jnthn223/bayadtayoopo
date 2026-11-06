@@ -11,6 +11,18 @@ export interface ChatTextPart {
   memberIds: string[];
 }
 
+export function getMentionDisplayText(part: ChatTextPart, members: Member[]): string {
+  if (part.memberIds.length === 0) return part.text;
+  const member = members.find((candidate) => candidate.id === part.memberIds[0]);
+  return `@${member?.groupNickname?.trim() || member?.name?.trim() || part.text.replace(/^@/, "")}`;
+}
+
+export function getChatDisplayText(text: string, members: Member[]): string {
+  return parseChatMentions(text, members)
+    .map((part) => getMentionDisplayText(part, members))
+    .join("");
+}
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -50,7 +62,7 @@ export function parseChatMentions(
   const safeMembers = Array.isArray(members)
     ? members.filter((member) => typeof member?.name === "string")
     : [];
-  const names = [...new Set(safeMembers.map((member) => member.name.trim()).filter(Boolean))]
+  const names = [...new Set(safeMembers.flatMap((member) => [member.groupNickname?.trim(), member.name.trim()]).filter(Boolean) as string[])]
     .sort((a, b) => b.length - a.length);
   if (names.length === 0) return [{ text, memberIds: [] }];
 
@@ -74,7 +86,9 @@ export function parseChatMentions(
       text: token,
       memberIds: safeMembers
         .filter(
-          (member) => member.name.trim().toLocaleLowerCase() === mentionedName,
+          (member) =>
+            member.name.trim().toLocaleLowerCase() === mentionedName ||
+            member.groupNickname?.trim().toLocaleLowerCase() === mentionedName,
         )
         .map((member) => member.id),
     });

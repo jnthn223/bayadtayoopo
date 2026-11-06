@@ -34,7 +34,7 @@ import type { GroupTab } from "./GroupHeader";
 import { UserAvatar } from "./UserAvatar";
 import { GroupPayments } from "./GroupPayments";
 import { PaymentScheduleManager } from "./PaymentScheduleManager";
-import { parseChatMentions } from "./chatMentions";
+import { getChatDisplayText, getMentionDisplayText, parseChatMentions } from "./chatMentions";
 import { buildBalanceShareMessage } from "./balanceShareMessage";
 import { ensureRequiredShareLinks } from "./requiredShareLinks";
 import { getExpenseDeadlineState } from "./expenseDeadline";
@@ -1554,7 +1554,7 @@ export function GroupContent({
                               isMine ? "text-primary-foreground/90" : "text-primary"
                             }`}
                           >
-                            {repliedSender?.name ?? "Original message"}
+                            {repliedSender ? displayMemberName(repliedSender.id, repliedSender.name) : "Original message"}
                           </span>
                           <span
                             className={`mt-0.5 block truncate text-xs ${
@@ -1563,7 +1563,7 @@ export function GroupContent({
                                 : "text-muted-foreground"
                             }`}
                           >
-                            {repliedMessage?.text ?? "Message no longer available"}
+                            {repliedMessage ? getChatDisplayText(repliedMessage.text, group.members) : "Message no longer available"}
                           </span>
                         </button>
                       )}
@@ -1579,7 +1579,7 @@ export function GroupContent({
                                     : "bg-accent text-primary"
                                 }`}
                               >
-                                {part.text}
+                                {getMentionDisplayText(part, group.members)}
                               </span>
                             ) : (
                               <span key={`${part.text}-${index}`}>{part.text}</span>

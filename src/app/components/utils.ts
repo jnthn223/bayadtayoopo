@@ -815,6 +815,18 @@ export function getMemberById(group: Group, id: string): Member | undefined {
   );
 }
 
+export function getMemberDisplayName(member: Member | undefined, fallback = "Unknown"): string {
+  return member?.groupNickname?.trim() || member?.name?.trim() || fallback;
+}
+
+export function getGroupMemberDisplayName(
+  group: Group,
+  memberId: string,
+  fallback = "Unknown",
+): string {
+  return getMemberDisplayName(getMemberById(group, memberId), fallback);
+}
+
 export function archiveGroupMember(group: Group, memberId: string): Group {
   const member = group.members.find((candidate) => candidate.id === memberId);
   if (!member) return group;

@@ -1,7 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { BarChart3, X } from "lucide-react";
 import type { Member } from "./types";
-import { formatCurrency } from "./utils";
+import { formatCurrency, getMemberDisplayName } from "./utils";
 import { UserAvatar } from "./UserAvatar";
 
 export interface SpendingBreakdownEntry {
@@ -62,7 +62,7 @@ export function SpendingBreakdownModal({ open, onClose, view, sections }: Props)
             {sections.filter((section) => section.entries.some((entry) => entry.amount > 0.005)).map((section) => {
               const entries = [...section.entries]
                 .filter((entry) => entry.amount > 0.005)
-                .sort((a, b) => b.amount - a.amount || a.member.name.localeCompare(b.member.name));
+                .sort((a, b) => b.amount - a.amount || getMemberDisplayName(a.member).localeCompare(getMemberDisplayName(b.member)));
               const total = entries.reduce((sum, entry) => sum + entry.amount, 0);
               const maximum = Math.max(...entries.map((entry) => entry.amount), 0);
               return (
@@ -92,7 +92,7 @@ export function SpendingBreakdownModal({ open, onClose, view, sections }: Props)
                               photoVersion={entry.member.profileImageVersion}
                               className="h-8 w-8 shrink-0 rounded-full text-xs"
                             />
-                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{entry.member.name}</span>
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{getMemberDisplayName(entry.member)}</span>
                             <span className="shrink-0 text-right">
                               <strong className="block text-sm font-semibold text-foreground">{formatCurrency(entry.amount, section.currency)}</strong>
                               <span className="block text-[10px] text-muted-foreground">{percentage.toFixed(percentage >= 10 ? 0 : 1)}%</span>

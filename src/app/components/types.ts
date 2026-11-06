@@ -2,6 +2,8 @@ export interface Member {
   id: string;
   uid?: string; // Firebase UID — present for real users, absent for manually-added members
   name: string;
+  /** Admin-managed display name used only inside this group. */
+  groupNickname?: string;
   color: string;
   avatarSeed?: string;
   profileImageVersion?: string;
@@ -10,6 +12,15 @@ export interface Member {
   paymentInstructions?: PaymentInstructions;
   removedAt?: string;
   joinedAt?: string;
+}
+
+export interface MemberNicknameChange {
+  id: string;
+  memberId: string;
+  previousNickname?: string;
+  nickname?: string;
+  changedBy: string;
+  changedAt: string;
 }
 
 export interface PaymentInstructions {
@@ -431,6 +442,8 @@ export interface Group {
   /** Allows a visitor to claim a similar-name pending member after confirming. */
   autoApproveSimilarNameClaims?: boolean;
   members: Member[];
+  /** Audit trail for group-specific nickname changes. */
+  memberNicknameChanges?: MemberNicknameChange[];
   /** Members removed from the active roster, retained for historical records. */
   formerMembers?: Member[];
   expenses: Expense[];

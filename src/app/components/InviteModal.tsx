@@ -9,6 +9,7 @@ import {
   MessageSquareText,
   HelpCircle,
   ShieldCheck,
+  Pencil,
 } from "lucide-react";
 import type { Group } from "./types";
 import { UserAvatar } from "./UserAvatar";
@@ -35,6 +36,7 @@ interface Props {
     memberId: string,
     makeAdmin: boolean,
   ) => string | undefined;
+  onSetMemberNickname?: (memberId: string, nickname: string) => string | undefined;
 }
 
 export function InviteModal({
@@ -51,6 +53,7 @@ export function InviteModal({
   onDeletePending,
   onRemoveMember,
   onSetMemberAdmin,
+  onSetMemberNickname,
 }: Props) {
   const [pendingName, setPendingName] = useState("");
   const [pendingError, setPendingError] = useState("");
@@ -62,6 +65,8 @@ export function InviteModal({
   const [accountMergeSource, setAccountMergeSource] = useState("");
   const [accountMergeDestination, setAccountMergeDestination] = useState("");
   const [accountMergeOpen, setAccountMergeOpen] = useState(false);
+  const [editingNicknameId, setEditingNicknameId] = useState("");
+  const [nicknameDraft, setNicknameDraft] = useState("");
   const ownerId = group.adminId ?? group.members[0]?.id;
   const isOwner = (member: Group["members"][number]) =>
     member.id === ownerId || member.uid === ownerId;
@@ -81,11 +86,25 @@ export function InviteModal({
     (group.adminIds ?? []).some(
       (adminId) => adminId === member.id || adminId === member.uid,
     );
+  const recentNicknameChanges = [...(group.memberNicknameChanges ?? [])]
+    .sort((a, b) => b.changedAt.localeCompare(a.changedAt))
+    .slice(0, 5);
 
   function setMemberAdmin(memberId: string, makeAdmin: boolean) {
     const adminError = onSetMemberAdmin?.(memberId, makeAdmin);
     if (adminError) setPendingError(adminError);
     else setPendingError("");
+  }
+
+  function saveNickname(memberId: string, nickname = nicknameDraft) {
+    const error = onSetMemberNickname?.(memberId, nickname);
+    if (error) {
+      setPendingError(error);
+      return;
+    }
+    setPendingError("");
+    setEditingNicknameId("");
+    setNicknameDraft("");
   }
 
   function removeMember(memberId: string, memberName: string) {
@@ -107,6 +126,8 @@ export function InviteModal({
     setAccountMergeSource("");
     setAccountMergeDestination("");
     setAccountMergeOpen(false);
+    setEditingNicknameId("");
+    setNicknameDraft("");
     onClose();
   }
 
@@ -203,7 +224,7 @@ export function InviteModal({
     const requiredLinks = pendingMembers
       .filter((member) => member.claimCode)
       .map((member) => ({
-        label: `${member.name}'s personal invite`,
+        label: `${member.groupNickname?.trim() || member.name}'s personal invite`,
         url: personalJoinUrl(member.id, member.claimCode!, member.name),
       }));
     const finalizedMessage = ensureRequiredShareLinks(
@@ -290,7 +311,7 @@ export function InviteModal({
                             />
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-medium text-foreground">
-                                {member.name}
+                                {member.groupNickname?.trim() || member.name}
                               </p>
                               <p className="mt-0.5 text-[11px] text-muted-foreground">
                                 {owner
@@ -329,7 +350,7 @@ export function InviteModal({
                           />
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-foreground">
-                              {member.name}
+                              {member.groupNickname?.trim() || member.name}
                             </p>
                             <p className="mt-0.5 text-[11px] text-amber-700">
                               Pending member
@@ -358,8 +379,9 @@ export function InviteModal({
                         return (
                           <div
                             key={member.id}
-                            className="flex items-center gap-2 rounded-xl bg-card border border-border p-2.5"
+                            className="rounded-xl bg-card border border-border p-2.5"
                           >
+                            <div className="flex items-center gap-2">
                             <UserAvatar
                               name={member.name}
                               color={member.color}
@@ -370,9 +392,10 @@ export function InviteModal({
                             />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium truncate">
-                                {member.name}
+                                {member.groupNickname?.trim() || member.name}
                               </p>
                               <p className="text-[11px] text-muted-foreground">
+                                {member.groupNickname?.trim() && `Account name: ${member.name} · `}
                                 {owner
                                   ? "Group owner"
                                   : admin
@@ -380,6 +403,18 @@ export function InviteModal({
                                     : "Member"}
                               </p>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingNicknameId(member.id);
+                                setNicknameDraft(member.groupNickname ?? "");
+                              }}
+                              className="p-2 rounded-lg bg-accent text-primary"
+                              title={`Set ${member.name}'s group nickname`}
+                              aria-label={`Set ${member.name}'s group nickname`}
+                            >
+                              <Pencil size={14} />
+                            </button>
                             {!owner && (
                               <div className="flex items-center gap-1.5">
                                 <button
@@ -407,9 +442,71 @@ export function InviteModal({
                                 </button>
                               </div>
                             )}
+                            </div>
+                            {editingNicknameId === member.id && (
+                              <div className="mt-2 border-t border-border pt-2">
+                                <label className="text-xs font-semibold text-foreground">
+                                  Nickname in this group
+                                </label>
+                                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                                  This changes how the member appears throughout this group. Their account name stays {member.name}.
+                                </p>
+                                <div className="mt-2 flex gap-2">
+                                  <input
+                                    value={nicknameDraft}
+                                    maxLength={50}
+                                    onChange={(event) => setNicknameDraft(event.target.value)}
+                                    onKeyDown={(event) => event.key === "Enter" && saveNickname(member.id)}
+                                    placeholder={member.name}
+                                    className="min-w-0 flex-1 rounded-lg border border-border bg-input-background px-3 py-2 text-sm text-foreground"
+                                    autoFocus
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => saveNickname(member.id)}
+                                    className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
+                                  >
+                                    Save
+                                  </button>
+                                </div>
+                                {member.groupNickname?.trim() && (
+                                  <button
+                                    type="button"
+                                    onClick={() => saveNickname(member.id, "")}
+                                    className="mt-2 text-xs font-medium text-primary"
+                                  >
+                                    Use account name instead
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
+                      {recentNicknameChanges.length > 0 && (
+                        <details className="rounded-xl border border-border bg-card p-3">
+                          <summary className="cursor-pointer text-xs font-semibold text-foreground">
+                            Recent nickname changes
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {recentNicknameChanges.map((change) => {
+                              const changedMember = [...group.members, ...(group.formerMembers ?? [])]
+                                .find((member) => member.id === change.memberId);
+                              const adminMember = [...group.members, ...(group.formerMembers ?? [])]
+                                .find((member) => member.id === change.changedBy);
+                              return (
+                                <p key={change.id} className="text-[11px] leading-relaxed text-muted-foreground">
+                                  {adminMember?.groupNickname?.trim() || adminMember?.name || "An admin"}{" "}
+                                  {change.nickname
+                                    ? `set ${changedMember?.name ?? "a member"}’s nickname to “${change.nickname}”.`
+                                    : `restored ${changedMember?.name ?? "a member"}’s account name.`}{" "}
+                                  {new Date(change.changedAt).toLocaleString()}
+                                </p>
+                              );
+                            })}
+                          </div>
+                        </details>
+                      )}
                     </div>
                     <div className="rounded-xl border border-border bg-card p-3">
                       <div className="flex items-center justify-between gap-3">
@@ -639,12 +736,23 @@ export function InviteModal({
                               />
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium truncate">
-                                  {member.name}
+                                  {member.groupNickname?.trim() || member.name}
                                 </p>
-                                <p className="text-[11px] text-amber-700">
-                                  Pending
+                                <p className="text-[11px] text-amber-700 truncate">
+                                  {member.groupNickname?.trim() ? `Pending · Original name: ${member.name}` : "Pending"}
                                 </p>
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingNicknameId(member.id);
+                                  setNicknameDraft(member.groupNickname ?? "");
+                                }}
+                                className="p-2 rounded-lg bg-accent text-primary"
+                                title={`Set ${member.name}'s group nickname`}
+                              >
+                                <Pencil size={14} />
+                              </button>
                               <button
                                 onClick={() => {
                                   const error = onDeletePending?.(member.id);
@@ -656,6 +764,26 @@ export function InviteModal({
                                 <Trash2 size={14} />
                               </button>
                             </div>
+                            {editingNicknameId === member.id && (
+                              <div className="flex gap-2 border-t border-border pt-2">
+                                <input
+                                  value={nicknameDraft}
+                                  maxLength={50}
+                                  onChange={(event) => setNicknameDraft(event.target.value)}
+                                  onKeyDown={(event) => event.key === "Enter" && saveNickname(member.id)}
+                                  placeholder="Nickname in this group"
+                                  className="min-w-0 flex-1 rounded-lg border border-border bg-input-background px-3 py-2 text-sm"
+                                  autoFocus
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => saveNickname(member.id)}
+                                  className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            )}
                             {joinedMembers.length > 1 && (
                               <div className="flex gap-2">
                                 <select

@@ -32,6 +32,7 @@ import {
   getExpensePayerId,
   getExpensePayeeOptions,
   getMemberById,
+  getMemberDisplayName,
   getOutstandingExpenseShares,
 } from "./utils";
 import {
@@ -178,9 +179,9 @@ function offsetTimestamp(offset: BalanceOffset) {
 }
 
 function paymentRouteDetails(payment: GroupPayment, group: Group) {
-  const payerName = getMemberById(group, payment.fromMemberId)?.name ?? "The payer";
+  const payerName = getMemberDisplayName(getMemberById(group, payment.fromMemberId), "The payer");
   const recipientName =
-    getMemberById(group, payment.toMemberId)?.name ?? "the recipient";
+    getMemberDisplayName(getMemberById(group, payment.toMemberId), "the recipient");
   // Payments created before expense allocations were introduced do not have
   // this field in Firestore. Treat those legacy records as having no saved
   // allocations so opening settlement history cannot fail on old data.
@@ -1042,7 +1043,7 @@ export function GroupPayments({
                               Balance offset {offset.status === "confirmed" ? "approved" : "cancelled"}
                             </p>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              {requester?.name ?? "A member"} and {counterparty?.name ?? "a member"}
+                              {getMemberDisplayName(requester, "A member")} and {getMemberDisplayName(counterparty, "a member")}
                             </p>
                             <time className="mt-1 block text-[11px] text-muted-foreground">
                               {timestamp.label} · {formatPaymentDateTime(timestamp.value)}
@@ -1067,14 +1068,14 @@ export function GroupPayments({
                           <div className="rounded-xl bg-accent p-3 text-xs leading-relaxed text-muted-foreground">
                             <p className="font-semibold text-foreground">Why no money was sent</p>
                             <p className="mt-1">
-                              {requester?.name ?? "One member"} and {counterparty?.name ?? "the other member"} owed each other. Instead of sending money both ways, the approved amount was subtracted from both balances.
+                              {getMemberDisplayName(requester, "One member")} and {getMemberDisplayName(counterparty, "the other member")} owed each other. Instead of sending money both ways, the approved amount was subtracted from both balances.
                             </p>
                           </div>
                         )}
                         {offset.reviewedOnBehalfOfMemberId && offset.reviewedBy && (
                           <p className="rounded-xl bg-green-50 px-3 py-2 text-xs text-green-800">
-                            Approved by {getMemberById(group, offset.reviewedBy)?.name ?? "a group admin"}
-                            {" "}(admin) for {counterparty?.name ?? "the temporary member"}
+                            Approved by {getMemberDisplayName(getMemberById(group, offset.reviewedBy), "a group admin")}
+                            {" "}(admin) for {getMemberDisplayName(counterparty, "the temporary member")}
                           </p>
                         )}
                         <button
@@ -1126,7 +1127,7 @@ export function GroupPayments({
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-foreground">
-                              {fromMember?.name ?? "A member"} paid {isRecipient ? "you" : toMember?.name ?? "a member"}
+                              {getMemberDisplayName(fromMember, "A member")} paid {isRecipient ? "you" : getMemberDisplayName(toMember, "a member")}
                             </p>
                             <p className="mt-1 text-xs text-muted-foreground">{payment.method}</p>
                             <time className="mt-1 block text-[11px] text-muted-foreground">
@@ -1164,8 +1165,8 @@ export function GroupPayments({
                         {payment.reviewedOnBehalfOfMemberId && payment.reviewedBy && (
                           <p className="rounded-xl bg-green-50 px-3 py-2 text-xs text-green-800">
                             Confirmed by{" "}
-                            {getMemberById(group, payment.reviewedBy)?.name ?? "a group admin"}
-                            {" "}(admin) for {toMember?.name ?? "the recipient"}
+                            {getMemberDisplayName(getMemberById(group, payment.reviewedBy), "a group admin")}
+                            {" "}(admin) for {getMemberDisplayName(toMember, "the recipient")}
                             {payment.reviewNote ? ` · ${payment.reviewNote}` : ""}
                           </p>
                         )}
@@ -1194,7 +1195,7 @@ export function GroupPayments({
                             <RotateCcw size={14} />
                             {isRecipient
                               ? "Undo confirmation"
-                              : `Undo for ${toMember?.name ?? "recipient"}`}
+                              : `Undo for ${getMemberDisplayName(toMember, "recipient")}`}
                           </button>
                         )}
                       </article>
@@ -1251,9 +1252,9 @@ export function GroupPayments({
                   />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">
-                      {isRequester ? "You" : requester?.name ?? "Someone"}{" "}
+                      {isRequester ? "You" : getMemberDisplayName(requester, "Someone")}{" "}
                       requested a balance offset with{" "}
-                      {isCounterparty ? "you" : counterparty?.name ?? "a member"}
+                      {isCounterparty ? "you" : getMemberDisplayName(counterparty, "a member")}
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       No money transfer · mutual expenses
@@ -1282,7 +1283,7 @@ export function GroupPayments({
                       {offsetStatusLabel(
                         offset,
                         memberId,
-                        adminCanApprove ? counterparty?.name : undefined,
+                        adminCanApprove ? getMemberDisplayName(counterparty) : undefined,
                       )}
                     </span>
                   </div>
@@ -1307,7 +1308,7 @@ export function GroupPayments({
                   <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-3">
                     <div>
                       <p className="mb-1.5 text-xs font-semibold text-foreground">
-                        Settles {requester?.name ?? "requester"}’s expenses
+                        Settles {getMemberDisplayName(requester, "requester")}’s expenses
                       </p>
                       <AllocationList
                         allocations={offset.debitAllocations}
@@ -1316,7 +1317,7 @@ export function GroupPayments({
                     </div>
                     <div className="border-t border-border pt-3">
                       <p className="mb-1.5 text-xs font-semibold text-foreground">
-                        Deducted from {counterparty?.name ?? "counterparty"}’s balance
+                        Deducted from {getMemberDisplayName(counterparty, "counterparty")}’s balance
                       </p>
                       <AllocationList
                         allocations={offset.creditAllocations}
@@ -1334,7 +1335,7 @@ export function GroupPayments({
                       className="rounded-xl bg-green-600 py-2.5 text-sm font-semibold text-white"
                     >
                       {adminCanApprove
-                        ? `Approve for ${counterparty?.name ?? "temporary member"}`
+                        ? `Approve for ${getMemberDisplayName(counterparty, "temporary member")}`
                         : "Approve offset"}
                     </button>
                     {isCounterparty && (
@@ -1399,8 +1400,8 @@ export function GroupPayments({
                   />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">
-                      {isSender ? "You" : (fromMember?.name ?? "Unknown")} paid{" "}
-                      {isRecipient ? "you" : (toMember?.name ?? "Unknown")}
+                      {isSender ? "You" : getMemberDisplayName(fromMember)} paid{" "}
+                      {isRecipient ? "you" : getMemberDisplayName(toMember)}
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {payment.method}
@@ -1429,7 +1430,7 @@ export function GroupPayments({
                       {paymentStatusLabel(
                         payment,
                         memberId,
-                        adminCanConfirm ? toMember?.name : undefined,
+                        adminCanConfirm ? getMemberDisplayName(toMember) : undefined,
                       )}
                     </span>
                   </div>
@@ -1453,8 +1454,8 @@ export function GroupPayments({
                 {payment.reviewedOnBehalfOfMemberId && payment.reviewedBy && (
                   <p className="rounded-xl bg-green-50 px-3 py-2 text-xs text-green-800">
                     Confirmed by{" "}
-                    {getMemberById(group, payment.reviewedBy)?.name ?? "a group admin"}
-                    {" "}(admin) for {toMember?.name ?? "the recipient"}
+                    {getMemberDisplayName(getMemberById(group, payment.reviewedBy), "a group admin")}
+                    {" "}(admin) for {getMemberDisplayName(toMember, "the recipient")}
                     {payment.reviewNote ? ` · ${payment.reviewNote}` : ""}
                   </p>
                 )}
@@ -1519,14 +1520,14 @@ export function GroupPayments({
                 {adminCanConfirm && (
                   <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
                     <p className="text-xs leading-relaxed text-amber-900">
-                      {toMember?.name ?? "This recipient"} hasn’t joined or is no longer active. A group admin can confirm on their behalf.
+                      {getMemberDisplayName(toMember, "This recipient")} hasn’t joined or is no longer active. A group admin can confirm on their behalf.
                     </p>
                     <button
                       type="button"
                       onClick={() => openAdminConfirmation(payment)}
                       className="w-full rounded-xl bg-green-600 py-2.5 text-sm font-semibold text-white"
                     >
-                      Confirm for {toMember?.name ?? "recipient"}
+                      Confirm for {getMemberDisplayName(toMember, "recipient")}
                     </button>
                   </div>
                 )}
@@ -1599,7 +1600,7 @@ export function GroupPayments({
               >
               <div className="flex items-center gap-3">
                 <UserAvatar
-                  name={option.recipient.name}
+                  name={getMemberDisplayName(option.recipient)}
                   color={option.recipient.color}
                   seed={option.recipient.avatarSeed}
                   uid={option.recipient.uid}
@@ -1611,7 +1612,7 @@ export function GroupPayments({
                     {option.expenseDescription}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Pay {option.recipient.name}
+                    Pay {getMemberDisplayName(option.recipient)}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
@@ -1652,7 +1653,7 @@ export function GroupPayments({
               </div>
               {balanceOffset && (
                 <p className="mt-2 text-[11px] text-muted-foreground">
-                  {formatCurrency(balanceOffset.availableCredit, group.currency)} currently owed to you by {option.recipient.name}
+                  {formatCurrency(balanceOffset.availableCredit, group.currency)} currently owed to you by {getMemberDisplayName(option.recipient)}
                 </p>
               )}
             </article>
@@ -1949,7 +1950,7 @@ export function GroupPayments({
                   Use balance owed to you
                 </Dialog.Title>
                 <Dialog.Description className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  No money moves. {offsetDraft?.counterparty.name} must approve before both expense sides are marked settled.
+                  No money moves. {getMemberDisplayName(offsetDraft?.counterparty)} must approve before both expense sides are marked settled.
                 </Dialog.Description>
               </div>
               <button
@@ -1973,7 +1974,7 @@ export function GroupPayments({
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-3 text-xs">
                     <span className="text-muted-foreground">
-                      {offsetDraft.counterparty.name} owes you now
+                      {getMemberDisplayName(offsetDraft.counterparty)} owes you now
                     </span>
                     <span className="font-medium text-foreground">
                       {formatCurrency(offsetPreview.availableCredit, group.currency)}
@@ -1999,7 +2000,7 @@ export function GroupPayments({
                   </div>
                   <div className="border-t border-border pt-3">
                     <p className="mb-1.5 text-xs font-semibold text-foreground">
-                      Deducted from {offsetDraft.counterparty.name}’s outstanding expenses
+                      Deducted from {getMemberDisplayName(offsetDraft.counterparty)}’s outstanding expenses
                     </p>
                     <AllocationList
                       allocations={offsetPreview.creditAllocations}
@@ -2017,7 +2018,7 @@ export function GroupPayments({
                   onClick={() => void submitBalanceOffset()}
                   className="w-full rounded-2xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
                 >
-                  {saving ? "Requesting…" : `Request approval from ${offsetDraft.counterparty.name}`}
+                  {saving ? "Requesting…" : `Request approval from ${getMemberDisplayName(offsetDraft.counterparty)}`}
                 </button>
               </div>
             )}
@@ -2040,7 +2041,7 @@ export function GroupPayments({
               <div>
                 <Dialog.Title className="text-lg font-semibold text-foreground">
                   Confirm payment for {adminConfirmationDraft
-                    ? getMemberById(group, adminConfirmationDraft.toMemberId)?.name ?? "recipient"
+                    ? getMemberDisplayName(getMemberById(group, adminConfirmationDraft.toMemberId), "recipient")
                     : "recipient"}?
                 </Dialog.Title>
                 <Dialog.Description className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -2061,8 +2062,8 @@ export function GroupPayments({
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-border bg-muted/30 p-4">
                   <p className="text-sm font-medium text-foreground">
-                    {getMemberById(group, adminConfirmationDraft.fromMemberId)?.name ?? "A member"} paid{" "}
-                    {getMemberById(group, adminConfirmationDraft.toMemberId)?.name ?? "the recipient"}
+                    {getMemberDisplayName(getMemberById(group, adminConfirmationDraft.fromMemberId), "A member")} paid{" "}
+                    {getMemberDisplayName(getMemberById(group, adminConfirmationDraft.toMemberId), "the recipient")}
                   </p>
                   <p className="mt-1 text-base font-semibold text-foreground">
                     {formatCurrency(adminConfirmationDraft.amount, group.currency)}
@@ -2149,10 +2150,10 @@ export function GroupPayments({
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground">
-                        {getMemberById(group, reversalDraft.fromMemberId)?.name ?? "A member"} paid{" "}
+                        {getMemberDisplayName(getMemberById(group, reversalDraft.fromMemberId), "A member")} paid{" "}
                         {reversalDraft.toMemberId === memberId
                           ? "you"
-                          : getMemberById(group, reversalDraft.toMemberId)?.name ?? "the recipient"}
+                          : getMemberDisplayName(getMemberById(group, reversalDraft.toMemberId), "the recipient")}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {reversalDraft.method}
@@ -2264,7 +2265,7 @@ export function GroupPayments({
                   draftRecipient?.paymentInstructions && (
                     <div className="rounded-2xl bg-accent p-4 text-xs text-muted-foreground space-y-1">
                       <p className="text-sm font-medium text-foreground">
-                        How to pay {draftRecipient.name}
+                        How to pay {getMemberDisplayName(draftRecipient)}
                       </p>
                       <p>{draftRecipient.paymentInstructions.method}</p>
                       {draftRecipient.paymentInstructions.accountName && (
@@ -2487,7 +2488,7 @@ export function GroupPayments({
                               </span>
                               <span className="min-w-0 flex-1 truncate text-xs text-foreground">
                                 {payer
-                                  ? `Paid by ${payer.name} · ${share.expenseDescription}`
+                                  ? `Paid by ${getMemberDisplayName(payer)} · ${share.expenseDescription}`
                                   : share.expenseDescription}
                               </span>
                               <span className="text-xs font-medium text-muted-foreground">
@@ -2652,7 +2653,7 @@ function AllocationList({
               <span className="min-w-0 flex-1 text-muted-foreground">
                 <span className="block truncate">
                 {payer
-                  ? `Paid by ${payer.name} · ${allocation.expenseDescription}`
+                  ? `Paid by ${getMemberDisplayName(payer)} · ${allocation.expenseDescription}`
                   : allocation.expenseDescription}
                 </span>
                 {isSimplifiedRoute && (

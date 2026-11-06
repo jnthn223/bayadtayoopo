@@ -3,6 +3,7 @@ import type { Member } from "./types";
 import {
   findMentionRange,
   getMentionedMemberIds,
+  getChatDisplayText,
   insertMention,
   parseChatMentions,
 } from "./chatMentions";
@@ -34,6 +35,16 @@ describe("chat mentions", () => {
 
   it("does not treat an email address as a mention", () => {
     expect(getMentionedMemberIds("Email me@Andria.com", members)).toEqual([]);
+  });
+
+  it("recognizes both a group nickname and the underlying account name", () => {
+    const nicknamedMembers = [
+      { ...members[0], groupNickname: "Gel" },
+      members[1],
+    ];
+    expect(getMentionedMemberIds("Hi @Gel", nicknamedMembers)).toEqual(["angelica"]);
+    expect(getMentionedMemberIds("Hi @Angelica Zaragoza", nicknamedMembers)).toEqual(["angelica"]);
+    expect(getChatDisplayText("Hi @Angelica Zaragoza!", nicknamedMembers)).toBe("Hi @Gel!");
   });
 
   it("does not crash on malformed legacy message text", () => {

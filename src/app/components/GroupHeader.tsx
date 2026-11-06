@@ -20,7 +20,7 @@ import type { ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { CurrentUser, Group } from "./types";
 import type { GroupTourTarget } from "./GroupTour";
-import { formatCurrency } from "./utils";
+import { formatCurrency, getMemberDisplayName } from "./utils";
 import { GroupAvatar } from "./GroupAvatar";
 import { UserAvatar } from "./UserAvatar";
 
@@ -136,7 +136,7 @@ export function GroupHeader({
           <div className="flex items-center gap-1">
             {isDirect && directPerson && !directPerson.uid && <HeaderAction
               active={false}
-              label={`Invite ${directPerson.name} to claim`}
+              label={`Invite ${getMemberDisplayName(directPerson)} to claim`}
               onClick={onShare}
             >
               <QrCode size={19} />
@@ -227,7 +227,7 @@ export function GroupHeader({
           )}
           <div className="min-w-0">
             <h1 className="mb-1 flex items-center gap-2 text-foreground">
-              <span className="truncate">{directPerson?.name ?? group.name}</span>
+              <span className="truncate">{directPerson ? getMemberDisplayName(directPerson) : group.name}</span>
               {isArchived && <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Archived</span>}
             </h1>
             {isDirect ? (
@@ -257,7 +257,7 @@ export function GroupHeader({
                         ? "border-card"
                         : "border-amber-400"
                     }`}
-                    title={`${member.name}${
+                    title={`${getMemberDisplayName(member)}${
                       member.uid || member.id === currentUser.id
                         ? ""
                         : " (pending)"
