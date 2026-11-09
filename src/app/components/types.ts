@@ -405,6 +405,8 @@ export interface NotificationDestination {
   paymentId?: string;
   messageId?: string;
   manageMembers?: boolean;
+  /** Opens a locally queued expense directly in the editor. */
+  editExpenseId?: string;
 }
 
 export interface AppNotification {

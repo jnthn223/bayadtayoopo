@@ -29,6 +29,8 @@ interface Props {
   isAdmin?: boolean;
   offlineDraft?: OfflineExpenseDraft | null;
   onSaveDraft?: (draft: OfflineExpenseDraft) => Promise<void> | void;
+  /** The edited expense exists only in the local outbox and is safe to revise offline. */
+  offlineQueuedEdit?: boolean;
 }
 
 export function AddExpenseModal({
@@ -41,6 +43,7 @@ export function AddExpenseModal({
   isAdmin,
   offlineDraft,
   onSaveDraft,
+  offlineQueuedEdit = false,
 }: Props) {
   const historicalMemberIds = new Set([
     ...(editExpense?.splits.map((split) => split.memberId) ?? []),
@@ -1375,7 +1378,7 @@ export function AddExpenseModal({
                 </button>
                 <p className="text-center text-[11px] text-muted-foreground">The expense appears on this device now. Other members will see it after server sync.</p>
               </div>
-            ) : !online && editExpense ? (
+            ) : !online && editExpense && !offlineQueuedEdit ? (
               <div className="space-y-2">
                 <button type="button" disabled className="w-full rounded-2xl bg-muted py-4 text-base font-semibold text-muted-foreground">Reconnect to save changes</button>
                 <p className="text-center text-[11px] text-muted-foreground">Submitted expenses need the latest group record before they can be edited safely.</p>
@@ -1397,7 +1400,7 @@ export function AddExpenseModal({
                   {saving
                     ? "Saving…"
                     : editExpense
-                      ? "Save Changes"
+                      ? offlineQueuedEdit && !online ? "Update queued expense" : "Save Changes"
                       : offlineDraft
                         ? "Submit Expense"
                         : "Add Expense"}

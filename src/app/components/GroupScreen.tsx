@@ -392,6 +392,15 @@ export function GroupScreen({
     if (destination.messageId) {
       setChatRevealMessageId(destination.messageId);
     }
+    if (destination.editExpenseId) {
+      const queuedExpense = group.expenses.find(
+        (expense) => expense.id === destination.editExpenseId,
+      );
+      if (queuedExpense) {
+        setEditExpense(queuedExpense);
+        setAddOpen(true);
+      }
+    }
     const targetId =
       destination.paymentId
         ? `payment-${destination.paymentId}`
@@ -414,6 +423,7 @@ export function GroupScreen({
     destination?.paymentId,
     destination?.messageId,
     destination?.manageMembers,
+    destination?.editExpenseId,
   ]);
 
   useEffect(() => {
@@ -509,7 +519,8 @@ export function GroupScreen({
     const existingExpense = group.expenses.find(
       (candidate) => candidate.id === expense.id,
     );
-    if (!navigator.onLine && !existingExpense && onQueueExpense) {
+    const alreadyQueued = pendingExpenseIds.includes(expense.id);
+    if ((!navigator.onLine || alreadyQueued) && onQueueExpense) {
       await onQueueExpense(group, expense);
       return;
     }
@@ -3080,6 +3091,7 @@ export function GroupScreen({
         }}
         currentUser={currentUser}
         editExpense={editExpense}
+        offlineQueuedEdit={!!editExpense && pendingExpenseIds.includes(editExpense.id)}
         isAdmin={isAdmin}
         offlineDraft={selectedOfflineDraft}
         onSaveDraft={(draft) => {

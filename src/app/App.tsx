@@ -84,6 +84,8 @@ import {
   enqueueExpenseOperation,
   loadExpenseOutbox,
   removeExpenseOperation,
+  retryExpenseOperation,
+  updateExpenseOperation,
   type OfflineExpenseOperation,
 } from "./components/offlineExpenseOutbox";
 
@@ -203,15 +205,55 @@ export default function App() {
   }, [currentUser?.id]);
 
   useEffect(() => {
-    if (!online || !session || expenseOutbox.length === 0 || flushingOutboxRef.current) return;
+    const pendingOperations = expenseOutbox.filter((operation) => operation.status === "pending");
+    if (!online || !session || pendingOperations.length === 0 || flushingOutboxRef.current) return;
     let cancelled = false;
     flushingOutboxRef.current = true;
     const flush = async () => {
-      let failed = false;
-      for (const operation of expenseOutbox) {
+      let shouldRetry = false;
+      for (const operation of pendingOperations) {
         if (cancelled) break;
+        const attemptCount = operation.attemptCount + 1;
+        const lastAttemptAt = new Date().toISOString();
+        setExpenseOutbox(updateExpenseOperation(session.uid, operation.id, {
+          attemptCount,
+          lastAttemptAt,
+          lastError: undefined,
+        }));
         try {
-          const latest = await fetchGroup(operation.groupId).catch(() => null);
+          const latest = await fetchGroup(operation.groupId);
+          const remoteExpense = latest?.expenses.find(
+            (expense) => expense.id === operation.expense.id,
+          );
+          if (remoteExpense && !operation.forceOverwrite) {
+            if (JSON.stringify(remoteExpense) !== JSON.stringify(operation.expense)) {
+              setExpenseOutbox(updateExpenseOperation(session.uid, operation.id, {
+                status: "conflict",
+                attemptCount,
+                lastAttemptAt,
+                lastError: "This expense ID already exists on the server with different details. Review your local copy before retrying.",
+              }));
+              continue;
+            }
+            setExpenseOutbox(removeExpenseOperation(session.uid, operation.id));
+            setGroups((current) => current.map((group) => group.id === latest.id ? latest : group));
+            setSelectedGroup((current) => current?.id === latest.id ? latest : current);
+            setPendingExpenseNames((current) => {
+              const names = { ...(current[latest.id] ?? {}) };
+              delete names[operation.expense.id];
+              return { ...current, [latest.id]: names };
+            });
+            continue;
+          }
+          if (!latest && !operation.groupSeed) {
+            setExpenseOutbox(updateExpenseOperation(session.uid, operation.id, {
+              status: "conflict",
+              attemptCount,
+              lastAttemptAt,
+              lastError: "The group is no longer available to this account.",
+            }));
+            continue;
+          }
           const base = latest ?? operation.groupSeed;
           if (!base) throw new Error("The group is no longer available.");
           const saved = upsertExpense(base, operation.expense);
@@ -245,17 +287,20 @@ export default function App() {
           setLastSyncedAt(syncedAt);
           localStorage.setItem(`bayadtayoopo:sync:${session.uid}:last`, syncedAt);
         } catch (error) {
-          failed = true;
           if (!cancelled) {
-            setSyncErrors((current) => ({
-              ...current,
-              [operation.groupId]: errorMessage(error, "The queued expense could not be synced."),
+            const exhausted = attemptCount >= 3;
+            shouldRetry = shouldRetry || !exhausted;
+            setExpenseOutbox(updateExpenseOperation(session.uid, operation.id, {
+              status: exhausted ? "failed" : "pending",
+              attemptCount,
+              lastAttemptAt,
+              lastError: errorMessage(error, "The queued expense could not be synced."),
             }));
           }
         }
       }
       flushingOutboxRef.current = false;
-      if (failed && !cancelled) {
+      if (shouldRetry && !cancelled) {
         window.setTimeout(() => setOutboxRetryTick((value) => value + 1), 15_000);
       }
     };
@@ -1004,6 +1049,7 @@ export default function App() {
       groupSeed: groupExists ? undefined : compactGroupHistory(group),
     });
     setExpenseOutbox(nextOutbox);
+    if (navigator.onLine) setOutboxRetryTick((value) => value + 1);
     const localGroup = upsertExpense(group, expense);
     setGroups((current) => {
       const exists = current.some((candidate) => candidate.id === group.id);
@@ -1023,6 +1069,65 @@ export default function App() {
     showBanner("Expense queued on this device", "success", undefined, {
       detail: "It will sync automatically when you reconnect.",
     });
+  }
+
+  function retryQueuedExpense(operationId: string) {
+    if (!session) return;
+    setExpenseOutbox(retryExpenseOperation(session.uid, operationId));
+    setOutboxRetryTick((value) => value + 1);
+  }
+
+  async function discardQueuedExpense(operationId: string) {
+    if (!session) return;
+    const operation = expenseOutbox.find((item) => item.id === operationId);
+    if (!operation) return;
+    const remaining = removeExpenseOperation(session.uid, operationId);
+    setExpenseOutbox(remaining);
+    setPendingExpenseNames((current) => {
+      const names = { ...(current[operation.groupId] ?? {}) };
+      delete names[operation.expense.id];
+      return { ...current, [operation.groupId]: names };
+    });
+
+    const latest = online ? await fetchGroup(operation.groupId).catch(() => null) : null;
+    const removeUnsavedGroup = !!operation.groupSeed && !latest &&
+      !remaining.some((item) => item.groupId === operation.groupId);
+    setGroups((current) => removeUnsavedGroup
+      ? current.filter((group) => group.id !== operation.groupId)
+      : current.map((group) => {
+          if (group.id !== operation.groupId) return group;
+          if (latest) return latest;
+          return {
+            ...group,
+            expenses: group.expenses.filter((expense) => expense.id !== operation.expense.id),
+          };
+        }));
+    if (removeUnsavedGroup && selectedGroup?.id === operation.groupId) {
+      setScreen("home");
+    }
+    setSelectedGroup((current) => {
+      if (current?.id !== operation.groupId) return current;
+      if (removeUnsavedGroup) return null;
+      if (latest) return latest;
+      return {
+        ...current,
+        expenses: current.expenses.filter((expense) => expense.id !== operation.expense.id),
+      };
+    });
+  }
+
+  function editQueuedExpense(operationId: string) {
+    const operation = expenseOutbox.find((item) => item.id === operationId);
+    if (!operation) return;
+    const group = groups.find((candidate) => candidate.id === operation.groupId) ?? operation.groupSeed;
+    if (!group) return;
+    setSelectedGroup(group);
+    setNotificationDestination({
+      tab: "expenses",
+      expenseId: operation.expense.id,
+      editExpenseId: operation.expense.id,
+    });
+    setScreen("group");
   }
 
   async function handleUpdateGroup(group: Group) {
@@ -1706,28 +1811,28 @@ export default function App() {
               lastSyncedAt={lastSyncedAt}
               cachedGroupCount={Object.values(groupSync).filter((sync) => sync.fromCache).length}
               pendingGroups={Object.entries(groupSync)
-                .filter(([groupId, sync]) => sync.hasPendingWrites || expenseOutbox.some((item) => item.groupId === groupId))
+                .filter(([, sync]) => sync.hasPendingWrites)
                 .map(([groupId]) => ({
                   id: groupId,
                   name: groups.find((group) => group.id === groupId)?.name ?? "Group changes",
-                  expenseNames: Array.from(new Set([
-                    ...Object.values(pendingExpenseNames[groupId] ?? {}),
-                    ...expenseOutbox.filter((item) => item.groupId === groupId).map((item) => item.expense.description),
-                  ])),
-                })).concat(
-                  Array.from(new Set(expenseOutbox.map((item) => item.groupId)))
-                    .filter((groupId) => !(groupId in groupSync))
-                    .map((groupId) => ({
-                      id: groupId,
-                      name: groups.find((group) => group.id === groupId)?.name ?? "Group changes",
-                      expenseNames: expenseOutbox.filter((item) => item.groupId === groupId).map((item) => item.expense.description),
-                    })),
-                )}
+                  expenseNames: Object.values(pendingExpenseNames[groupId] ?? {}),
+                }))}
               failedGroups={Object.entries(syncErrors).map(([groupId, message]) => ({
                 id: groupId,
                 name: groups.find((group) => group.id === groupId)?.name ?? "group changes",
                 message,
               }))}
+              outboxItems={expenseOutbox.map((item) => {
+                const group = groups.find((candidate) => candidate.id === item.groupId) ?? item.groupSeed;
+                return {
+                  ...item,
+                  groupName: group?.name ?? "Unavailable group",
+                  currency: group?.currency ?? "PHP",
+                };
+              })}
+              onRetryOutboxItem={retryQueuedExpense}
+              onDiscardOutboxItem={(operationId) => void discardQueuedExpense(operationId)}
+              onEditOutboxItem={editQueuedExpense}
             />
             </>
           )

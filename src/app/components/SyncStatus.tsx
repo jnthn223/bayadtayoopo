@@ -1,5 +1,7 @@
-import { Check, ChevronDown, Cloud, CloudOff, Clock3, Loader2, X } from "lucide-react";
+import { Check, ChevronDown, Cloud, CloudOff, Clock3, Loader2, Pencil, RefreshCw, Trash2, TriangleAlert, X } from "lucide-react";
 import { useState } from "react";
+import type { OfflineExpenseOperation } from "./offlineExpenseOutbox";
+import { formatCurrency } from "./utils";
 
 export interface PendingSyncGroup {
   id: string;
@@ -13,6 +15,10 @@ interface Props {
   cachedGroupCount: number;
   lastSyncedAt?: string;
   failedGroups?: Array<{ id: string; name: string; message: string }>;
+  outboxItems?: Array<OfflineExpenseOperation & { groupName: string; currency: string }>;
+  onRetryOutboxItem?: (operationId: string) => void;
+  onDiscardOutboxItem?: (operationId: string) => void;
+  onEditOutboxItem?: (operationId: string) => void;
 }
 
 function relativeTime(value?: string): string {
@@ -26,10 +32,21 @@ function relativeTime(value?: string): string {
   return `Last synced ${new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
 }
 
-export function SyncStatus({ online, pendingGroups, cachedGroupCount, lastSyncedAt, failedGroups = [] }: Props) {
+export function SyncStatus({
+  online,
+  pendingGroups,
+  cachedGroupCount,
+  lastSyncedAt,
+  failedGroups = [],
+  outboxItems = [],
+  onRetryOutboxItem,
+  onDiscardOutboxItem,
+  onEditOutboxItem,
+}: Props) {
   const [open, setOpen] = useState(false);
-  const pendingCount = pendingGroups.length;
-  const state = !online ? "offline" : failedGroups.length > 0 ? "error" : pendingCount > 0 ? "saving" : cachedGroupCount > 0 ? "cached" : "synced";
+  const pendingCount = pendingGroups.length + outboxItems.filter((item) => item.status === "pending").length;
+  const attentionCount = failedGroups.length + outboxItems.filter((item) => item.status !== "pending").length;
+  const state = !online ? "offline" : attentionCount > 0 ? "error" : pendingCount > 0 ? "saving" : cachedGroupCount > 0 ? "cached" : "synced";
   const label = state === "offline"
     ? "Offline"
     : state === "error"
@@ -85,7 +102,45 @@ export function SyncStatus({ online, pendingGroups, cachedGroupCount, lastSynced
                   <p className="mt-1 text-xs text-muted-foreground">{group.message} Review the group before trying the change again.</p>
                 </div>
               ))}
-              {pendingGroups.length === 0 && failedGroups.length === 0 ? (
+              {outboxItems.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3 px-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Expense outbox</p>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{outboxItems.length}</span>
+                  </div>
+                  {outboxItems.map((item) => (
+                    <div key={item.id} className={`rounded-2xl border p-3 ${item.status === "conflict" ? "border-amber-300 bg-amber-50" : item.status === "failed" ? "border-destructive/20 bg-destructive/5" : "border-primary/15 bg-primary/5"}`}>
+                      <div className="flex items-start gap-2.5">
+                        {item.status === "pending"
+                          ? <Clock3 size={17} className="mt-0.5 shrink-0 text-primary" />
+                          : <TriangleAlert size={17} className={`mt-0.5 shrink-0 ${item.status === "conflict" ? "text-amber-700" : "text-destructive"}`} />}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-foreground">{item.expense.description}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{item.groupName} · {formatCurrency(item.expense.amount, item.currency)}</p>
+                          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                            {item.status === "conflict"
+                              ? "A different server copy needs your review."
+                              : item.status === "failed"
+                                ? "Automatic retries stopped. Review or retry this expense."
+                                : online
+                                  ? item.attemptCount > 0 ? `Retrying sync · attempt ${item.attemptCount + 1} of 3` : "Waiting for the server"
+                                  : "Saved safely on this device"}
+                          </p>
+                          {item.lastError && <p className="mt-1 text-[11px] leading-relaxed text-destructive">{item.lastError}</p>}
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        <button type="button" onClick={() => { onEditOutboxItem?.(item.id); setOpen(false); }} className="inline-flex items-center justify-center gap-1 rounded-xl border border-border bg-card px-2 py-2 text-xs font-semibold text-foreground"><Pencil size={13} /> Review</button>
+                        <button type="button" disabled={!online} onClick={() => {
+                          if (item.status !== "conflict" || window.confirm("Use your local version and replace the different server copy? Review the expense first if you are unsure.")) onRetryOutboxItem?.(item.id);
+                        }} className="inline-flex items-center justify-center gap-1 rounded-xl border border-border bg-card px-2 py-2 text-xs font-semibold text-foreground disabled:opacity-40"><RefreshCw size={13} /> {item.status === "conflict" ? "Use local" : "Retry"}</button>
+                        <button type="button" onClick={() => { if (window.confirm(`Discard “${item.expense.description}” from this device? It will not be synced.`)) onDiscardOutboxItem?.(item.id); }} className="inline-flex items-center justify-center gap-1 rounded-xl border border-destructive/20 bg-destructive/5 px-2 py-2 text-xs font-semibold text-destructive"><Trash2 size={13} /> Discard</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {pendingGroups.length === 0 && failedGroups.length === 0 && outboxItems.length === 0 ? (
                 <div className="flex items-center gap-3 rounded-2xl border border-border p-3">
                   <Check size={18} className="text-emerald-600" />
                   <div><p className="text-sm font-semibold text-foreground">No pending group changes</p><p className="text-xs text-muted-foreground">Everything received by the server is up to date.</p></div>
