@@ -7,7 +7,7 @@ import { allocateCustomShares, formatCurrency, generateId, CATEGORY_ICONS, getCu
 import { UserAvatar } from "./UserAvatar";
 import { ImagePasteControl } from "./ImagePasteControl";
 import { hasNonPayerShare, SELF_ONLY_EXPENSE_ERROR } from "./expenseValidation";
-import { SUPPORTED_CURRENCIES } from "./currencies";
+import { CurrencyPicker } from "./CurrencyPicker";
 import { fetchExchangeRate } from "../../lib/exchangeRateService";
 import { allocateItemizedShares, itemizedTotal } from "./itemizedExpense";
 import type { OfflineExpenseDraft } from "./offlineExpenseDrafts";
@@ -657,18 +657,15 @@ export function AddExpenseModal({
                       placeholder="Original amount"
                       className="min-w-0 rounded-xl border border-border bg-input-background px-3 py-3 text-sm outline-none focus:border-primary"
                     />
-                    <select
+                    <CurrencyPicker
                       value={originalCurrency}
-                      onChange={(event) => {
-                        setOriginalCurrency(event.target.value);
+                      excludeCodes={[group.currency]}
+                      onChange={(value) => {
+                        setOriginalCurrency(value);
                         setSuggestedBaseAmount(null);
                       }}
-                      className="min-w-0 rounded-xl border border-border bg-input-background px-3 py-3 text-sm outline-none focus:border-primary"
-                    >
-                      {SUPPORTED_CURRENCIES.filter(([code]) => code !== group.currency).map(([code, name]) => (
-                        <option key={code} value={code}>{code} — {name}</option>
-                      ))}
-                    </select>
+                      className="min-w-0"
+                    />
                   </div>
                   {errors.originalAmount && (
                     <p className="text-xs text-destructive">{errors.originalAmount}</p>
@@ -736,14 +733,33 @@ export function AddExpenseModal({
 
             {/* Category */}
             <div className="w-full min-w-0 overflow-hidden">
-              <label className="block text-sm text-muted-foreground mb-1.5">
-                Payment deadline <span className="text-xs">(optional)</span>
-              </label>
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <label className="block text-sm text-muted-foreground">
+                  Payment deadline <span className="text-xs">(optional)</span>
+                </label>
+                {dueDate && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDueDate("");
+                      setErrors((current) => ({ ...current, dueDate: "" }));
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/10"
+                    aria-label="Remove payment deadline"
+                  >
+                    <X size={13} />
+                    Remove deadline
+                  </button>
+                )}
+              </div>
               <input
                 type="date"
                 min={date}
                 value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
+                onChange={(event) => {
+                  setDueDate(event.target.value);
+                  setErrors((current) => ({ ...current, dueDate: "" }));
+                }}
                 className="block w-full min-w-0 max-w-full box-border px-4 py-3 rounded-xl bg-input-background border border-border text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
               <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">

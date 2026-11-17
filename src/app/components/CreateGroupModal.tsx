@@ -5,7 +5,7 @@ import type { Group, CurrentUser, Member } from "./types";
 import { generateId, MEMBER_COLORS } from "./utils";
 import { UserAvatar } from "./UserAvatar";
 import { GroupAvatar } from "./GroupAvatar";
-import { SUPPORTED_CURRENCIES } from "./currencies";
+import { CurrencyPicker } from "./CurrencyPicker";
 
 interface Props {
   open: boolean;
@@ -164,17 +164,7 @@ export function CreateGroupModal({
                 Currency
               </label>
 
-              <select
-                value={currency}
-                onChange={(event) => setCurrency(event.target.value)}
-                className="w-full rounded-xl border border-border bg-input-background px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-              >
-                {SUPPORTED_CURRENCIES.map(([code, currencyName]) => (
-                  <option key={code} value={code}>
-                    {code} — {currencyName}
-                  </option>
-                ))}
-              </select>
+              <CurrencyPicker value={currency} onChange={setCurrency} />
               <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
                 All group totals, balances, and settlements will use this base currency.
               </p>

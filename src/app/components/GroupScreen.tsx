@@ -66,6 +66,7 @@ import { DirectClaimInviteModal } from "./DirectClaimInviteModal";
 import { getGroupTourTarget, GroupTour } from "./GroupTour";
 import { MemberCatchUp } from "./MemberCatchUp";
 import { DirectHistoryReview } from "./DirectHistoryReview";
+import { CurrencyPicker } from "./CurrencyPicker";
 import { GroupHeader } from "./GroupHeader";
 import type { GroupTab } from "./GroupHeader";
 import { GroupContent } from "./GroupContent";
@@ -2500,22 +2501,7 @@ export function GroupScreen({
                 <label className="block text-sm text-muted-foreground mb-1.5">
                   Currency
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {["PHP", "USD", "EUR", "GBP"].map((currency) => (
-                    <button
-                      key={currency}
-                      type="button"
-                      onClick={() => setGroupCurrencyInput(currency)}
-                      className={`py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                        groupCurrencyInput === currency
-                          ? "border-primary bg-accent text-accent-foreground"
-                          : "border-border bg-input-background text-muted-foreground"
-                      }`}
-                    >
-                      {currency}
-                    </button>
-                  ))}
-                </div>
+                <CurrencyPicker value={groupCurrencyInput} onChange={setGroupCurrencyInput} />
               </div>
 
               <button

@@ -9,7 +9,7 @@ import {
   getDirectContacts,
 } from "./directExpenses";
 import { UserAvatar } from "./UserAvatar";
-import { SUPPORTED_CURRENCIES } from "./currencies";
+import { CurrencyPicker } from "./CurrencyPicker";
 import { generateId, MEMBER_COLORS } from "./utils";
 import { deleteOfflineExpenseDraft, saveOfflineExpenseDraft } from "./offlineExpenseDrafts";
 
@@ -123,15 +123,7 @@ export function DirectExpenseModal({ open, groups, user, onClose, onAdd, onCreat
                 <label className="block text-xs text-muted-foreground mb-1.5">
                   Currency for a new direct history
                 </label>
-                <select
-                  value={currency}
-                  onChange={(event) => setCurrency(event.target.value)}
-                  className="w-full rounded-xl border border-border bg-input-background px-4 py-3 text-sm outline-none focus:border-primary"
-                >
-                  {SUPPORTED_CURRENCIES.map(([code, name]) => (
-                    <option key={code} value={code}>{code} — {name}</option>
-                  ))}
-                </select>
+                <CurrencyPicker value={currency} onChange={setCurrency} />
               </div>
               <div className="space-y-2">
                 {error && (
