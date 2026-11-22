@@ -50,7 +50,6 @@ interface Props {
   isAdmin: boolean;
   settlements: Settlement[];
   settlementMode: "simplified" | "direct";
-  settlementModeRemembered: boolean;
   onSettlementModePreferenceChange: (
     mode: "simplified" | "direct",
     remember: boolean,
@@ -229,13 +228,24 @@ function paymentRouteDetails(payment: GroupPayment, group: Group) {
   };
 }
 
+function managedTemporaryMemberNames(
+  record: Pick<GroupPayment, "settlementModifiers" | "managedOnBehalfOfMemberIds">,
+  group: Group,
+) {
+  if (!record.settlementModifiers?.includes("admin-managed-temporary-members")) {
+    return "";
+  }
+  return (record.managedOnBehalfOfMemberIds ?? [])
+    .map((id) => getMemberDisplayName(getMemberById(group, id), "a temporary member"))
+    .join(" and ");
+}
+
 export function GroupPayments({
   group,
   currentMember,
   isAdmin,
   settlements,
   settlementMode,
-  settlementModeRemembered,
   onSettlementModePreferenceChange,
   focusedPaymentId,
   onUpdate,
@@ -261,7 +271,11 @@ export function GroupPayments({
   );
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
   const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
-  const [temporaryBalancesOpen, setTemporaryBalancesOpen] = useState(false);
+  const [paymentScope, setPaymentScope] = useState<
+    "balance" | "expense" | "offset"
+  >("balance");
+  const [manageTemporaryMembers, setManageTemporaryMembers] = useState(false);
+  const [settlementChooserOpen, setSettlementChooserOpen] = useState(true);
   const [reversalDraft, setReversalDraft] = useState<GroupPayment | null>(null);
   const [reversalReason, setReversalReason] = useState("");
   const [reversalError, setReversalError] = useState("");
@@ -269,9 +283,10 @@ export function GroupPayments({
     useState<GroupPayment | null>(null);
   const [adminConfirmationNote, setAdminConfirmationNote] = useState("");
   const [offsetDraft, setOffsetDraft] = useState<{
+    requesterMemberId: string;
     counterparty: Member;
-    expenseId: string;
-    expenseDescription: string;
+    expenseId?: string;
+    expenseDescription?: string;
     amount: number;
   } | null>(null);
   const [offsetError, setOffsetError] = useState("");
@@ -365,6 +380,23 @@ export function GroupPayments({
         : [],
     [group, memberId],
   );
+  const receivedExpensePaymentOptions = useMemo(
+    () => memberId
+      ? group.members
+          .filter((debtor) => !debtor.removedAt && debtor.id !== memberId)
+          .flatMap((debtor) =>
+            getExpensePayeeOptions(group, debtor.id).flatMap((share) => {
+              const expense = group.expenses.find(
+                (candidate) => candidate.id === share.expenseId,
+              );
+              if (!expense) return [];
+              const recipientId = share.payeeMemberId ?? getExpensePayerId(expense);
+              return recipientId === memberId ? [{ ...share, debtor }] : [];
+            }),
+          )
+      : [],
+    [group, memberId],
+  );
   const directSettlements = useMemo(
     () => computeDirectExpenseSettlements(group),
     [group],
@@ -382,6 +414,10 @@ export function GroupPayments({
   const hasPayableBalanceInEitherMode =
     directSettlements.some((settlement) => settlement.from === memberId) ||
     settlements.some((settlement) => settlement.from === memberId);
+  const fewerTransfersClearsOutgoingBalance =
+    effectiveSettlementMode === "simplified" &&
+    directSettlements.some((settlement) => settlement.from === memberId) &&
+    !settlements.some((settlement) => settlement.from === memberId);
   const directTemporaryMemberBalances = useMemo(
     () => directSettlements.filter((settlement) =>
       canAdminRecordPaymentBetweenTemporaryMembers(
@@ -392,6 +428,97 @@ export function GroupPayments({
     ),
     [currentMember, directSettlements, group],
   );
+  const simplifiedTemporaryMemberBalances = useMemo(
+    () => settlements.filter((settlement) =>
+      canAdminRecordPaymentBetweenTemporaryMembers(
+        group,
+        settlement,
+        currentMember,
+      ),
+    ),
+    [currentMember, group, settlements],
+  );
+  const managedTemporaryBalances = effectiveSettlementMode === "direct"
+    ? directTemporaryMemberBalances
+    : simplifiedTemporaryMemberBalances;
+  const temporaryMembers = useMemo(
+    () => group.members.filter((member) => !member.uid && !member.removedAt),
+    [group.members],
+  );
+  const canManageTemporaryMembers = isAdmin && temporaryMembers.length >= 2;
+  useEffect(() => {
+    if (!canManageTemporaryMembers && manageTemporaryMembers) {
+      setManageTemporaryMembers(false);
+    }
+  }, [canManageTemporaryMembers, manageTemporaryMembers]);
+  const temporaryExpensePaymentOptions = useMemo(
+    () => canManageTemporaryMembers
+      ? temporaryMembers.flatMap((debtor) =>
+          getExpensePayeeOptions(group, debtor.id).flatMap((share) => {
+            const expense = group.expenses.find(
+              (candidate) => candidate.id === share.expenseId,
+            );
+            if (!expense) return [];
+            const recipientId = share.payeeMemberId ?? getExpensePayerId(expense);
+            const recipient = temporaryMembers.find(
+              (member) => member.id === recipientId,
+            );
+            return recipient ? [{ ...share, debtor, recipient }] : [];
+          }),
+        )
+      : [],
+    [canManageTemporaryMembers, group, temporaryMembers],
+  );
+  const offsetPaymentOptions = useMemo(
+    () => memberId
+      ? expensePaymentOptions.flatMap((option) => {
+          const preview = buildBalanceOffsetPreview(
+            group,
+            memberId,
+            option.recipientId,
+            option.amount,
+            option.expenseId,
+          );
+          return preview ? [{ option, preview }] : [];
+        })
+      : [],
+    [expensePaymentOptions, group, memberId],
+  );
+  const temporaryOffsetPaymentOptions = useMemo(
+    () => temporaryMembers.flatMap((requester, requesterIndex) =>
+      temporaryMembers.slice(requesterIndex + 1).flatMap((counterparty) => {
+        const forwardPreview = buildBalanceOffsetPreview(
+          group,
+          requester.id,
+          counterparty.id,
+          Number.MAX_SAFE_INTEGER,
+        );
+        if (forwardPreview) {
+          return [{ requester, counterparty, preview: forwardPreview }];
+        }
+        const reversePreview = buildBalanceOffsetPreview(
+          group,
+          counterparty.id,
+          requester.id,
+          Number.MAX_SAFE_INTEGER,
+        );
+        return reversePreview
+          ? [{ requester: counterparty, counterparty: requester, preview: reversePreview }]
+          : [];
+      }),
+    ),
+    [group, temporaryMembers],
+  );
+  const activeOffsetPaymentOptions = manageTemporaryMembers
+    ? temporaryOffsetPaymentOptions
+    : offsetPaymentOptions;
+  const selectedSettlementMethodLabel = paymentScope === "balance"
+    ? effectiveSettlementMode === "simplified" && group.kind !== "direct"
+      ? "Fewer transfers"
+      : "Original payees"
+    : paymentScope === "expense"
+      ? "Specific expense"
+      : "Offset balances";
 
   const draftAmount = Math.round((parseFloat(amountInput) || 0) * 100) / 100;
   const draftAllocations = useMemo(
@@ -455,6 +582,11 @@ export function GroupPayments({
   const draftSender = draft
     ? getMemberById(group, draft.fromMemberId)
     : undefined;
+  const offsetRequester = offsetDraft
+    ? getMemberById(group, offsetDraft.requesterMemberId)
+    : undefined;
+  const isAdminManagedOffset =
+    !!offsetDraft && offsetDraft.requesterMemberId !== memberId;
   const isAdminProxyPayment =
     !!draft?.confirmImmediately && draft.toMemberId !== memberId;
   const hasSimplifiedRouting = useMemo(
@@ -472,16 +604,16 @@ export function GroupPayments({
   );
   const offsetPreview = useMemo(
     () =>
-      offsetDraft && memberId
+      offsetDraft
         ? buildBalanceOffsetPreview(
             group,
-            memberId,
+            offsetDraft.requesterMemberId,
             offsetDraft.counterparty.id,
             offsetDraft.amount,
             offsetDraft.expenseId,
           )
         : undefined,
-    [group, memberId, offsetDraft],
+    [group, offsetDraft],
   );
 
   function resetPaymentForm(recipient?: Member) {
@@ -508,6 +640,46 @@ export function GroupPayments({
     setSelectedExpenseIds(new Set([option.expenseId]));
   }
 
+  function openReceivedExpensePayment(
+    option: (typeof receivedExpensePaymentOptions)[number],
+  ) {
+    if (!memberId || !option.expenseId) return;
+    setDraft({
+      fromMemberId: option.debtor.id,
+      toMemberId: memberId,
+      maximumAmount: option.amount,
+      flow: "expense",
+      expenseId: option.expenseId,
+      expenseDescription: option.expenseDescription,
+      confirmImmediately: true,
+      restrictToRecipientExpenses: true,
+    });
+    setAmountInput(option.amount.toFixed(2));
+    resetPaymentForm(currentMember);
+    setChooseExpenses(true);
+    setSelectedExpenseIds(new Set([option.expenseId]));
+  }
+
+  function openTemporaryExpensePayment(
+    option: (typeof temporaryExpensePaymentOptions)[number],
+  ) {
+    if (!option.expenseId) return;
+    setDraft({
+      fromMemberId: option.debtor.id,
+      toMemberId: option.recipient.id,
+      maximumAmount: option.amount,
+      flow: "expense",
+      expenseId: option.expenseId,
+      expenseDescription: option.expenseDescription,
+      confirmImmediately: true,
+      restrictToRecipientExpenses: true,
+    });
+    setAmountInput(option.amount.toFixed(2));
+    resetPaymentForm(option.recipient);
+    setChooseExpenses(true);
+    setSelectedExpenseIds(new Set([option.expenseId]));
+  }
+
   function openBalanceOffset(
     option: (typeof expensePaymentOptions)[number],
   ) {
@@ -523,6 +695,7 @@ export function GroupPayments({
       : undefined;
     if (!preview) return;
     setOffsetDraft({
+      requesterMemberId: memberId,
       counterparty: option.recipient,
       expenseId: option.expenseId,
       expenseDescription: option.expenseDescription,
@@ -531,11 +704,22 @@ export function GroupPayments({
     setOffsetError("");
   }
 
+  function openTemporaryBalanceOffset(
+    option: (typeof temporaryOffsetPaymentOptions)[number],
+  ) {
+    setOffsetDraft({
+      requesterMemberId: option.requester.id,
+      counterparty: option.counterparty,
+      amount: option.preview.amount,
+    });
+    setOffsetError("");
+  }
+
   async function submitBalanceOffset() {
     if (!offsetDraft || !currentMember) return;
     const offset = createBalanceOffset(
       group,
-      currentMember.id,
+      offsetDraft.requesterMemberId,
       offsetDraft.counterparty.id,
       offsetDraft.amount,
       new Date().toISOString(),
@@ -544,6 +728,20 @@ export function GroupPayments({
     if (!offset) {
       setOffsetError("The available reciprocal balance has changed. Please try again.");
       return;
+    }
+    if (offsetDraft.requesterMemberId !== currentMember.id) {
+      const reviewedAt = new Date().toISOString();
+      offset.requestedBy = currentMember.id;
+      offset.requestedOnBehalfOfMemberId = offsetDraft.requesterMemberId;
+      offset.settlementModifiers = ["admin-managed-temporary-members"];
+      offset.managedOnBehalfOfMemberIds = [
+        offsetDraft.requesterMemberId,
+        offsetDraft.counterparty.id,
+      ];
+      offset.status = "confirmed";
+      offset.reviewedAt = reviewedAt;
+      offset.reviewedBy = currentMember.id;
+      offset.reviewedOnBehalfOfMemberId = offsetDraft.counterparty.id;
     }
     try {
       setSaving(true);
@@ -862,6 +1060,9 @@ export function GroupPayments({
 
       const now = new Date().toISOString();
       const previous = draft.payment;
+      const managedTemporaryMemberIds = manageTemporaryMembers
+        ? [draft.fromMemberId, draft.toMemberId]
+        : previous?.managedOnBehalfOfMemberIds;
       const nextPayment: GroupPayment = {
         id: previous?.id ?? generateId(),
         fromMemberId: draft.fromMemberId,
@@ -879,6 +1080,12 @@ export function GroupPayments({
             : draft.restrictToRecipientExpenses
               ? "original-payees"
               : "fewer-transfers"),
+        settlementModifiers:
+          previous?.settlementModifiers ??
+          (manageTemporaryMembers
+            ? ["admin-managed-temporary-members"]
+            : undefined),
+        managedOnBehalfOfMemberIds: managedTemporaryMemberIds,
         status: draft.confirmImmediately ? "confirmed" : "pending",
         submittedAt: now,
         submittedBy: currentMember.id,
@@ -953,6 +1160,184 @@ export function GroupPayments({
             </span>
           </button>
         </div>
+      )}
+
+      {currentMember && (
+        <section className="rounded-2xl border border-primary/20 bg-accent/50 p-4">
+          <button
+            type="button"
+            onClick={() => setSettlementChooserOpen((open) => !open)}
+            aria-expanded={settlementChooserOpen}
+            className="flex w-full items-center justify-between gap-3 text-left"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">
+                How do you want to settle?
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {settlementChooserOpen
+                  ? "Choose one method. You can pay or record money received from the results below."
+                  : <>You chose: <span className="font-semibold text-foreground">{selectedSettlementMethodLabel}</span>{manageTemporaryMembers ? " · Managing temporary members" : ""}</>}
+              </p>
+            </div>
+            {settlementChooserOpen ? (
+              <ChevronUp className="h-5 w-5 shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+            )}
+          </button>
+
+          {settlementChooserOpen && (
+          <>
+          {canManageTemporaryMembers && (
+            <button
+              type="button"
+              aria-pressed={manageTemporaryMembers}
+              onClick={() => setManageTemporaryMembers((enabled) => !enabled)}
+              className={`mt-3 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors ${
+                manageTemporaryMembers
+                  ? "border-primary bg-primary/10"
+                  : "border-border bg-card"
+              }`}
+            >
+              <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${
+                manageTemporaryMembers
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-transparent"
+              }`}>
+                <Check size={13} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-semibold text-foreground">
+                  Manage temporary members
+                </span>
+                <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
+                  Apply the selected method to payments between members who have not joined yet.
+                </span>
+              </span>
+              <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
+                manageTemporaryMembers
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground"
+              }`}>
+                {manageTemporaryMembers ? "On" : "Off"}
+              </span>
+            </button>
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setPaymentScope("balance");
+                onSettlementModePreferenceChange("direct", true);
+              }}
+              className={`rounded-xl border px-3 py-3 text-left text-xs font-semibold transition-colors ${
+                paymentScope === "balance" && effectiveSettlementMode === "direct"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-card text-foreground"
+              }`}
+            >
+              <span className="block">Original payees</span>
+              <span className={`mt-1 block text-[10px] font-normal ${paymentScope === "balance" && effectiveSettlementMode === "direct" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                Settle with who paid
+              </span>
+            </button>
+            {group.kind !== "direct" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentScope("balance");
+                  onSettlementModePreferenceChange("simplified", true);
+                }}
+                className={`rounded-xl border px-3 py-3 text-left text-xs font-semibold transition-colors ${
+                  paymentScope === "balance" && effectiveSettlementMode === "simplified"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-card text-foreground"
+                }`}
+              >
+                <span className="block">Fewer transfers</span>
+                <span className={`mt-1 block text-[10px] font-normal ${paymentScope === "balance" && effectiveSettlementMode === "simplified" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                  Combine group balances
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setPaymentScope("expense")}
+              className={`rounded-xl border px-3 py-3 text-left text-xs font-semibold transition-colors ${
+                paymentScope === "expense"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-card text-foreground"
+              }`}
+            >
+              <span className="block">Specific expense</span>
+              <span className={`mt-1 block text-[10px] font-normal ${paymentScope === "expense" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                Choose exactly what to cover
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentScope("offset")}
+              className={`rounded-xl border px-3 py-3 text-left text-xs font-semibold transition-colors ${
+                paymentScope === "offset"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-card text-foreground"
+              }`}
+            >
+              <span className="block">Offset balances</span>
+              <span className={`mt-1 block text-[10px] font-normal ${paymentScope === "offset" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                Settle mutual amounts
+              </span>
+            </button>
+          </div>
+
+          <div className="mt-4 flex items-start gap-3 border-t border-primary/15 pt-4">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+              <CircleHelp size={16} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
+                About {selectedSettlementMethodLabel}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {manageTemporaryMembers
+                  ? paymentScope === "balance"
+                    ? effectiveSettlementMode === "simplified" && group.kind !== "direct"
+                      ? "Record the simplified transfers between temporary members. You confirm each payment as the group admin, with the represented members kept in its history."
+                      : "Record temporary members paying the people who originally covered their expenses. You confirm each payment as the group admin."
+                    : paymentScope === "expense"
+                      ? "Choose one expense owed between temporary members. You record and confirm the payment for them, and only that expense is reduced."
+                      : "Offset mutual amounts between temporary members without moving money. It is confirmed immediately because the admin represents both members, and that action is kept in history."
+                  : paymentScope === "balance"
+                  ? effectiveSettlementMode === "simplified" && group.kind !== "direct"
+                    ? "The group nets everyone’s debts together. You may pay or record money from a different member than the person who originally covered an expense."
+                    : "Each balance stays connected to the member who originally paid. Use this when you want reimbursements to return directly to those contributors."
+                  : paymentScope === "expense"
+                    ? "Choose one unpaid expense to pay or record as received. Only that expense is reduced, and its original contributor receives the credit."
+                    : "When two members owe each other, subtract the matching amounts instead of sending money both ways. The other member must approve it."}
+              </p>
+              <p className="mt-2 text-[11px] font-medium text-foreground">
+                {manageTemporaryMembers
+                  ? paymentScope === "balance"
+                    ? `Available now: ${managedTemporaryBalances.length} admin-manageable ${managedTemporaryBalances.length === 1 ? "balance" : "balances"}.`
+                    : paymentScope === "expense"
+                      ? `Available now: ${temporaryExpensePaymentOptions.length} ${temporaryExpensePaymentOptions.length === 1 ? "expense" : "expenses"}.`
+                      : `Available now: ${activeOffsetPaymentOptions.length} ${activeOffsetPaymentOptions.length === 1 ? "offset" : "offsets"}.`
+                  : paymentScope === "balance"
+                  ? fewerTransfersClearsOutgoingBalance
+                    ? "Current result: your outgoing balance is fully offset."
+                    : !hasPayableBalanceInEitherMode && balancesOwedToYou.length === 0
+                      ? "Current result: no balance activity yet. This method remains available for future transactions."
+                      : `Current result: ${balancesYouOwe.length} to pay · ${balancesOwedToYou.length} to record as received.`
+                  : paymentScope === "expense"
+                    ? `Available now: ${expensePaymentOptions.length} to pay · ${receivedExpensePaymentOptions.length} to record as received.`
+                    : `Available now: ${offsetPaymentOptions.length} ${offsetPaymentOptions.length === 1 ? "offset" : "offsets"}.`}
+              </p>
+            </div>
+          </div>
+          </>
+          )}
+        </section>
       )}
 
       {settlementHistoryCount > 0 && (
@@ -1078,6 +1463,20 @@ export function GroupPayments({
                             {" "}(admin) for {getMemberDisplayName(counterparty, "the temporary member")}
                           </p>
                         )}
+                        {offset.requestedOnBehalfOfMemberId && offset.requestedBy && (
+                          <p className="rounded-xl bg-primary/5 px-3 py-2 text-xs text-primary">
+                            Requested by {getMemberDisplayName(getMemberById(group, offset.requestedBy), "a group admin")}
+                            {" "}(admin) for {getMemberDisplayName(getMemberById(group, offset.requestedOnBehalfOfMemberId), "the temporary member")}
+                          </p>
+                        )}
+                        {managedTemporaryMemberNames(offset, group) && (
+                          <p className="rounded-xl bg-accent px-3 py-2 text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground">Modifier: Admin-managed temporary members</span>
+                            <span className="mt-1 block">
+                              Recorded for {managedTemporaryMemberNames(offset, group)}.
+                            </span>
+                          </p>
+                        )}
                         <button
                           type="button"
                           onClick={() => toggleAllocations(offset.id)}
@@ -1168,6 +1567,14 @@ export function GroupPayments({
                             {getMemberDisplayName(getMemberById(group, payment.reviewedBy), "a group admin")}
                             {" "}(admin) for {getMemberDisplayName(toMember, "the recipient")}
                             {payment.reviewNote ? ` · ${payment.reviewNote}` : ""}
+                          </p>
+                        )}
+                        {managedTemporaryMemberNames(payment, group) && (
+                          <p className="rounded-xl bg-accent px-3 py-2 text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground">Modifier: Admin-managed temporary members</span>
+                            <span className="mt-1 block">
+                              Recorded for {managedTemporaryMemberNames(payment, group)}.
+                            </span>
                           </p>
                         )}
                         <div className="flex flex-wrap gap-3">
@@ -1459,6 +1866,14 @@ export function GroupPayments({
                     {payment.reviewNote ? ` · ${payment.reviewNote}` : ""}
                   </p>
                 )}
+                {managedTemporaryMemberNames(payment, group) && (
+                  <p className="rounded-xl bg-accent px-3 py-2 text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground">Admin-managed temporary members</span>
+                    <span className="mt-1 block">
+                      Recorded for {managedTemporaryMemberNames(payment, group)}.
+                    </span>
+                  </p>
+                )}
 
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -1565,34 +1980,66 @@ export function GroupPayments({
         </section>
       )}
 
-      {expensePaymentOptions.length > 0 && (
+      {paymentScope === "expense" && manageTemporaryMembers &&
+        temporaryExpensePaymentOptions.length > 0 && (
         <section className="space-y-4">
           <div>
-            <p className="text-base font-semibold text-foreground">
-              What would you like to pay?
-            </p>
+            <p className="text-sm font-semibold text-foreground">Choose a temporary member expense</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Choose one expense now, or make one payment toward everything you owe below.
+              Record and confirm one exact expense on behalf of both temporary members.
             </p>
           </div>
+          {temporaryExpensePaymentOptions.map((option) => (
+            <article
+              key={`temporary-${option.expenseId}-${option.debtor.id}-${option.recipient.id}`}
+              className="rounded-2xl border border-border bg-card p-4"
+            >
+              <div className="flex items-center gap-3">
+                <UserAvatar
+                  name={getMemberDisplayName(option.debtor)}
+                  color={option.debtor.color}
+                  seed={option.debtor.avatarSeed}
+                  className="h-10 w-10 shrink-0 rounded-full"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {option.expenseDescription}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {getMemberDisplayName(option.debtor)} pays {getMemberDisplayName(option.recipient)}
+                  </p>
+                </div>
+                <p className="shrink-0 text-sm font-semibold text-foreground">
+                  {formatCurrency(option.amount, group.currency)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openTemporaryExpensePayment(option)}
+                className="mt-3 w-full rounded-xl bg-primary py-2.5 text-xs font-semibold text-primary-foreground"
+              >
+                Record payment for them
+              </button>
+            </article>
+          ))}
+        </section>
+      )}
+
+      {paymentScope === "expense" && !manageTemporaryMembers &&
+        expensePaymentOptions.length + receivedExpensePaymentOptions.length > 0 && (
+        <section className="space-y-4">
           <div>
-            <p className="text-sm font-medium text-foreground">
-              Pay a specific expense
-            </p>
+            <p className="text-sm font-semibold text-foreground">Choose an expense</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Pick an expense and choose which original contributor to repay first.
+              Pay what you owe or record money received against one exact expense.
             </p>
           </div>
+          {expensePaymentOptions.length > 0 && (
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Expenses you owe
+            </p>
+          )}
           {expensePaymentOptions.map((option) => {
-            const balanceOffset = memberId
-              ? buildBalanceOffsetPreview(
-                  group,
-                  memberId,
-                  option.recipientId,
-                  option.amount,
-                  option.expenseId,
-                )
-              : undefined;
             return (
               <article
                 key={`${option.expenseId}-${option.recipientId}`}
@@ -1633,7 +2080,7 @@ export function GroupPayments({
                   />
                 ) : null;
               })()}
-              <div className={`mt-3 grid gap-2 ${balanceOffset ? "grid-cols-2" : "grid-cols-1"}`}>
+              <div className="mt-3 grid">
                 <button
                   type="button"
                   onClick={() => openExpensePayment(option)}
@@ -1641,84 +2088,143 @@ export function GroupPayments({
                 >
                   Pay expense
                 </button>
-                {balanceOffset && (
-                  <button
-                    type="button"
-                    onClick={() => openBalanceOffset(option)}
-                    className="rounded-xl border border-primary py-2.5 text-xs font-semibold text-primary"
-                  >
-                    Use balance owed to you
-                  </button>
-                )}
               </div>
-              {balanceOffset && (
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  {formatCurrency(balanceOffset.availableCredit, group.currency)} currently owed to you by {getMemberDisplayName(option.recipient)}
-                </p>
-              )}
             </article>
             );
           })}
+          {receivedExpensePaymentOptions.length > 0 && (
+            <p className="border-t border-border pt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Expenses owed to you
+            </p>
+          )}
+          {receivedExpensePaymentOptions.map((option) => (
+            <article
+              key={`received-${option.expenseId}-${option.debtor.id}`}
+              className="rounded-2xl border border-border bg-card p-4"
+            >
+              <div className="flex items-center gap-3">
+                <UserAvatar
+                  name={getMemberDisplayName(option.debtor)}
+                  color={option.debtor.color}
+                  seed={option.debtor.avatarSeed}
+                  uid={option.debtor.uid}
+                  photoVersion={option.debtor.profileImageVersion}
+                  className="h-10 w-10 shrink-0 rounded-full"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {option.expenseDescription}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Record from {getMemberDisplayName(option.debtor)}
+                  </p>
+                </div>
+                <p className="shrink-0 text-sm font-semibold text-foreground">
+                  {formatCurrency(option.amount, group.currency)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openReceivedExpensePayment(option)}
+                className="mt-3 w-full rounded-xl border border-green-600 bg-green-50 py-2.5 text-xs font-semibold text-green-700"
+              >
+                Record money received
+              </button>
+            </article>
+          ))}
         </section>
       )}
 
-      {hasPayableBalanceInEitherMode && (
-        <section
-          className={`rounded-2xl border bg-accent/50 p-4 ${
-            settlementModeRemembered
-              ? "border-primary/20"
-              : "border-primary ring-2 ring-primary/15"
-          }`}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-foreground">
-                How should this balance be paid?
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Choose a route before paying toward your overall balance.
-              </p>
-            </div>
-            {!settlementModeRemembered && (
-              <span className="shrink-0 rounded-full bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground">
-                New
-              </span>
-            )}
+      {paymentScope === "offset" && !manageTemporaryMembers && offsetPaymentOptions.length > 0 && (
+        <section className="space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Choose balances to offset</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              No money moves. The other member must approve before both sides are reduced.
+            </p>
           </div>
+          {offsetPaymentOptions.map(({ option, preview }) => (
+            <article
+              key={`${option.expenseId}-${option.recipientId}`}
+              className="rounded-2xl border border-border bg-card p-4"
+            >
+              <div className="flex items-center gap-3">
+                <UserAvatar
+                  name={getMemberDisplayName(option.recipient)}
+                  color={option.recipient.color}
+                  seed={option.recipient.avatarSeed}
+                  uid={option.recipient.uid}
+                  photoVersion={option.recipient.profileImageVersion}
+                  className="h-10 w-10 shrink-0 rounded-full"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {option.expenseDescription}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Mutual balance with {getMemberDisplayName(option.recipient)}
+                  </p>
+                </div>
+                <p className="shrink-0 text-sm font-semibold text-foreground">
+                  {formatCurrency(preview.amount, group.currency)}
+                </p>
+              </div>
+              <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+                {formatCurrency(preview.availableCredit, group.currency)} is currently owed back to you and can be used toward this expense.
+              </p>
+              <button
+                type="button"
+                onClick={() => openBalanceOffset(option)}
+                className="mt-3 w-full rounded-xl border border-primary bg-primary/5 py-2.5 text-xs font-semibold text-primary"
+              >
+                Request balance offset
+              </button>
+            </article>
+          ))}
+        </section>
+      )}
 
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-card p-1.5">
-            <button
-              type="button"
-              onClick={() => onSettlementModePreferenceChange("direct", true)}
-              className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
-                effectiveSettlementMode === "direct"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground"
-              }`}
-            >
-              Original payees
-            </button>
-            <button
-              type="button"
-              onClick={() => onSettlementModePreferenceChange("simplified", true)}
-              className={`relative rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${
-                effectiveSettlementMode === "simplified"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
-              }`}
-            >
-              Try Fewer transfers!
-            </button>
+      {paymentScope === "offset" && manageTemporaryMembers && temporaryOffsetPaymentOptions.length > 0 && (
+        <section className="space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Choose temporary-member balances to offset</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              No money moves. The offset is confirmed immediately because you represent both temporary members as admin.
+            </p>
           </div>
-
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            {effectiveSettlementMode === "simplified"
-              ? "Recommended · Combines group balances to reduce transfers. The recipient may not be the original payer."
-              : "Default · Pays each member who originally covered an expense. This may require more transfers."}
-          </p>
-          <p className="mt-2 text-[11px] font-medium text-primary">
-            This setting does not affect paying a specific expense.
-          </p>
+          {temporaryOffsetPaymentOptions.map((option) => (
+            <article
+              key={`temporary-offset-${option.requester.id}-${option.counterparty.id}`}
+              className="rounded-2xl border border-border bg-card p-4"
+            >
+              <div className="flex items-center gap-3">
+                <UserAvatar
+                  name={getMemberDisplayName(option.requester)}
+                  color={option.requester.color}
+                  seed={option.requester.avatarSeed}
+                  className="h-10 w-10 shrink-0 rounded-full"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {getMemberDisplayName(option.requester)} ↔ {getMemberDisplayName(option.counterparty)}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Mutual expenses between these members
+                  </p>
+                </div>
+                <p className="shrink-0 text-sm font-semibold text-foreground">
+                  {formatCurrency(option.preview.amount, group.currency)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openTemporaryBalanceOffset(option)}
+                className="mt-3 w-full rounded-xl border border-primary bg-primary/5 py-2.5 text-xs font-semibold text-primary"
+              >
+                Offset for temporary members
+              </button>
+            </article>
+          ))}
         </section>
       )}
 
@@ -1728,58 +2234,34 @@ export function GroupPayments({
           title: "Pay toward your balance",
           description:
             "Pay everything you owe this person, or enter a smaller amount.",
-          items: balancesYouOwe,
+          items: paymentScope === "balance" && !manageTemporaryMembers ? balancesYouOwe : [],
         },
         {
           id: "owed-to-you",
           title: "Money owed to you",
           description:
             "These balances are unpaid. Record a payment only after you receive the money.",
-          items: balancesOwedToYou,
+          items: paymentScope === "balance" && !manageTemporaryMembers ? balancesOwedToYou : [],
         },
         {
           id: "temporary-member-balances",
           title: "Temporary member balances",
           description:
             "Record payments between members who have not joined yet. The payment is confirmed by you as group admin.",
-          items: directTemporaryMemberBalances,
-          collapsible: true,
+          items: paymentScope === "balance" && manageTemporaryMembers ? managedTemporaryBalances : [],
         },
       ].map((section) =>
         section.items.length > 0 ? (
         <section key={section.id} className="space-y-4">
-          {section.collapsible ? (
-            <button
-              type="button"
-              onClick={() => setTemporaryBalancesOpen((open) => !open)}
-              aria-expanded={temporaryBalancesOpen}
-              className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground">
-                  {section.title}
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  {section.items.length} {section.items.length === 1 ? "balance" : "balances"} · {section.description}
-                </p>
-              </div>
-              {temporaryBalancesOpen ? (
-                <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
-            </button>
-          ) : (
-            <div>
-              <p className="text-sm font-medium text-foreground">
-                {section.title}
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                {section.description}
-              </p>
-            </div>
-          )}
-          {(!section.collapsible || temporaryBalancesOpen) && section.items.map((settlement) => {
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              {section.title}
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {section.description}
+            </p>
+          </div>
+          {section.items.map((settlement) => {
             const fromMember = getMemberById(group, settlement.from);
             const toMember = getMemberById(group, settlement.to);
             const isSender = settlement.from === memberId;
@@ -1947,10 +2429,14 @@ export function GroupPayments({
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <Dialog.Title className="text-lg font-semibold text-foreground">
-                  Use balance owed to you
+                  {isAdminManagedOffset
+                    ? `Offset ${getMemberDisplayName(offsetRequester)} and ${getMemberDisplayName(offsetDraft?.counterparty)}`
+                    : "Use balance owed to you"}
                 </Dialog.Title>
                 <Dialog.Description className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  No money moves. {getMemberDisplayName(offsetDraft?.counterparty)} must approve before both expense sides are marked settled.
+                  {isAdminManagedOffset
+                    ? `No money moves. You’re confirming this immediately for ${getMemberDisplayName(offsetRequester)} and ${getMemberDisplayName(offsetDraft?.counterparty)} as group admin.`
+                    : `No money moves. ${getMemberDisplayName(offsetDraft?.counterparty)} must approve before both expense sides are marked settled.`}
                 </Dialog.Description>
               </div>
               <button
@@ -1974,14 +2460,16 @@ export function GroupPayments({
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-3 text-xs">
                     <span className="text-muted-foreground">
-                      {getMemberDisplayName(offsetDraft.counterparty)} owes you now
+                      {getMemberDisplayName(offsetDraft.counterparty)} owes {isAdminManagedOffset ? getMemberDisplayName(offsetRequester) : "you"} now
                     </span>
                     <span className="font-medium text-foreground">
                       {formatCurrency(offsetPreview.availableCredit, group.currency)}
                     </span>
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-3 text-xs">
-                    <span className="text-muted-foreground">Still owed after approval</span>
+                    <span className="text-muted-foreground">
+                      Still owed to {isAdminManagedOffset ? getMemberDisplayName(offsetRequester) : "you"} after approval
+                    </span>
                     <span className="font-semibold text-foreground">
                       {formatCurrency(offsetPreview.remainingCredit, group.currency)}
                     </span>
@@ -1991,7 +2479,7 @@ export function GroupPayments({
                 <div className="space-y-3 rounded-2xl border border-border bg-muted/30 p-4">
                   <div>
                     <p className="mb-1.5 text-xs font-semibold text-foreground">
-                      This settles your share
+                      This settles {isAdminManagedOffset ? `${getMemberDisplayName(offsetRequester)}’s share` : "your share"}
                     </p>
                     <AllocationList
                       allocations={offsetPreview.debitAllocations}
@@ -2018,7 +2506,11 @@ export function GroupPayments({
                   onClick={() => void submitBalanceOffset()}
                   className="w-full rounded-2xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
                 >
-                  {saving ? "Requesting…" : `Request approval from ${getMemberDisplayName(offsetDraft.counterparty)}`}
+                  {saving
+                    ? "Creating…"
+                    : isAdminManagedOffset
+                      ? `Confirm offset for ${getMemberDisplayName(offsetRequester)} and ${getMemberDisplayName(offsetDraft.counterparty)}`
+                      : `Request approval from ${getMemberDisplayName(offsetDraft.counterparty)}`}
                 </button>
               </div>
             )}
@@ -2243,7 +2735,9 @@ export function GroupPayments({
                 <Dialog.Description className="text-xs text-muted-foreground mt-1">
                   {draft?.confirmImmediately
                     ? isAdminProxyPayment
-                      ? `Use this only if ${draftSender?.name ?? "The payer"} has already paid ${draftRecipient?.name ?? "the recipient"} outside BayadTayoOpo. You’re recording it as group admin.`
+                      ? manageTemporaryMembers
+                        ? `Use this only if ${draftSender?.name ?? "The payer"} has already paid ${draftRecipient?.name ?? "the recipient"}. You’re recording and confirming it for both temporary members as group admin.`
+                        : `Use this only if ${draftSender?.name ?? "The payer"} has already paid ${draftRecipient?.name ?? "the recipient"} outside BayadTayoOpo. You’re recording it as group admin.`
                       : `Use this only if ${draftSender?.name ?? "this member"} has already paid you outside BayadTayoOpo.`
                     : draft?.flow === "expense"
                     ? `Pay the exact remaining amount to ${draftRecipient?.name ?? "the expense payer"}. You can attach one proof.`
@@ -2261,6 +2755,16 @@ export function GroupPayments({
 
             {draft && (
               <div className="space-y-4">
+                {manageTemporaryMembers && isAdminProxyPayment && (
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
+                    <p className="font-semibold text-foreground">
+                      Admin-managed temporary members
+                    </p>
+                    <p className="mt-1">
+                      This record will show that you acted for {getMemberDisplayName(draftSender)} and {getMemberDisplayName(draftRecipient)}. The selected settlement method and covered expenses will also be saved.
+                    </p>
+                  </div>
+                )}
                 {!draft.confirmImmediately &&
                   draftRecipient?.paymentInstructions && (
                     <div className="rounded-2xl bg-accent p-4 text-xs text-muted-foreground space-y-1">
@@ -2305,7 +2809,9 @@ export function GroupPayments({
                   <label className="mb-1.5 block text-sm text-muted-foreground">
                     {draft.confirmImmediately
                       ? isAdminProxyPayment
-                        ? `Amount ${draftRecipient?.name ?? "the recipient"} received`
+                        ? manageTemporaryMembers
+                          ? `Amount ${draftSender?.name ?? "the payer"} paid to ${draftRecipient?.name ?? "the recipient"}`
+                          : `Amount ${draftRecipient?.name ?? "the recipient"} received`
                         : "Amount you received"
                       : "Amount you paid"}
                   </label>
@@ -2567,7 +3073,9 @@ export function GroupPayments({
                       {draft.flow === "expense"
                         ? draft.confirmImmediately
                           ? isAdminProxyPayment
-                            ? `Still owed to ${draftRecipient?.name ?? "the recipient"} for this expense`
+                            ? manageTemporaryMembers
+                              ? `${draftSender?.name ?? "The payer"} will still owe ${draftRecipient?.name ?? "the recipient"} for this expense`
+                              : `Still owed to ${draftRecipient?.name ?? "the recipient"} for this expense`
                             : "Still owed to you for this expense"
                           : "You’ll still owe for this expense"
                         : draft.restrictToRecipientExpenses
@@ -2597,7 +3105,9 @@ export function GroupPayments({
                     ? "Saving…"
                     : draft.confirmImmediately
                       ? isAdminProxyPayment
-                        ? `Record payment to ${draftRecipient?.name ?? "recipient"}`
+                        ? manageTemporaryMembers
+                          ? `Record ${draftSender?.name ?? "payer"} → ${draftRecipient?.name ?? "recipient"}`
+                          : `Record payment to ${draftRecipient?.name ?? "recipient"}`
                         : "Yes, record money received"
                       : draft.payment
                         ? "Resubmit payment"

@@ -724,6 +724,74 @@ describe("expense business logic", () => {
     ]);
   });
 
+  it("records money received against only the selected expense", () => {
+    const dinner = group.expenses[0];
+    const snacks = {
+      id: "snacks",
+      description: "Snacks",
+      amount: 20,
+      paidBy: "alice",
+      createdBy: "alice",
+      splitType: "custom" as const,
+      category: "food" as const,
+      date: "2026-01-03T00:00:00.000Z",
+      splits: [
+        { memberId: "alice", amount: 0 },
+        { memberId: "bob", amount: 20 },
+        { memberId: "carol", amount: 0 },
+      ],
+    };
+    const specificGroup: Group = {
+      ...group,
+      expenses: [dinner, snacks],
+      payments: [],
+    };
+    const allocations = allocatePaymentToExpenses(
+      specificGroup,
+      "bob",
+      30,
+      [dinner.id],
+      "alice",
+    );
+
+    expect(allocations).toEqual([{
+      expenseId: dinner.id,
+      expenseDescription: dinner.description,
+      amount: 30,
+    }]);
+
+    const recordedByRecipient: Group = {
+      ...specificGroup,
+      payments: [{
+        id: "received-dinner",
+        fromMemberId: "bob",
+        toMemberId: "alice",
+        amount: 30,
+        method: "Cash",
+        allocations,
+        settlementRoute: "specific-expenses",
+        status: "confirmed",
+        submittedAt: "2026-01-04T00:00:00.000Z",
+        submittedBy: "alice",
+        reviewedAt: "2026-01-04T00:00:00.000Z",
+        reviewedBy: "alice",
+      }],
+    };
+
+    expect(getConfirmedOutstandingExpenseShares(recordedByRecipient, "bob"))
+      .toEqual([{
+        expenseId: snacks.id,
+        expenseDescription: snacks.description,
+        amount: 20,
+      }]);
+    expect(getConfirmedOutstandingExpenseShares(recordedByRecipient, "carol"))
+      .toContainEqual({
+        expenseId: dinner.id,
+        expenseDescription: dinner.description,
+        amount: 30,
+      });
+  });
+
   it("settles an expense only after every share has confirmed coverage", () => {
     const dinner = group.expenses[0];
     expect(isExpenseSettled(group, dinner)).toBe(false);
@@ -952,6 +1020,24 @@ describe("expense business logic", () => {
           status: "pending",
           requestedAt: "2026-01-01T00:00:00.000Z",
           requestedBy: "bob-login-2",
+          settlementModifiers: ["admin-managed-temporary-members"],
+          managedOnBehalfOfMemberIds: ["bob-duplicate", "alice"],
+        },
+      ],
+      payments: [
+        {
+          id: "payment-1",
+          fromMemberId: "bob-duplicate",
+          toMemberId: "alice",
+          amount: 10,
+          method: "Cash",
+          allocations: [],
+          settlementRoute: "original-payees",
+          settlementModifiers: ["admin-managed-temporary-members"],
+          managedOnBehalfOfMemberIds: ["bob-duplicate", "alice"],
+          status: "confirmed",
+          submittedAt: "2026-01-01T00:00:00.000Z",
+          submittedBy: "bob-login-2",
         },
       ],
     };
@@ -968,6 +1054,14 @@ describe("expense business logic", () => {
     expect(merged.balanceOffsets?.[0]).toMatchObject({
       requesterMemberId: "bob",
       requestedBy: "bob",
+      managedOnBehalfOfMemberIds: ["bob", "alice"],
+    });
+    expect(merged.payments?.[0]).toMatchObject({
+      fromMemberId: "bob",
+      submittedBy: "bob",
+      settlementRoute: "original-payees",
+      settlementModifiers: ["admin-managed-temporary-members"],
+      managedOnBehalfOfMemberIds: ["bob", "alice"],
     });
   });
 

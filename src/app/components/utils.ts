@@ -1025,6 +1025,7 @@ export function mergeGroupMember(
       reviewedOnBehalfOfMemberId: payment.reviewedOnBehalfOfMemberId
         ? replace(payment.reviewedOnBehalfOfMemberId)
         : undefined,
+      managedOnBehalfOfMemberIds: payment.managedOnBehalfOfMemberIds?.map(replace),
       cancelledBy: payment.cancelledBy
         ? replace(payment.cancelledBy)
         : undefined,
@@ -1049,6 +1050,10 @@ export function mergeGroupMember(
       requesterMemberId: replace(offset.requesterMemberId),
       counterpartyMemberId: replace(offset.counterpartyMemberId),
       requestedBy: replace(offset.requestedBy),
+      requestedOnBehalfOfMemberId: offset.requestedOnBehalfOfMemberId
+        ? replace(offset.requestedOnBehalfOfMemberId)
+        : undefined,
+      managedOnBehalfOfMemberIds: offset.managedOnBehalfOfMemberIds?.map(replace),
       reviewedBy: offset.reviewedBy ? replace(offset.reviewedBy) : undefined,
       reviewedOnBehalfOfMemberId: offset.reviewedOnBehalfOfMemberId
         ? replace(offset.reviewedOnBehalfOfMemberId)

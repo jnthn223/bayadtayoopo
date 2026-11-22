@@ -147,14 +147,10 @@ export function GroupContent({
   const [disputeError, setDisputeError] = useState("");
   const settlementModeKey = `bayadtayoopo:settlement-mode:${group.id}:${currentMember?.uid ?? currentMember?.id ?? "guest"}`;
   const [settlementMode, setSettlementMode] = useState<"simplified" | "direct">("direct");
-  const [settlementModeRemembered, setSettlementModeRemembered] = useState(false);
 
   useEffect(() => {
     const storedMode = localStorage.getItem(settlementModeKey);
     setSettlementMode(storedMode === "simplified" ? "simplified" : "direct");
-    setSettlementModeRemembered(
-      storedMode === "direct" || storedMode === "simplified",
-    );
   }, [settlementModeKey]);
 
   const changeSettlementModePreference = (
@@ -162,7 +158,6 @@ export function GroupContent({
     remember: boolean,
   ) => {
     setSettlementMode(remember ? mode : "direct");
-    setSettlementModeRemembered(remember);
     if (remember) localStorage.setItem(settlementModeKey, mode);
     else localStorage.removeItem(settlementModeKey);
   };
@@ -1410,7 +1405,6 @@ export function GroupContent({
                     isAdmin={isAdmin}
                     settlements={settlements}
                     settlementMode={settlementMode}
-                    settlementModeRemembered={settlementModeRemembered}
                     onSettlementModePreferenceChange={changeSettlementModePreference}
                     focusedPaymentId={focusedPaymentId}
                     onUpdate={onUpdate}

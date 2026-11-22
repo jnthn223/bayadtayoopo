@@ -125,6 +125,10 @@ export interface GroupPayment {
     | "fewer-transfers"
     | "original-payees"
     | "specific-expenses";
+  /** Extra behavior applied alongside the selected settlement route. */
+  settlementModifiers?: Array<"admin-managed-temporary-members">;
+  /** Temporary members represented by the admin who recorded this payment. */
+  managedOnBehalfOfMemberIds?: string[];
   status: GroupPaymentStatus;
   submittedAt: string;
   submittedBy: string;
@@ -159,6 +163,12 @@ export interface BalanceOffset {
   status: BalanceOffsetStatus;
   requestedAt: string;
   requestedBy: string;
+  /** Extra behavior applied alongside the offset settlement route. */
+  settlementModifiers?: Array<"admin-managed-temporary-members">;
+  /** Temporary members represented by the admin who created this offset. */
+  managedOnBehalfOfMemberIds?: string[];
+  /** Admin-created request made for a temporary member. */
+  requestedOnBehalfOfMemberId?: string;
   reviewedAt?: string;
   reviewedBy?: string;
   reviewedOnBehalfOfMemberId?: string;
