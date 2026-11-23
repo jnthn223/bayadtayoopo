@@ -12,7 +12,6 @@ import {
   Eye,
   Filter,
   MessageCircle,
-  QrCode,
   Receipt,
   Reply,
   Share2,
@@ -1154,28 +1153,6 @@ export function GroupContent({
 
         {tab === "settle" && (
           <div className="space-y-6 px-4 py-5 sm:p-6">
-            {currentMember && (
-              <button
-                onClick={openPaymentDetails}
-                className="w-full rounded-2xl border border-border bg-accent p-5 text-left"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {currentMember.paymentInstructions
-                        ? "Your payment instructions"
-                        : "Help people pay you"}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {currentMember.paymentInstructions
-                        ? `${currentMember.paymentInstructions.method} · Tap to edit`
-                        : "Add optional bank, e-wallet, or QR details"}
-                    </p>
-                  </div>
-                  <QrCode size={20} className="text-primary shrink-0" />
-                </div>
-              </button>
-            )}
             {(settlementMode === "direct" ? directSettlements.length === 0 : settlements.length === 0) &&
             paymentItems.length === 0 &&
             !hasRelevantGroupPayments &&
@@ -1398,21 +1375,20 @@ export function GroupContent({
                   </section>
                 )}
 
-                <div>
-                  <GroupPayments
-                    group={group}
-                    currentMember={currentMember}
-                    isAdmin={isAdmin}
-                    settlements={settlements}
-                    settlementMode={settlementMode}
-                    onSettlementModePreferenceChange={changeSettlementModePreference}
-                    focusedPaymentId={focusedPaymentId}
-                    onUpdate={onUpdate}
-                    viewPaymentImage={viewPaymentImage}
-                  />
-                </div>
               </>
             )}
+            <GroupPayments
+              group={group}
+              currentMember={currentMember}
+              isAdmin={isAdmin}
+              settlements={settlements}
+              settlementMode={settlementMode}
+              onSettlementModePreferenceChange={changeSettlementModePreference}
+              focusedPaymentId={focusedPaymentId}
+              onUpdate={onUpdate}
+              viewPaymentImage={viewPaymentImage}
+              onOpenPaymentDetails={openPaymentDetails}
+            />
           </div>
         )}
 

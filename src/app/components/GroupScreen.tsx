@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
+  CreditCard,
   Download,
   FileSpreadsheet,
   Plus,
+  QrCode,
   Send,
   Upload,
   Shuffle,
@@ -2958,22 +2960,96 @@ export function GroupScreen({
       <Dialog.Root open={paymentDetailsOpen} onOpenChange={setPaymentDetailsOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" />
-          <Dialog.Content className="fixed inset-x-4 bottom-8 z-50 bg-card rounded-3xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
-            <Dialog.Title className="text-lg font-semibold text-foreground">Payment instructions</Dialog.Title>
-            <Dialog.Description className="text-sm text-muted-foreground mt-1 mb-4">
-              Optional details that help members of this group pay you.
-            </Dialog.Description>
+          <Dialog.Content className="fixed inset-x-4 bottom-8 z-50 max-h-[85vh] overflow-y-auto rounded-3xl bg-card p-6 shadow-2xl sm:left-1/2 sm:right-auto sm:w-[calc(100%-2rem)] sm:max-w-lg sm:-translate-x-1/2">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-foreground">Payment instructions</Dialog.Title>
+                <Dialog.Description className="mt-1 text-sm text-muted-foreground">
+                  These details are shown to members who need to pay you.
+                </Dialog.Description>
+              </div>
+              <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                currentMember?.paymentInstructions
+                  ? "bg-green-100 text-green-700"
+                  : "bg-muted text-muted-foreground"
+              }`}>
+                {currentMember?.paymentInstructions && <Check size={12} />}
+                {currentMember?.paymentInstructions ? "Configured" : "Not set"}
+              </span>
+            </div>
+
+            {currentMember?.paymentInstructions ? (
+              <section className="mt-5 rounded-2xl border border-primary/20 bg-accent p-4">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-card text-primary shadow-sm">
+                    <CreditCard size={18} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Currently shared</p>
+                    <p className="truncate text-sm font-semibold text-foreground">{currentMember.paymentInstructions.method}</p>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+                  {currentMember.paymentInstructions.accountName && (
+                    <p><span className="font-medium text-foreground">Account name:</span> {currentMember.paymentInstructions.accountName}</p>
+                  )}
+                  {currentMember.paymentInstructions.accountIdentifier && (
+                    <p><span className="font-medium text-foreground">Account:</span> {currentMember.paymentInstructions.accountIdentifier}</p>
+                  )}
+                  {currentMember.paymentInstructions.instructions && (
+                    <p className="leading-relaxed">{currentMember.paymentInstructions.instructions}</p>
+                  )}
+                  {currentMember.paymentInstructions.qrCodeImageId && (
+                    <button
+                      type="button"
+                      onClick={() => viewPaymentImage(currentMember.paymentInstructions!.qrCodeImageId!, "Payment QR")}
+                      className="mt-1 inline-flex items-center gap-1.5 font-semibold text-primary"
+                    >
+                      <QrCode size={14} />
+                      View current QR
+                    </button>
+                  )}
+                </div>
+              </section>
+            ) : (
+              <div className="mt-5 rounded-2xl border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+                Add a bank, e-wallet, cash method, or payment QR so members know where to send payment.
+              </div>
+            )}
+
+            <p className="mb-3 mt-5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {currentMember?.paymentInstructions ? "Edit shared details" : "Add payment details"}
+            </p>
             <div className="space-y-3">
-              <input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="Method (e.g. GCash, BPI, cash)" className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary" />
-              <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Account name (optional)" className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary" />
-              <input value={accountIdentifier} onChange={(e) => setAccountIdentifier(e.target.value)} placeholder="Account or mobile number (optional)" className="w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary" />
-              <textarea value={paymentNote} onChange={(e) => setPaymentNote(e.target.value)} placeholder="Additional instructions (optional)" className="w-full min-h-20 px-4 py-3 rounded-xl bg-input-background border border-border text-sm outline-none focus:border-primary resize-none" />
-              <label className="block rounded-xl border border-dashed border-border p-3 text-sm text-muted-foreground cursor-pointer">
-                Payment QR image (optional)
+              <label className="block text-xs font-medium text-muted-foreground">
+                Payment method
+                <input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="e.g. GCash, BPI, cash" className="mt-1.5 w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm text-foreground outline-none focus:border-primary" />
+              </label>
+              <label className="block text-xs font-medium text-muted-foreground">
+                Account name <span className="font-normal">(optional)</span>
+                <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Name shown on the account" className="mt-1.5 w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm text-foreground outline-none focus:border-primary" />
+              </label>
+              <label className="block text-xs font-medium text-muted-foreground">
+                Account or mobile number <span className="font-normal">(optional)</span>
+                <input value={accountIdentifier} onChange={(e) => setAccountIdentifier(e.target.value)} placeholder="Number members should send to" className="mt-1.5 w-full px-4 py-3 rounded-xl bg-input-background border border-border text-sm text-foreground outline-none focus:border-primary" />
+              </label>
+              <label className="block text-xs font-medium text-muted-foreground">
+                Additional instructions <span className="font-normal">(optional)</span>
+                <textarea value={paymentNote} onChange={(e) => setPaymentNote(e.target.value)} placeholder="Anything the payer should know" className="mt-1.5 w-full min-h-20 px-4 py-3 rounded-xl bg-input-background border border-border text-sm text-foreground outline-none focus:border-primary resize-none" />
+              </label>
+              <label className="block cursor-pointer rounded-xl border border-dashed border-border p-3 text-sm text-muted-foreground">
+                <span className="inline-flex items-center gap-2 font-medium text-foreground">
+                  <QrCode size={16} className="text-primary" />
+                  {currentMember?.paymentInstructions?.qrCodeImageId
+                    ? "Replace payment QR"
+                    : "Add payment QR"}
+                  <span className="font-normal text-muted-foreground">(optional)</span>
+                </span>
                 <input type="file" accept="image/*" className="block mt-2 text-xs" onChange={(e) => setQrFile(e.target.files?.[0] ?? null)} />
               </label>
+              {qrFile && <p className="text-xs text-muted-foreground">New QR selected: {qrFile.name}</p>}
               {currentMember?.paymentInstructions?.qrCodeImageId && !qrFile && (
-                <p className="text-xs text-muted-foreground">Your current QR image will be kept.</p>
+                <p className="text-xs text-muted-foreground">The current QR will remain unless you choose a replacement.</p>
               )}
               {paymentActionError && <p className="text-xs text-destructive">{paymentActionError}</p>}
             </div>

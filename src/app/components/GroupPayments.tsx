@@ -7,6 +7,7 @@ import {
   CircleHelp,
   Clock3,
   Paperclip,
+  QrCode,
   RotateCcw,
   X,
 } from "lucide-react";
@@ -57,6 +58,7 @@ interface Props {
   focusedPaymentId?: string;
   onUpdate: (group: Group) => Promise<void> | void;
   viewPaymentImage: (imageId: string, title: string) => void;
+  onOpenPaymentDetails?: () => void;
 }
 
 interface PaymentDraft {
@@ -250,6 +252,7 @@ export function GroupPayments({
   focusedPaymentId,
   onUpdate,
   viewPaymentImage,
+  onOpenPaymentDetails,
 }: Props) {
   const [draft, setDraft] = useState<PaymentDraft | null>(null);
   const [amountInput, setAmountInput] = useState("");
@@ -1146,8 +1149,24 @@ export function GroupPayments({
 
   return (
     <div className="space-y-7 pb-2">
-      {settlementHistoryCount > 0 && (
-        <div className="flex justify-end">
+      {(onOpenPaymentDetails || settlementHistoryCount > 0) && (
+        <div className="flex flex-wrap justify-end gap-2">
+          {onOpenPaymentDetails && currentMember && (
+            <button
+              type="button"
+              onClick={onOpenPaymentDetails}
+              aria-label={currentMember.paymentInstructions
+                ? `Edit payment details: ${currentMember.paymentInstructions.method}`
+                : "Add payment details"}
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+            >
+              <QrCode size={16} className="text-primary" />
+              {currentMember.paymentInstructions
+                ? "Manage payment details"
+                : "Add payment details"}
+            </button>
+          )}
+          {settlementHistoryCount > 0 && (
           <button
             type="button"
             onClick={() => setPaymentHistoryOpen(true)}
@@ -1159,6 +1178,7 @@ export function GroupPayments({
               {settlementHistoryCount}
             </span>
           </button>
+          )}
         </div>
       )}
 
